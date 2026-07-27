@@ -1,6 +1,6 @@
 # Control plane image. Plugins are built into the same image so a single container is a complete,
 # self-contained Fleetward install — which is what makes the docker-compose quickstart one command.
-FROM golang:1.25-bookworm AS build
+FROM golang:1.26-bookworm AS build
 
 WORKDIR /src
 
