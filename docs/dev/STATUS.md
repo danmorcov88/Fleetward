@@ -1,13 +1,14 @@
 # Project status
 
-Update this file whenever a stage's status changes. It is the first thing a new session reads
+Update this file whenever a slice's status changes. It is the first thing a new session reads
 after `CLAUDE.md`.
 
-**Current stage: Stage 0 — Foundation. Complete.**
+**Current position: Phase A, slice A2 — inventory service and CLI instance commands.**
+Foundation and slice A1 are complete.
 
 ---
 
-## Stage 0 — Foundation ✅
+## Foundation ✅
 
 | Deliverable | Status |
 |---|---|
@@ -36,7 +37,7 @@ reports `healthy` across metadb, secrets, objstore, tsdb, and plugins, all four 
 handshake and reach ready, migrations apply cleanly to version 1, the `audit_log` append-only
 trigger rejects both UPDATE and DELETE, and the MinIO bucket is created on first start.
 
-### Notable Stage 0 decisions not in the original brief
+### Notable foundation decisions not in the original brief
 
 - **Go 1.25, not 1.23.** The brief specified Go 1.23+. Current `pgx/v5`, `minio-go/v7`,
   `grpc-gateway/v2`, and the OpenTelemetry SDK all declare `go 1.25`, so 1.25 is the real floor.
@@ -59,37 +60,120 @@ trigger rejects both UPDATE and DELETE, and the MinIO bucket is created on first
 - **Container health probes use `127.0.0.1`, not `localhost`.** VictoriaMetrics listens IPv4-only
   while `localhost` resolves to `::1` first in its image, which made a perfectly healthy server
   fail its probe.
-- **Plugin capabilities are all false in Stage 0.** Capabilities are a promise core relies on when
+- **Plugin capabilities start all false.** Capabilities are a promise core relies on when
   deciding what to do to a production database, so each flag is turned on in the same change that
   implements the behavior behind it — never in advance.
 
 ---
 
-## Stage 1 — PostgreSQL plugin end-to-end 🔜
+## Roadmap — phases and slices
 
-The reference plugin. Everything else in Phase 1 is measured against it.
+Work is cut into slices, not stages. Each is independently demoable and ends with this file
+updated. Development is sporadic, so a session must be able to start without reconstructing context
+and finish leaving the tree green. That matters more than speed.
 
-- [ ] `plugins/postgres`: `Discover`, `GetConfig`, `HealthCheck`, `ListPrincipals`, `CollectMetrics`
-- [ ] Backup via `pg_basebackup` + WAL archiving, with the method interface shaped so `pgbackrest`
-      can be added as another method rather than a rewrite
-- [ ] `SourceManifest` capture at backup time — without it, verification degrades to "did it start"
-- [ ] `Restore` into a sandbox, `VerifyRestore` with connectivity, record counts, and `amcheck`
-- [ ] `ListPITRTargets`: base backup plus WAL coverage, including gaps
-- [ ] `SandboxProvider` (Docker), with guaranteed teardown on every path including panic
-- [ ] Inventory service + REST/OpenAPI
-- [ ] Scheduler: job leasing with heartbeat renewal
-- [ ] Conformance suite is born here
-- [ ] CLI: `instance add`, `instance list`, `backup run`, `backup verify`
-
-**Exit:** add a PostgreSQL instance via the CLI, run a backup, watch verification pass. Conformance
-green in CI.
+Full rationale for the phase ordering is in `CLAUDE.md` §6.
 
 ---
 
-## Stage 2 — Metrics & health ⬜
-## Stage 3 — MySQL/MariaDB, MongoDB, Redis ⬜
-## Stage 4 — Web UI ⬜
-## Stage 5 — RBAC/AuthZ + alerting ⬜
-## Stage 6 — Release readiness ⬜
+## Phase A — Prove the loop (PostgreSQL) 🔨
 
-See `CLAUDE.md` §6 for the contents of each.
+The thinnest path through the entire product, using the simplest possible backup method. The point
+is to prove the verification loop early, because it is simultaneously the differentiator and the
+riskiest piece — everything downstream assumes it works.
+
+| Slice | Content | Demo when done | Status |
+|---|---|---|---|
+| A1 | PG plugin: real `HealthCheck` + `Discover`, testcontainers integration tests | The plugin connects to a real PostgreSQL 16 and reports version, databases, topology | ✅ |
+| **A2** | `inventory` service, credential storage via `SecretsProvider`, CLI `instance add\|list\|health` | Add a real server, see it healthy | 🔨 next |
+| A3 | `SandboxProvider` (Docker), teardown guaranteed on every path including panic | A test starts and destroys a container; no orphans survive | ⬜ |
+| A4 | Backup via `pg_dump` + `SourceManifest` (per-table row counts) + presigned upload | `backup run` → artifact in MinIO with a manifest | ⬜ |
+| A5 | `Restore` into sandbox + `VerifyRestore` (connectivity, record counts) | `backup verify` → `VERIFIED` | ⬜ |
+| A6 | Deliberately corrupted artifact; conformance suite grows to cover the path | Corrupted artifact → `FAILED`, with discrepancies listed | ⬜ |
+
+**Exit:** acceptance criterion §7.3 of `CLAUDE.md`, proven for one engine.
+
+### A1 — delivered
+
+`HealthCheck` and `Discover` implemented against a real PostgreSQL, covered by unit tests and by
+testcontainers integration tests that now run in CI.
+
+Decisions worth carrying forward:
+
+- **The connection config is built field by field, never as a DSN.** A connection string containing
+  a password ends up in error messages, logs, and stack traces; the only reliable prevention is
+  never to construct one. `TestConnConfigDoesNotBuildADSN` and
+  `TestConnectErrorsNeverLeakThePassword` guard this.
+- **An unreachable instance is `HEALTH_STATE_DOWN`, not an RPC error.** "Down" is the most important
+  answer this RPC gives, and returning it as a failure would lose the distinction between "the
+  database is down" and "we could not ask".
+- **Authentication failure is deliberately not retryable.** The same wrong password stays wrong, and
+  retrying can trip account lockout on the monitored instance.
+- **Missing privileges never fail discovery.** A monitoring account without `pg_read_all_settings`
+  or `pg_read_all_stats` is good practice, so `data_directory` and `pg_stat_replication` are
+  best-effort; their absence must not turn a permissions choice into a false outage.
+- Only three capabilities are declared — `supports_schema_discovery`, `supports_replication`,
+  `supports_replication_lag` — and a test asserts the rest stay off until implemented.
+
+---
+
+## Phase B — The compliance console ⬜
+
+Where Fleetward starts solving the actual problem: fifty servers that cannot be checked by hand.
+
+| Slice | Content |
+|---|---|
+| B1 | ADR-0015 implementation: `ListBackupHistory` RPC, `backups.origin` (`managed` / `observed`) |
+| B2 | PG: read existing backup evidence (`pg_stat_archiver`, `backup_label`, configured directory) |
+| B3 | Expectation model: declared schedule vs observed runs → adherence |
+| B4 | Scheduler: lease, heartbeat, and job recovery when the control plane restarts mid-backup |
+| B5 | **Estate Overview** — the first real screen; virtualized grid, two-part backup status |
+| B6 | Alerts: backup missing, backup failed, verification failed. Webhook + SMTP notifiers |
+
+**Exit:** one screen answers "which of my fifty servers need attention right now".
+
+---
+
+## Phase C — Access compliance ⬜
+
+| Slice | Content |
+|---|---|
+| C1 | `ListPrincipals` for PostgreSQL; add `created_at` to `Principal` |
+| C2 | Policy engine per ADR-0017: no expiry, expired, unexpected superuser, dormant account |
+| C3 | Generated remediation SQL (a human runs it) + UI screen |
+
+## Phase D — Structural drift ⬜
+
+| Slice | Content |
+|---|---|
+| D1 | `GetSchemaSnapshot` RPC per ADR-0016 |
+| D2 | Snapshot storage, diffing, timeline |
+| D3 | Alert on unexplained change + UI screen |
+
+## Phase E — The remaining engines ⬜
+
+Same conformance suite, unmodified, in the order the estate needs them:
+MySQL/MariaDB → MongoDB → Redis → SQL Server → Oracle → ClickHouse.
+
+## Phase F — Production readiness ⬜
+
+RBAC/OIDC enforced on every route, full audit log, metric collection, retention and expiry, signed
+releases with SBOM.
+
+## Phase G — Query editor ⬜
+
+Last, deliberately. ADR-0018 records the five conditions that must hold before it starts.
+
+---
+
+## Changes from the original brief
+
+- **Informix removed** from the target engines. SQL Server, Oracle, and ClickHouse are in the user's
+  real estate, so the multi-engine architecture is a requirement rather than a thought experiment.
+- **Observer mode added** (ADR-0015). Backups on the existing estate are already being taken;
+  requiring their migration before showing value would prevent adoption entirely.
+- **Metric collection demoted** to Phase F. It was Stage 2 in the brief, but performance monitoring
+  was never named as a pain — that need is already met by existing tooling. Up/down health stays
+  early because Estate Overview depends on it.
+- **The UI moved earlier**, into Phase B. At fifty servers a CLI table stops being enough.
+- **The query editor is no longer a non-goal** (ADR-0018), but it is the final phase and gated.
