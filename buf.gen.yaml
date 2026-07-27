@@ -1,0 +1,22 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/danmorcov88/fleetward/api/gen
+  disable:
+    - file_option: go_package_prefix
+      module: buf.build/googleapis/googleapis
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.6
+    out: api/gen
+    opt: paths=source_relative
+  - remote: buf.build/grpc/go:v1.5.1
+    out: api/gen
+    opt: paths=source_relative
+  - remote: buf.build/grpc-ecosystem/gateway:v2.26.3
+    out: api/gen
+    opt: paths=source_relative
+  # OpenAPI v3 for the external REST surface (ADR-0004).
+  - remote: buf.build/community/google-gnostic-openapi:v0.7.0
+    out: api/openapi

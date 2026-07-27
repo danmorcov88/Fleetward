@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a capability Fleetward does not have
+labels: [enhancement, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the non-goals in [CLAUDE.md §1](https://github.com/danmorcov88/Fleetward/blob/main/CLAUDE.md)
+        first. A SQL query client, our own backup engines, our own time-series database, and BI
+        features are deliberately out of scope.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that Fleetward makes hard or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Plugin contract
+        - An engine plugin
+        - Backup or verification
+        - Metrics and health
+        - Alerting
+        - RBAC and authorization
+        - Web UI
+        - CLI
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contract
+    attributes:
+      label: Contract impact
+      options:
+        - label: This would require a change to the `EnginePlugin` contract (needs an ADR)
+        - label: This would require core to know about a specific engine (this is a red flag — see CONTRIBUTING.md)

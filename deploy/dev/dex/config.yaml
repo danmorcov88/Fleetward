@@ -1,0 +1,45 @@
+# Dex configuration for local development only.
+#
+# The static passwords below are published in a public repository. They exist so that
+# `docker compose up` gives a working login in one command. Never point this configuration at
+# anything reachable from a network you do not control.
+issuer: http://dex:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+
+staticClients:
+  - id: fleetward
+    name: Fleetward
+    secret: fleetward-dev-secret
+    redirectURIs:
+      - http://localhost:8080/api/v1/auth/callback
+      - http://localhost:3000/auth/callback
+
+enablePasswordDB: true
+
+# Development identities, one per RBAC role, so that authorization can be exercised end to end
+# from the first run. Acceptance criterion 5 — a viewer receives 403 on backup and restore while a
+# dba does not — is tested with exactly these accounts.
+staticPasswords:
+  # password: admin
+  - email: admin@fleetward.local
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: admin
+    userID: "00000000-0000-0000-0000-0000000000a1"
+  # password: admin
+  - email: dba@fleetward.local
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: dba
+    userID: "00000000-0000-0000-0000-0000000000a2"
+  # password: admin
+  - email: viewer@fleetward.local
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: viewer
+    userID: "00000000-0000-0000-0000-0000000000a3"

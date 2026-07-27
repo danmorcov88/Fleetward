@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  # Required for keyless signing with cosign via GitHub's OIDC provider.
+  id-token: write
+  packages: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # goreleaser derives the changelog from commit history, so it needs all of it.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - uses: sigstore/cosign-installer@v3
+
+      - uses: anchore/sbom-action/download-syft@v0
+
+      - name: Verify tests pass before publishing anything
+        run: go test -race ./...
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The OpenAPI document is a release artifact in its own right: integrators pin against it,
+      # and generating clients from a spec that drifts from the release is worse than no spec.
+      - name: Attach the OpenAPI specification
+        run: gh release upload "${GITHUB_REF_NAME}" api/openapi/openapi.yaml --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

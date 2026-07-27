@@ -1,0 +1,197 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A new push supersedes an in-flight run of the same branch. Backup and conformance jobs are slow,
+# and there is no value in finishing a run whose commit is already stale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.25"
+  NODE_VERSION: "22"
+
+jobs:
+  proto:
+    name: Protobuf contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # buf breaking compares against main, which needs history rather than a shallow clone.
+          fetch-depth: 0
+
+      - uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Lint
+        run: buf lint
+
+      - name: Check formatting
+        run: buf format --diff --exit-code
+
+      # The plugin contract is a public interface that third-party plugins implement. A breaking
+      # change to it must be a deliberate, reviewed act, not something that slips through review.
+      - name: Detect breaking changes
+        if: github.event_name == 'pull_request'
+        run: buf breaking --against '.git#branch=origin/main'
+
+      - name: Verify generated code is current
+        run: |
+          buf generate
+          buf generate --template internal/storage/tsdb/prompb/buf.gen.yaml internal/storage/tsdb/prompb
+          if ! git diff --exit-code -- api/gen api/openapi internal/storage/tsdb/prompb; then
+            echo "::error::Generated code is out of date. Run 'make proto' and commit the result."
+            exit 1
+          fi
+
+  lint:
+    name: Lint Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  test:
+    name: Test Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Verify go.mod is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      # Not -short: the plugin manager tests build real plugin binaries and drive them over
+      # go-plugin. That path is the architecture, so it is exercised on every commit.
+      - name: Test
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build all binaries
+        run: make build
+
+      - name: Verify plugin binaries handshake
+        run: |
+          # A plugin run directly must refuse to start rather than hang: it is designed to be
+          # launched by the plugin manager. This catches a plugin binary that was linked wrong.
+          for binary in bin/plugins/*; do
+            echo "checking $binary"
+            if timeout 10 "$binary" >/dev/null 2>&1; then
+              echo "::error::$binary exited zero when run directly; expected a handshake refusal"
+              exit 1
+            fi
+          done
+
+  vuln:
+    name: Vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  compose:
+    name: Dev stack smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Stage 0's exit criterion is that `docker compose up` yields a healthy control plane with a
+      # green /readyz. Asserting it here means it cannot quietly rot between releases.
+      - name: Start the stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: Check readiness
+        run: |
+          set -euo pipefail
+          response=$(curl -fsS http://localhost:8080/readyz)
+          echo "$response" | jq .
+          status=$(echo "$response" | jq -r .status)
+          if [ "$status" != "healthy" ]; then
+            echo "::error::/readyz reported $status, expected healthy"
+            exit 1
+          fi
+
+      - name: Check the web UI is served
+        run: curl -fsS -o /dev/null http://localhost:3000
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes --remove-orphans

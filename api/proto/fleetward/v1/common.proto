@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package fleetward.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// ConnectionRef identifies a stored connection. It is an opaque handle: plugins receive it only so
+// they can echo it back in progress and error reporting. Core resolves it through the
+// SecretsProvider (ADR-0009) and passes materialized Credentials for the duration of a single call.
+message ConnectionRef {
+  string connection_id = 1;
+  string tenant_id = 2;
+  string instance_id = 3;
+}
+
+// Credentials are materialized by core for exactly one RPC. Plugins MUST NOT persist them to disk,
+// write them to logs, or retain them beyond the call that carried them (ADR-0009).
+message Credentials {
+  string host = 1;
+  int32 port = 2;
+  string username = 3;
+  string password = 4;
+  // Default database, keyspace, or logical namespace to connect to. Engines without the concept
+  // ignore it.
+  string database = 5;
+  TLSSettings tls = 6;
+  // Engine-specific connection options (for example "sslmode", "authSource", "replicaSet").
+  map<string, string> options = 7;
+}
+
+message TLSSettings {
+  bool enabled = 1;
+  // Skips certificate verification. Intended for development only; core warns when it is set.
+  bool insecure_skip_verify = 2;
+  bytes ca_pem = 3;
+  bytes client_cert_pem = 4;
+  bytes client_key_pem = 5;
+  string server_name = 6;
+}
+
+// ObjectRef locates an artifact in object storage. Plugins use it for identification and manifest
+// bookkeeping; actual transfer happens through PresignedURL so that no storage credential ever
+// reaches a plugin (ADR-0007).
+message ObjectRef {
+  string bucket = 1;
+  string key = 2;
+}
+
+// PresignedURL is a scoped, time-limited grant to read or write one object.
+message PresignedURL {
+  string url = 1;
+  // HTTP method the URL was signed for, e.g. "PUT" or "GET".
+  string method = 2;
+  map<string, string> headers = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+// Checksum of an artifact, recorded at write time and re-verified before any restore.
+message Checksum {
+  ChecksumAlgorithm algorithm = 1;
+  string value = 2;
+}
+
+enum ChecksumAlgorithm {
+  CHECKSUM_ALGORITHM_UNSPECIFIED = 0;
+  CHECKSUM_ALGORITHM_SHA256 = 1;
+  CHECKSUM_ALGORITHM_CRC32C = 2;
+  CHECKSUM_ALGORITHM_BLAKE3 = 3;
+}
+
+// Severity is shared by health signals, verification findings, and alert events.
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  SEVERITY_INFO = 1;
+  SEVERITY_WARNING = 2;
+  SEVERITY_CRITICAL = 3;
+}
+
+// PluginError carries a structured failure from a plugin. Plugins should populate this rather than
+// returning bare gRPC status strings, so core can classify retryable failures without parsing text.
+message PluginError {
+  ErrorCode code = 1;
+  // Human-readable message. MUST NOT contain credentials, connection strings with passwords, or
+  // presigned URL signatures.
+  string message = 2;
+  map<string, string> details = 3;
+  // True when core may usefully retry the same call.
+  bool retryable = 4;
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_CONNECTION_FAILED = 1;
+  ERROR_CODE_AUTHENTICATION_FAILED = 2;
+  ERROR_CODE_PERMISSION_DENIED = 3;
+  ERROR_CODE_UNSUPPORTED = 4;
+  ERROR_CODE_INVALID_ARGUMENT = 5;
+  ERROR_CODE_TOOL_NOT_FOUND = 6;
+  ERROR_CODE_TOOL_FAILED = 7;
+  ERROR_CODE_OBJECT_STORE_FAILED = 8;
+  ERROR_CODE_TIMEOUT = 9;
+  ERROR_CODE_CANCELED = 10;
+  ERROR_CODE_INTERNAL = 11;
+}
+
+message TimeRange {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;
+}

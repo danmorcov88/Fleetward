@@ -1,0 +1,33 @@
+// Minimal subset of the Prometheus remote-write v1 wire format.
+//
+// Fleetward ships its own copy rather than depending on github.com/prometheus/prometheus, whose
+// module graph is enormous relative to the four messages we actually need (ADR-0006). This file is
+// deliberately excluded from the buf module in buf.yaml: it is an external wire format we conform
+// to, not part of Fleetward's own published contract, so buf lint and buf breaking do not apply.
+//
+// Source: prometheus/prompb/remote.proto and types.proto, Apache License 2.0.
+syntax = "proto3";
+
+package prometheus;
+
+option go_package = "github.com/danmorcov88/fleetward/internal/storage/tsdb/prompb";
+
+message WriteRequest {
+  repeated TimeSeries timeseries = 1;
+}
+
+message TimeSeries {
+  repeated Label labels = 1;
+  repeated Sample samples = 2;
+}
+
+message Label {
+  string name = 1;
+  string value = 2;
+}
+
+message Sample {
+  double value = 1;
+  // Milliseconds since the Unix epoch.
+  int64 timestamp = 2;
+}

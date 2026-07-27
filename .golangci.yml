@@ -1,0 +1,75 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - wastedassign
+    - whitespace
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      exclude-functions:
+        # Writing to a CLI's stdout or stderr. There is nothing useful to do with the error, and
+        # checking it at every call site would bury the code that matters.
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    gosec:
+      excludes:
+        # Subprocess launched with variable: unavoidable and intended — plugins orchestrate native
+        # tooling, and the manager launches plugin binaries by path. Both call sites are annotated.
+        - G204
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+
+  exclusions:
+    generated: lax
+    paths:
+      # Not our code. node_modules happens to contain Go sources that would otherwise be linted.
+      - web/node_modules
+      - api/gen
+      - internal/storage/tsdb/prompb
+    rules:
+      # Tests may skip error checks on setup helpers where a failure is already fatal.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+      # Generated protobuf code is not ours to style.
+      - path: (api/gen|internal/storage/tsdb/prompb)/
+        linters:
+          - revive
+          - gocritic
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax
+    paths:
+      - web/node_modules
+      - api/gen
+      - internal/storage/tsdb/prompb
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

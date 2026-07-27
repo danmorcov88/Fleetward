@@ -1,0 +1,103 @@
+# goreleaser configuration.
+#
+# Stage 6 polishes this (signing, Homebrew tap, container manifests). It exists now so that
+# .github/workflows/release.yml is coherent rather than referring to a file that is not there.
+version: 2
+
+project_name: fleetward
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: fleetward
+    main: ./cmd/fleetward
+    binary: fleetward
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: &ldflags
+      - -s -w
+      - -X github.com/danmorcov88/fleetward/internal/version.Version={{.Version}}
+      - -X github.com/danmorcov88/fleetward/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/danmorcov88/fleetward/internal/version.Date={{.Date}}
+
+  - id: fleetward-cli
+    main: ./cmd/fleetward-cli
+    binary: fleetward-cli
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: *ldflags
+
+  # Plugin binaries ship alongside the control plane. Their filenames must stay
+  # fleetward-plugin-<engine type> — that is how the plugin manager routes instances to plugins.
+  - id: plugin-postgresql
+    main: ./cmd/plugins/postgres
+    binary: fleetward-plugin-postgresql
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: *ldflags
+
+  - id: plugin-mysql
+    main: ./cmd/plugins/mysql
+    binary: fleetward-plugin-mysql
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: *ldflags
+
+  - id: plugin-mongodb
+    main: ./cmd/plugins/mongodb
+    binary: fleetward-plugin-mongodb
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: *ldflags
+
+  - id: plugin-redis
+    main: ./cmd/plugins/redis
+    binary: fleetward-plugin-redis
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: *ldflags
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [README.md, LICENSE, .github/SECURITY.md]
+
+sboms:
+  - artifacts: archive
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  sort: asc
+  # Conventional Commits drive the release notes, which is why CONTRIBUTING.md requires them.
+  groups:
+    - title: Features
+      regexp: '^feat(\(.+\))?!?:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix(\(.+\))?!?:'
+      order: 1
+    - title: Other
+      order: 99
+  filters:
+    exclude: ['^docs:', '^test:', '^chore:', '^ci:']
+
+release:
+  draft: false
+  prerelease: auto

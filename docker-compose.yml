@@ -1,0 +1,190 @@
+# Fleetward development stack.
+#
+# `docker compose up` brings up everything needed to run and evaluate Fleetward on a laptop:
+# control plane, metadata database, metrics store, object storage, identity provider, and web UI.
+#
+# Every published port can be overridden from a .env file — see .env.example. Developer machines
+# often already run a Postgres or a MinIO, and a port collision should not be the first thing a new
+# contributor has to debug.
+#
+# THIS IS NOT A PRODUCTION CONFIGURATION. Every credential here is published in a public
+# repository, TLS is disabled on every listener, and authentication is off by default. See
+# SECURITY.md.
+
+name: fleetward
+
+services:
+  # ---------------------------------------------------------------------------------------------
+  # Metadata store (ADR-0005)
+  # ---------------------------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fleetward
+      POSTGRES_PASSWORD: fleetward
+      POSTGRES_DB: fleetward
+    ports:
+      - "${FLEETWARD_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # -d and -U are both required: without them pg_isready reports the server as ready during the
+      # initdb phase, and the control plane starts against a database that is about to restart.
+      test: ["CMD-SHELL", "pg_isready -U fleetward -d fleetward"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------------------------
+  # Metrics store (ADR-0006)
+  # ---------------------------------------------------------------------------------------------
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.109.1
+    command:
+      - "--storageDataPath=/vm-data"
+      - "--retentionPeriod=30d"
+      - "--httpListenAddr=:8428"
+    ports:
+      - "${FLEETWARD_VM_PORT:-8428}:8428"
+    volumes:
+      - vm-data:/vm-data
+    healthcheck:
+      # 127.0.0.1, not localhost: VictoriaMetrics listens on IPv4 only, and localhost resolves to
+      # ::1 first inside this image, which makes the probe fail against a perfectly healthy server.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8428/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------------------------
+  # Backup artifact storage (ADR-0007)
+  # ---------------------------------------------------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: fleetward
+      MINIO_ROOT_PASSWORD: fleetward-dev-secret
+    ports:
+      - "${FLEETWARD_MINIO_PORT:-9000}:9000"
+      - "${FLEETWARD_MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------------------------
+  # Identity provider (ADR-0008)
+  # ---------------------------------------------------------------------------------------------
+  dex:
+    image: dexidp/dex:v2.42.0
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    ports:
+      - "${FLEETWARD_DEX_PORT:-5556}:5556"
+    volumes:
+      - ./deploy/dev/dex/config.yaml:/etc/dex/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:5556/dex/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------------------------
+  # Control plane
+  # ---------------------------------------------------------------------------------------------
+  fleetward:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        VERSION: dev
+    ports:
+      - "${FLEETWARD_HTTP_PORT:-8080}:8080"
+      - "${FLEETWARD_GRPC_PORT:-9090}:9090"
+    environment:
+      FLEETWARD_ENV: development
+      FLEETWARD_LOG_LEVEL: info
+      FLEETWARD_LOG_FORMAT: text
+
+      FLEETWARD_METADB_DSN: postgres://fleetward:fleetward@postgres:5432/fleetward?sslmode=disable
+      FLEETWARD_METADB_AUTO_MIGRATE: "true"
+
+      FLEETWARD_TSDB_REMOTE_WRITE_URL: http://victoriametrics:8428/api/v1/write
+      FLEETWARD_TSDB_QUERY_URL: http://victoriametrics:8428
+
+      FLEETWARD_OBJSTORE_ENDPOINT: minio:9000
+      FLEETWARD_OBJSTORE_BUCKET: fleetward-backups
+      FLEETWARD_OBJSTORE_ACCESS_KEY: fleetward
+      FLEETWARD_OBJSTORE_SECRET_KEY: fleetward-dev-secret
+      FLEETWARD_OBJSTORE_USE_SSL: "false"
+
+      # Development key only. `fleetward-cli keygen` generates a real one; in production it belongs
+      # in a mounted file, not in an environment variable.
+      FLEETWARD_SECRETS_PROVIDER: aesgcm
+      FLEETWARD_SECRETS_MASTER_KEY: "ZmxlZXR3YXJkLWRldmVsb3BtZW50LWtleS0zMmJ5dGU="
+
+      FLEETWARD_PLUGINS_DIR: /app/plugins
+
+      # Authentication is off in the default dev stack so the quickstart needs no login round trip.
+      # Set to "true" to exercise the full OIDC flow against Dex; the control plane refuses to start
+      # in production with it disabled.
+      FLEETWARD_AUTH_ENABLED: "false"
+      FLEETWARD_AUTH_ISSUER_URL: http://dex:5556/dex
+      FLEETWARD_AUTH_CLIENT_ID: fleetward
+      FLEETWARD_AUTH_CLIENT_SECRET: fleetward-dev-secret
+      FLEETWARD_AUTH_REDIRECT_URL: http://localhost:8080/api/v1/auth/callback
+      FLEETWARD_AUTH_SKIP_ISSUER_VERIFICATION: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      victoriametrics:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      dex:
+        condition: service_healthy
+    volumes:
+      # Verification provisions throwaway containers of the engine being verified, so the control
+      # plane drives the host's Docker daemon (ADR: SandboxProvider, Docker in MVP). This is a
+      # development convenience with real privilege attached — a production deployment should use a
+      # scoped socket proxy or the Kubernetes SandboxProvider instead.
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/fleetward-cli", "health", "--server", "http://127.0.0.1:8080"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------------------------
+  # Web UI (ADR-0010)
+  # ---------------------------------------------------------------------------------------------
+  web:
+    build:
+      context: ./web
+      dockerfile: ../deploy/docker/Dockerfile.web
+    ports:
+      - "${FLEETWARD_WEB_PORT:-3000}:3000"
+    environment:
+      FLEETWARD_API_URL: http://fleetward:8080
+    volumes:
+      # Source is mounted for hot reload; node_modules stays in the image so a host install for a
+      # different platform cannot shadow it.
+      - ./web/src:/app/src
+      - ./web/index.html:/app/index.html
+      - ./web/vite.config.ts:/app/vite.config.ts
+    depends_on:
+      fleetward:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  vm-data:
+  minio-data:

@@ -1,0 +1,47 @@
+# Dependency updates.
+#
+# Fleetward holds production database credentials and can trigger restores, so a stale dependency
+# with a known advisory is a real risk rather than a housekeeping item. CI runs govulncheck on
+# every commit; this keeps the window between an advisory and a fix short.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # One PR per ecosystem cluster keeps review manageable; these move together anyway.
+      opentelemetry:
+        patterns: ["go.opentelemetry.io/*"]
+      grpc-protobuf:
+        patterns: ["google.golang.org/grpc*", "google.golang.org/protobuf*", "github.com/grpc-ecosystem/*"]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      tanstack:
+        patterns: ["@tanstack/*"]
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"
+
+  - package-ecosystem: docker
+    directory: /deploy/docker
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"

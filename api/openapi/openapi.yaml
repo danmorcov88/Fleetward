@@ -1,0 +1,1550 @@
+# Generated with protoc-gen-openapi
+# https://github.com/google/gnostic/tree/master/cmd/protoc-gen-openapi
+
+openapi: 3.0.3
+info:
+    title: ""
+    version: 0.0.1
+paths:
+    /api/v1/backups:
+        get:
+            tags:
+                - BackupService
+            operationId: BackupService_ListBackups
+            parameters:
+                - name: instanceId
+                  in: query
+                  schema:
+                    type: string
+                - name: environmentId
+                  in: query
+                  schema:
+                    type: string
+                - name: within.start
+                  in: query
+                  schema:
+                    type: string
+                    format: date-time
+                - name: within.end
+                  in: query
+                  schema:
+                    type: string
+                    format: date-time
+                - name: state
+                  in: query
+                  schema:
+                    type: integer
+                    format: enum
+                - name: verificationFailedOnly
+                  in: query
+                  description: |-
+                    Return only backups whose latest verification failed. This is the query an on-call DBA runs
+                     first, so it is a first-class filter rather than client-side work.
+                  schema:
+                    type: boolean
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: pageToken
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListBackupsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/backups/{backupId}:
+        get:
+            tags:
+                - BackupService
+            operationId: BackupService_GetBackup
+            parameters:
+                - name: backupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetBackupResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/backups/{backupId}/verify:
+        post:
+            tags:
+                - BackupService
+            description: |-
+                RunVerification restores a backup into an isolated sandbox and smoke-tests it. This is the
+                 product's defining operation.
+            operationId: BackupService_RunVerification
+            parameters:
+                - name: backupId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/RunVerificationRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/RunVerificationResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/environments:
+        get:
+            tags:
+                - InventoryService
+            operationId: InventoryService_ListEnvironments
+            parameters:
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: pageToken
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListEnvironmentsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        post:
+            tags:
+                - InventoryService
+            operationId: InventoryService_CreateEnvironment
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateEnvironmentRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/CreateEnvironmentResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/health:
+        get:
+            tags:
+                - SystemService
+            operationId: SystemService_GetHealth
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetHealthResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/instances:
+        get:
+            tags:
+                - InventoryService
+            operationId: InventoryService_ListInstances
+            parameters:
+                - name: environmentId
+                  in: query
+                  schema:
+                    type: string
+                - name: engineType
+                  in: query
+                  description: Filter by engine. Display-level filtering only; core does not branch on this value.
+                  schema:
+                    type: string
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: pageToken
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListInstancesResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        post:
+            tags:
+                - InventoryService
+            operationId: InventoryService_CreateInstance
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateInstanceRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/CreateInstanceResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/instances/{instanceId}:
+        get:
+            tags:
+                - InventoryService
+            operationId: InventoryService_GetInstance
+            parameters:
+                - name: instanceId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetInstanceResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        delete:
+            tags:
+                - InventoryService
+            operationId: InventoryService_DeleteInstance
+            parameters:
+                - name: instanceId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: deleteArtifacts
+                  in: query
+                  description: |-
+                    Also delete backup artifacts belonging to this instance. Defaults to false: removing an
+                     instance from the inventory must not silently destroy its backups.
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/DeleteInstanceResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/instances/{instanceId}/backups:
+        post:
+            tags:
+                - BackupService
+            operationId: BackupService_RunBackup
+            parameters:
+                - name: instanceId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/RunBackupRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/RunBackupResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/instances/{instanceId}/discover:
+        post:
+            tags:
+                - InventoryService
+            description: DiscoverInstance refreshes topology, version, and database inventory for one instance.
+            operationId: InventoryService_DiscoverInstance
+            parameters:
+                - name: instanceId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/DiscoverInstanceRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/DiscoverInstanceResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/instances/{instanceId}/pitr-window:
+        get:
+            tags:
+                - BackupService
+            operationId: BackupService_GetPITRWindow
+            parameters:
+                - name: instanceId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetPITRWindowResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/instances/{instanceId}/principals:
+        get:
+            tags:
+                - InventoryService
+            operationId: InventoryService_ListPrincipalsForInstance
+            parameters:
+                - name: instanceId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: includePrivileges
+                  in: query
+                  schema:
+                    type: boolean
+                - name: includeSystem
+                  in: query
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListPrincipalsForInstanceResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/instances/{instanceId}/test-connection:
+        post:
+            tags:
+                - InventoryService
+            description: |-
+                TestConnection resolves the stored credentials and performs a health check without persisting
+                 anything. Used by the add-instance wizard.
+            operationId: InventoryService_TestConnection
+            parameters:
+                - name: instanceId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/TestConnectionRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TestConnectionResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/plugins:
+        get:
+            tags:
+                - SystemService
+            description: |-
+                ListPlugins reports every engine plugin the manager has loaded, with its capabilities. The UI
+                 uses this to decide which engines a user may add.
+            operationId: SystemService_ListPlugins
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListPluginsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/verifications/{verificationId}:
+        get:
+            tags:
+                - BackupService
+            operationId: BackupService_GetVerification
+            parameters:
+                - name: verificationId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetVerificationResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/version:
+        get:
+            tags:
+                - SystemService
+            operationId: SystemService_GetVersion
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetVersionResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+components:
+    schemas:
+        Backup:
+            type: object
+            properties:
+                id:
+                    type: string
+                tenantId:
+                    type: string
+                instanceId:
+                    type: string
+                methodId:
+                    type: string
+                state:
+                    type: integer
+                    format: enum
+                sizeBytes:
+                    type: string
+                checksum:
+                    $ref: '#/components/schemas/Checksum'
+                startedAt:
+                    type: string
+                    format: date-time
+                completedAt:
+                    type: string
+                    format: date-time
+                duration:
+                    pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
+                    type: string
+                consistencyPoint:
+                    type: string
+                    format: date-time
+                expiresAt:
+                    type: string
+                    format: date-time
+                artifact:
+                    $ref: '#/components/schemas/ObjectRef'
+                errorMessage:
+                    type: string
+                verification:
+                    allOf:
+                        - $ref: '#/components/schemas/Verification'
+                    description: Most recent verification of this backup, if any.
+                triggeredManually:
+                    type: boolean
+        BackupMethod:
+            type: object
+            properties:
+                id:
+                    type: string
+                    description: Stable identifier referenced by BackupRequest.method_id, e.g. "pg_basebackup", "mysqldump".
+                displayName:
+                    type: string
+                description:
+                    type: string
+                kind:
+                    type: integer
+                    format: enum
+                isDefault:
+                    type: boolean
+                    description: Exactly one method per plugin should set this.
+                enablesPitr:
+                    type: boolean
+                    description: Backups taken with this method can serve as a PITR baseline.
+                supportsIncremental:
+                    type: boolean
+                supportsCompression:
+                    type: boolean
+                supportsParallelism:
+                    type: boolean
+                requiresDowntime:
+                    type: boolean
+                    description: The instance must be offline or locked for the duration. Core warns loudly before scheduling.
+                requiredTools:
+                    type: array
+                    items:
+                        type: string
+                options:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MethodOption'
+        BackupSummary:
+            type: object
+            properties:
+                lastBackupAt:
+                    type: string
+                    format: date-time
+                lastBackupState:
+                    type: integer
+                    format: enum
+                lastVerificationAt:
+                    type: string
+                    format: date-time
+                lastVerificationStatus:
+                    type: integer
+                    format: enum
+                lastBackupId:
+                    type: string
+            description: |-
+                BackupSummary is the two-part status the estate grid shows: did the backup succeed, and was it
+                 proven restorable. These are deliberately separate — a green backup with a red verification is
+                 the most dangerous state in the product and must never collapse into one indicator.
+        Capabilities:
+            type: object
+            properties:
+                engineType:
+                    type: string
+                    description: |-
+                        Canonical engine identifier, e.g. "postgresql", "mysql", "mariadb", "mongodb", "redis".
+                         Used for display, sandbox image resolution, and grouping only — never for behavioral branching
+                         in core.
+                engineDisplayName:
+                    type: string
+                pluginVersion:
+                    type: string
+                contractVersion:
+                    type: string
+                    description: Version of this contract the plugin was built against, e.g. "v1".
+                supportedEngineVersions:
+                    type: array
+                    items:
+                        type: string
+                    description: Engine versions this plugin is known to support, as semver ranges, e.g. ">=13 <17".
+                supportsPitr:
+                    type: boolean
+                    description: Point-in-time recovery is available for instances of this engine.
+                supportsSchemaDiscovery:
+                    type: boolean
+                    description: The engine has a schema/database hierarchy worth discovering and displaying.
+                supportsConfigRead:
+                    type: boolean
+                    description: GetConfig returns meaningful data.
+                supportsReplication:
+                    type: boolean
+                    description: The engine has a replication topology Discover can report.
+                supportsReplicationLag:
+                    type: boolean
+                    description: |-
+                        Replication lag can be measured and is emitted as a metric. Core gates the lag health rule and
+                         the UI's lag column on this flag.
+                supportsStorageMetrics:
+                    type: boolean
+                    description: Storage utilization metrics are available, enabling the "storage > 85%" alert rule.
+                supportsOnlineBackup:
+                    type: boolean
+                    description: At least one backup method runs without taking the instance offline.
+                supportsSandboxRestore:
+                    type: boolean
+                    description: |-
+                        Restore into a sandbox is possible. Automated backup verification requires this; without it
+                         core can back up but will report verification as unsupported rather than failed.
+                supportsPointInTimeRestore:
+                    type: boolean
+                    description: Restore can target a point in time, not just the artifact's own consistency point.
+                backupMethods:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/BackupMethod'
+                principalModel:
+                    type: integer
+                    format: enum
+                supportedVerificationChecks:
+                    type: array
+                    items:
+                        type: integer
+                        format: enum
+                    description: Verification checks this plugin implements. Core requests a subset of these.
+                metrics:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MetricDescriptor'
+                    description: Metrics this plugin may emit, so core can register them without a collection round-trip.
+                sandboxTemplate:
+                    allOf:
+                        - $ref: '#/components/schemas/SandboxTemplate'
+                    description: |-
+                        How to provision a sandbox for this engine. Core's SandboxProvider consumes this and stays
+                         engine-agnostic.
+                requiredTools:
+                    type: array
+                    items:
+                        type: string
+                    description: |-
+                        External executables the plugin needs on its PATH, e.g. "pg_basebackup". Core surfaces missing
+                         tools as a plugin health problem rather than letting a backup fail at 3am.
+                metadata:
+                    type: object
+                    additionalProperties:
+                        type: string
+                    description: Display-only metadata. Core must not branch on these.
+            description: |-
+                Capabilities is the typed feature matrix that core and the UI branch on. Declaring a capability
+                 the plugin does not actually implement is the one defect that will get a plugin rejected: core
+                 trusts this matrix when deciding what is safe to do to a production database.
+        CheckResult:
+            type: object
+            properties:
+                check:
+                    type: integer
+                    format: enum
+                passed:
+                    type: boolean
+                severity:
+                    type: integer
+                    format: enum
+                message:
+                    type: string
+                discrepancies:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Discrepancy'
+                duration:
+                    pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
+                    type: string
+        Checksum:
+            type: object
+            properties:
+                algorithm:
+                    type: integer
+                    format: enum
+                value:
+                    type: string
+            description: Checksum of an artifact, recorded at write time and re-verified before any restore.
+        ComponentHealth:
+            type: object
+            properties:
+                name:
+                    type: string
+                    description: Component name, e.g. "metadb", "tsdb", "objstore", "plugin:postgresql".
+                status:
+                    type: integer
+                    format: enum
+                message:
+                    type: string
+                latency:
+                    pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
+                    type: string
+        ConnectionSpec:
+            type: object
+            properties:
+                username:
+                    type: string
+                password:
+                    type: string
+                database:
+                    type: string
+                tls:
+                    $ref: '#/components/schemas/TLSSettings'
+                options:
+                    type: object
+                    additionalProperties:
+                        type: string
+            description: |-
+                ConnectionSpec carries credentials inbound only. No read API ever returns them: the secret is
+                 write-only from the API's perspective (ADR-0009).
+        CreateEnvironmentRequest:
+            type: object
+            properties:
+                name:
+                    type: string
+                description:
+                    type: string
+                isProduction:
+                    type: boolean
+        CreateEnvironmentResponse:
+            type: object
+            properties:
+                environment:
+                    $ref: '#/components/schemas/Environment'
+        CreateInstanceRequest:
+            type: object
+            properties:
+                environmentId:
+                    type: string
+                name:
+                    type: string
+                engineType:
+                    type: string
+                host:
+                    type: string
+                port:
+                    type: integer
+                    format: int32
+                connection:
+                    $ref: '#/components/schemas/ConnectionSpec'
+                labels:
+                    type: object
+                    additionalProperties:
+                        type: string
+        CreateInstanceResponse:
+            type: object
+            properties:
+                instance:
+                    $ref: '#/components/schemas/Instance'
+        DatabaseInfo:
+            type: object
+            properties:
+                name:
+                    type: string
+                sizeBytes:
+                    type: string
+                owner:
+                    type: string
+                encoding:
+                    type: string
+                collation:
+                    type: string
+                objectCount:
+                    type: string
+                    description: Tables, collections, or the engine's nearest equivalent.
+                isSystem:
+                    type: boolean
+                    description: System or internal database, which the UI de-emphasizes and backups usually skip.
+        DeleteInstanceResponse:
+            type: object
+            properties: {}
+        DiscoverInstanceRequest:
+            type: object
+            properties:
+                instanceId:
+                    type: string
+        DiscoverInstanceResponse:
+            type: object
+            properties:
+                server:
+                    $ref: '#/components/schemas/ServerInfo'
+                databases:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/DatabaseInfo'
+                topology:
+                    $ref: '#/components/schemas/Topology'
+        Discrepancy:
+            type: object
+            properties:
+                database:
+                    type: string
+                objectName:
+                    type: string
+                expected:
+                    type: string
+                actual:
+                    type: string
+                detail:
+                    type: string
+        Environment:
+            type: object
+            properties:
+                id:
+                    type: string
+                tenantId:
+                    type: string
+                name:
+                    type: string
+                description:
+                    type: string
+                isProduction:
+                    type: boolean
+                    description: Marks production, which core uses to require stronger confirmation on destructive actions.
+                createdAt:
+                    type: string
+                    format: date-time
+        GetBackupResponse:
+            type: object
+            properties:
+                backup:
+                    $ref: '#/components/schemas/Backup'
+                manifest:
+                    $ref: '#/components/schemas/SourceManifest'
+        GetHealthResponse:
+            type: object
+            properties:
+                status:
+                    type: integer
+                    format: enum
+                components:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ComponentHealth'
+        GetInstanceResponse:
+            type: object
+            properties:
+                instance:
+                    $ref: '#/components/schemas/Instance'
+                capabilities:
+                    allOf:
+                        - $ref: '#/components/schemas/Capabilities'
+                    description: |-
+                        Capabilities of the plugin serving this instance. The UI renders its tabs from this, which is
+                         how a capability-adaptive detail view stays engine-agnostic.
+                server:
+                    $ref: '#/components/schemas/ServerInfo'
+                databases:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/DatabaseInfo'
+                topology:
+                    $ref: '#/components/schemas/Topology'
+        GetPITRWindowResponse:
+            type: object
+            properties:
+                window:
+                    $ref: '#/components/schemas/PITRWindow'
+        GetVerificationResponse:
+            type: object
+            properties:
+                verification:
+                    $ref: '#/components/schemas/Verification'
+        GetVersionResponse:
+            type: object
+            properties:
+                version:
+                    type: string
+                commit:
+                    type: string
+                buildDate:
+                    type: string
+                goVersion:
+                    type: string
+                contractVersion:
+                    type: string
+        GoogleProtobufAny:
+            type: object
+            properties:
+                '@type':
+                    type: string
+                    description: The type of the serialized message.
+            additionalProperties: true
+            description: Contains an arbitrary serialized message along with a @type that describes the type of the serialized message.
+        HealthSignal:
+            type: object
+            properties:
+                name:
+                    type: string
+                severity:
+                    type: integer
+                    format: enum
+                message:
+                    type: string
+                value:
+                    type: number
+                    format: double
+                unit:
+                    type: string
+        HealthStatus:
+            type: object
+            properties:
+                state:
+                    type: integer
+                    format: enum
+                message:
+                    type: string
+                latency:
+                    pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
+                    type: string
+                    description: Round-trip latency of the health probe itself.
+                signals:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/HealthSignal'
+                engineVersion:
+                    type: string
+                error:
+                    allOf:
+                        - $ref: '#/components/schemas/PluginError'
+                    description: |-
+                        Set when the instance could not be reached. Accompanies HEALTH_STATE_DOWN rather than
+                         replacing it.
+        Instance:
+            type: object
+            properties:
+                id:
+                    type: string
+                tenantId:
+                    type: string
+                environmentId:
+                    type: string
+                name:
+                    type: string
+                engineType:
+                    type: string
+                engineVersion:
+                    type: string
+                host:
+                    type: string
+                port:
+                    type: integer
+                    format: int32
+                health:
+                    type: integer
+                    format: enum
+                lastSeenAt:
+                    type: string
+                    format: date-time
+                labels:
+                    type: object
+                    additionalProperties:
+                        type: string
+                createdAt:
+                    type: string
+                    format: date-time
+                backupSummary:
+                    allOf:
+                        - $ref: '#/components/schemas/BackupSummary'
+                    description: Latest backup and verification state, denormalized so the estate grid renders in one query.
+        ListBackupsResponse:
+            type: object
+            properties:
+                backups:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Backup'
+                nextPageToken:
+                    type: string
+                totalSize:
+                    type: integer
+                    format: int32
+        ListEnvironmentsResponse:
+            type: object
+            properties:
+                environments:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Environment'
+                nextPageToken:
+                    type: string
+        ListInstancesResponse:
+            type: object
+            properties:
+                instances:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Instance'
+                nextPageToken:
+                    type: string
+                totalSize:
+                    type: integer
+                    format: int32
+        ListPluginsResponse:
+            type: object
+            properties:
+                plugins:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/PluginInfo'
+        ListPrincipalsForInstanceResponse:
+            type: object
+            properties:
+                principals:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Principal'
+                model:
+                    type: integer
+                    format: enum
+        ManifestEntry:
+            type: object
+            properties:
+                database:
+                    type: string
+                objectName:
+                    type: string
+                    description: Table, collection, keyspace, or key pattern.
+                recordCount:
+                    type: string
+                    description: Rows, documents, or keys.
+                sizeBytes:
+                    type: string
+                checksum:
+                    type: string
+                    description: Optional per-object content checksum, when the engine can produce one cheaply.
+        MethodOption:
+            type: object
+            properties:
+                name:
+                    type: string
+                displayName:
+                    type: string
+                description:
+                    type: string
+                type:
+                    type: integer
+                    format: enum
+                defaultValue:
+                    type: string
+                required:
+                    type: boolean
+                allowedValues:
+                    type: array
+                    items:
+                        type: string
+                    description: Populated when type is OPTION_TYPE_ENUM.
+            description: |-
+                MethodOption describes one tunable of a backup method so the UI can render a form without
+                 knowing anything about the engine.
+        MetricDescriptor:
+            type: object
+            properties:
+                name:
+                    type: string
+                    description: OpenTelemetry semantic-convention name, e.g. "db.client.connection.count".
+                type:
+                    type: integer
+                    format: enum
+                unit:
+                    type: string
+                    description: UCUM unit, e.g. "1", "By", "s".
+                description:
+                    type: string
+                attributeKeys:
+                    type: array
+                    items:
+                        type: string
+                    description: Attribute keys this metric carries.
+        Node:
+            type: object
+            properties:
+                id:
+                    type: string
+                host:
+                    type: string
+                port:
+                    type: integer
+                    format: int32
+                role:
+                    type: integer
+                    format: enum
+                state:
+                    type: string
+                replicationLagSeconds:
+                    type: number
+                    description: Populated only when Capabilities.supports_replication_lag is true.
+                    format: double
+                isSelf:
+                    type: boolean
+        ObjectRef:
+            type: object
+            properties:
+                bucket:
+                    type: string
+                key:
+                    type: string
+            description: |-
+                ObjectRef locates an artifact in object storage. Plugins use it for identification and manifest
+                 bookkeeping; actual transfer happens through PresignedURL so that no storage credential ever
+                 reaches a plugin (ADR-0007).
+        PITRBaseline:
+            type: object
+            properties:
+                backupId:
+                    type: string
+                takenAt:
+                    type: string
+                    format: date-time
+                artifact:
+                    $ref: '#/components/schemas/ObjectRef'
+                methodId:
+                    type: string
+        PITRGap:
+            type: object
+            properties:
+                range:
+                    $ref: '#/components/schemas/TimeRange'
+                reason:
+                    type: string
+        PITRWindow:
+            type: object
+            properties:
+                available:
+                    type: boolean
+                    description: |-
+                        False when the engine or configuration does not currently support PITR — for example WAL
+                         archiving is off. The UI explains why using the reason field rather than showing an empty
+                         timeline.
+                unavailableReason:
+                    type: string
+                earliest:
+                    type: string
+                    format: date-time
+                latest:
+                    type: string
+                    format: date-time
+                gaps:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/PITRGap'
+                    description: Periods inside [earliest, latest] that cannot actually be recovered to.
+                baselines:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/PITRBaseline'
+                granularity:
+                    pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
+                    type: string
+                    description: Smallest resolvable recovery interval.
+        PluginError:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: enum
+                message:
+                    type: string
+                    description: |-
+                        Human-readable message. MUST NOT contain credentials, connection strings with passwords, or
+                         presigned URL signatures.
+                details:
+                    type: object
+                    additionalProperties:
+                        type: string
+                retryable:
+                    type: boolean
+                    description: True when core may usefully retry the same call.
+            description: |-
+                PluginError carries a structured failure from a plugin. Plugins should populate this rather than
+                 returning bare gRPC status strings, so core can classify retryable failures without parsing text.
+        PluginInfo:
+            type: object
+            properties:
+                engineType:
+                    type: string
+                capabilities:
+                    $ref: '#/components/schemas/Capabilities'
+                state:
+                    type: integer
+                    format: enum
+                message:
+                    type: string
+                missingTools:
+                    type: array
+                    items:
+                        type: string
+                    description: |-
+                        Tools declared as required that are missing on this host. A non-empty list means backups using
+                         the affected methods will fail, so core surfaces it before a schedule fires.
+                restartCount:
+                    type: integer
+                    format: int32
+        Principal:
+            type: object
+            properties:
+                name:
+                    type: string
+                kind:
+                    type: integer
+                    format: enum
+                canLogin:
+                    type: boolean
+                isSuperuser:
+                    type: boolean
+                    description: Holds unrestricted or near-unrestricted rights. The UI flags these prominently.
+                isSystem:
+                    type: boolean
+                memberOf:
+                    type: array
+                    items:
+                        type: string
+                    description: Names of roles or groups this principal is a member of.
+                privileges:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Privilege'
+                passwordExpiresAt:
+                    type: string
+                    format: date-time
+                lastLoginAt:
+                    type: string
+                    format: date-time
+                attributes:
+                    type: object
+                    additionalProperties:
+                        type: string
+        Privilege:
+            type: object
+            properties:
+                scope:
+                    type: string
+                    description: |-
+                        What the privilege applies to, as "type:identifier", e.g. "database:app",
+                         "table:public.users", "key:cache:*". Rendered as an opaque string by the UI.
+                action:
+                    type: string
+                    description: The permitted action in the engine's own vocabulary, e.g. "SELECT", "readWrite", "+get".
+                grantable:
+                    type: boolean
+                    description: The principal may grant this privilege onward.
+                grantedBy:
+                    type: string
+        RunBackupRequest:
+            type: object
+            properties:
+                instanceId:
+                    type: string
+                methodId:
+                    type: string
+                    description: Empty selects the plugin's default method.
+                options:
+                    type: object
+                    additionalProperties:
+                        type: string
+                databases:
+                    type: array
+                    items:
+                        type: string
+                verifyOnCompletion:
+                    type: boolean
+                    description: Run verification as soon as the backup completes, overriding the instance's policy.
+        RunBackupResponse:
+            type: object
+            properties:
+                backupId:
+                    type: string
+                jobId:
+                    type: string
+        RunVerificationRequest:
+            type: object
+            properties:
+                backupId:
+                    type: string
+                checks:
+                    type: array
+                    items:
+                        type: integer
+                        format: enum
+                    description: Checks to run. Empty runs every check the plugin supports.
+        RunVerificationResponse:
+            type: object
+            properties:
+                verificationId:
+                    type: string
+                jobId:
+                    type: string
+        SandboxTemplate:
+            type: object
+            properties:
+                imageRepository:
+                    type: string
+                    description: Image repository without a tag, e.g. "postgres".
+                defaultTag:
+                    type: string
+                    description: Tag to use when the source instance's version cannot be matched, e.g. "16".
+                tagTemplate:
+                    type: string
+                    description: |-
+                        Go text/template evaluated with the discovered engine version to produce a tag, e.g.
+                         "{{ .Major }}". Empty means always use default_tag.
+                env:
+                    type: object
+                    additionalProperties:
+                        type: string
+                containerPort:
+                    type: integer
+                    format: int32
+                readinessCommand:
+                    type: array
+                    items:
+                        type: string
+                    description: Command run inside the container to decide readiness, e.g. ["pg_isready", "-U", "postgres"].
+                readinessTimeout:
+                    pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
+                    type: string
+                command:
+                    type: array
+                    items:
+                        type: string
+                minDiskBytes:
+                    type: string
+                    description: Minimum tmpfs/volume size hint in bytes for the sandbox data directory.
+            description: |-
+                SandboxTemplate tells core how to stand up a throwaway instance of this engine for verification.
+                 Keeping it here — rather than in a core lookup table — is what allows a new engine to arrive as a
+                 plugin with no core change.
+        ServerInfo:
+            type: object
+            properties:
+                engineType:
+                    type: string
+                version:
+                    type: string
+                    description: Normalized semver where possible, e.g. "16.2".
+                versionString:
+                    type: string
+                    description: Raw version string as the engine reports it.
+                uptime:
+                    pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
+                    type: string
+                clusterName:
+                    type: string
+                dataDirectory:
+                    type: string
+                readOnly:
+                    type: boolean
+                attributes:
+                    type: object
+                    additionalProperties:
+                        type: string
+        SourceManifest:
+            type: object
+            properties:
+                capturedAt:
+                    type: string
+                    format: date-time
+                entries:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ManifestEntry'
+                totalObjects:
+                    type: string
+                totalRecords:
+                    type: string
+                isSampled:
+                    type: boolean
+                    description: The plugin could only sample, so count comparisons are indicative rather than exact.
+            description: SourceManifest records what the source instance contained at backup time.
+        Status:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    description: The status code, which should be an enum value of [google.rpc.Code][google.rpc.Code].
+                    format: int32
+                message:
+                    type: string
+                    description: A developer-facing error message, which should be in English. Any user-facing error message should be localized and sent in the [google.rpc.Status.details][google.rpc.Status.details] field, or localized by the client.
+                details:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/GoogleProtobufAny'
+                    description: A list of messages that carry the error details.  There is a common set of message types for APIs to use.
+            description: 'The `Status` type defines a logical error model that is suitable for different programming environments, including REST APIs and RPC APIs. It is used by [gRPC](https://github.com/grpc). Each `Status` message contains three pieces of data: error code, error message, and error details. You can find out more about this error model and how to work with it in the [API Design Guide](https://cloud.google.com/apis/design/errors).'
+        TLSSettings:
+            type: object
+            properties:
+                enabled:
+                    type: boolean
+                insecureSkipVerify:
+                    type: boolean
+                    description: Skips certificate verification. Intended for development only; core warns when it is set.
+                caPem:
+                    type: string
+                    format: bytes
+                clientCertPem:
+                    type: string
+                    format: bytes
+                clientKeyPem:
+                    type: string
+                    format: bytes
+                serverName:
+                    type: string
+        TestConnectionRequest:
+            type: object
+            properties:
+                instanceId:
+                    type: string
+                connection:
+                    allOf:
+                        - $ref: '#/components/schemas/ConnectionSpec'
+                    description: Supply to test credentials that have not been stored yet, during the add-instance wizard.
+                engineType:
+                    type: string
+                host:
+                    type: string
+                port:
+                    type: integer
+                    format: int32
+        TestConnectionResponse:
+            type: object
+            properties:
+                success:
+                    type: boolean
+                health:
+                    $ref: '#/components/schemas/HealthStatus'
+                message:
+                    type: string
+        TimeRange:
+            type: object
+            properties:
+                start:
+                    type: string
+                    format: date-time
+                end:
+                    type: string
+                    format: date-time
+        Topology:
+            type: object
+            properties:
+                nodes:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Node'
+                isStandalone:
+                    type: boolean
+                    description: The engine reports a topology but this instance is standalone.
+        Verification:
+            type: object
+            properties:
+                id:
+                    type: string
+                backupId:
+                    type: string
+                status:
+                    type: integer
+                    format: enum
+                checks:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/CheckResult'
+                startedAt:
+                    type: string
+                    format: date-time
+                completedAt:
+                    type: string
+                    format: date-time
+                duration:
+                    pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
+                    type: string
+                report:
+                    type: string
+                errorMessage:
+                    type: string
+tags:
+    - name: BackupService
+      description: |-
+        BackupService covers backups, their verifications, and recovery windows. Every mutating RPC here
+         requires at least the `dba` role and is recorded in the audit log.
+    - name: InventoryService
+      description: 'InventoryService manages the estate: environments, instances, and their connections.'
+    - name: SystemService
+      description: |-
+        SystemService exposes liveness, readiness, and build information. It is the only service that is
+         reachable without authentication, and it never returns tenant data.

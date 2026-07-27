@@ -1,0 +1,438 @@
+syntax = "proto3";
+
+package fleetward.v1;
+
+import "fleetward/v1/common.proto";
+import "fleetward/v1/plugin.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// SystemService exposes liveness, readiness, and build information. It is the only service that is
+// reachable without authentication, and it never returns tenant data.
+service SystemService {
+  rpc GetHealth(GetHealthRequest) returns (GetHealthResponse) {
+    option (google.api.http) = {get: "/api/v1/health"};
+  }
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse) {
+    option (google.api.http) = {get: "/api/v1/version"};
+  }
+  // ListPlugins reports every engine plugin the manager has loaded, with its capabilities. The UI
+  // uses this to decide which engines a user may add.
+  rpc ListPlugins(ListPluginsRequest) returns (ListPluginsResponse) {
+    option (google.api.http) = {get: "/api/v1/plugins"};
+  }
+}
+
+// InventoryService manages the estate: environments, instances, and their connections.
+service InventoryService {
+  rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse) {
+    option (google.api.http) = {get: "/api/v1/environments"};
+  }
+  rpc CreateEnvironment(CreateEnvironmentRequest) returns (CreateEnvironmentResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/environments"
+      body: "*"
+    };
+  }
+  rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse) {
+    option (google.api.http) = {get: "/api/v1/instances"};
+  }
+  rpc GetInstance(GetInstanceRequest) returns (GetInstanceResponse) {
+    option (google.api.http) = {get: "/api/v1/instances/{instance_id}"};
+  }
+  rpc CreateInstance(CreateInstanceRequest) returns (CreateInstanceResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/instances"
+      body: "*"
+    };
+  }
+  rpc DeleteInstance(DeleteInstanceRequest) returns (DeleteInstanceResponse) {
+    option (google.api.http) = {delete: "/api/v1/instances/{instance_id}"};
+  }
+  // TestConnection resolves the stored credentials and performs a health check without persisting
+  // anything. Used by the add-instance wizard.
+  rpc TestConnection(TestConnectionRequest) returns (TestConnectionResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/instances/{instance_id}/test-connection"
+      body: "*"
+    };
+  }
+  // DiscoverInstance refreshes topology, version, and database inventory for one instance.
+  rpc DiscoverInstance(DiscoverInstanceRequest) returns (DiscoverInstanceResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/instances/{instance_id}/discover"
+      body: "*"
+    };
+  }
+  rpc ListPrincipalsForInstance(ListPrincipalsForInstanceRequest) returns (ListPrincipalsForInstanceResponse) {
+    option (google.api.http) = {get: "/api/v1/instances/{instance_id}/principals"};
+  }
+}
+
+// BackupService covers backups, their verifications, and recovery windows. Every mutating RPC here
+// requires at least the `dba` role and is recorded in the audit log.
+service BackupService {
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse) {
+    option (google.api.http) = {get: "/api/v1/backups"};
+  }
+  rpc GetBackup(GetBackupRequest) returns (GetBackupResponse) {
+    option (google.api.http) = {get: "/api/v1/backups/{backup_id}"};
+  }
+  rpc RunBackup(RunBackupRequest) returns (RunBackupResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/instances/{instance_id}/backups"
+      body: "*"
+    };
+  }
+  // RunVerification restores a backup into an isolated sandbox and smoke-tests it. This is the
+  // product's defining operation.
+  rpc RunVerification(RunVerificationRequest) returns (RunVerificationResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/backups/{backup_id}/verify"
+      body: "*"
+    };
+  }
+  rpc GetVerification(GetVerificationRequest) returns (GetVerificationResponse) {
+    option (google.api.http) = {get: "/api/v1/verifications/{verification_id}"};
+  }
+  rpc GetPITRWindow(GetPITRWindowRequest) returns (GetPITRWindowResponse) {
+    option (google.api.http) = {get: "/api/v1/instances/{instance_id}/pitr-window"};
+  }
+}
+
+// -----------------------------------------------------------------------------------------------
+// System
+// -----------------------------------------------------------------------------------------------
+
+message GetHealthRequest {}
+
+message GetHealthResponse {
+  ServiceHealth status = 1;
+  repeated ComponentHealth components = 2;
+}
+
+message ComponentHealth {
+  // Component name, e.g. "metadb", "tsdb", "objstore", "plugin:postgresql".
+  string name = 1;
+  ServiceHealth status = 2;
+  string message = 3;
+  google.protobuf.Duration latency = 4;
+}
+
+enum ServiceHealth {
+  SERVICE_HEALTH_UNSPECIFIED = 0;
+  SERVICE_HEALTH_HEALTHY = 1;
+  SERVICE_HEALTH_DEGRADED = 2;
+  SERVICE_HEALTH_UNHEALTHY = 3;
+}
+
+message GetVersionRequest {}
+
+message GetVersionResponse {
+  string version = 1;
+  string commit = 2;
+  string build_date = 3;
+  string go_version = 4;
+  string contract_version = 5;
+}
+
+message ListPluginsRequest {}
+
+message ListPluginsResponse {
+  repeated PluginInfo plugins = 1;
+}
+
+message PluginInfo {
+  string engine_type = 1;
+  Capabilities capabilities = 2;
+  PluginState state = 3;
+  string message = 4;
+  // Tools declared as required that are missing on this host. A non-empty list means backups using
+  // the affected methods will fail, so core surfaces it before a schedule fires.
+  repeated string missing_tools = 5;
+  int32 restart_count = 6;
+}
+
+enum PluginState {
+  PLUGIN_STATE_UNSPECIFIED = 0;
+  PLUGIN_STATE_STARTING = 1;
+  PLUGIN_STATE_READY = 2;
+  PLUGIN_STATE_UNHEALTHY = 3;
+  PLUGIN_STATE_FAILED = 4;
+  PLUGIN_STATE_STOPPED = 5;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Inventory
+// -----------------------------------------------------------------------------------------------
+
+message Environment {
+  string id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string description = 4;
+  // Marks production, which core uses to require stronger confirmation on destructive actions.
+  bool is_production = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message Instance {
+  string id = 1;
+  string tenant_id = 2;
+  string environment_id = 3;
+  string name = 4;
+  string engine_type = 5;
+  string engine_version = 6;
+  string host = 7;
+  int32 port = 8;
+  HealthState health = 9;
+  google.protobuf.Timestamp last_seen_at = 10;
+  map<string, string> labels = 11;
+  google.protobuf.Timestamp created_at = 12;
+  // Latest backup and verification state, denormalized so the estate grid renders in one query.
+  BackupSummary backup_summary = 13;
+}
+
+// BackupSummary is the two-part status the estate grid shows: did the backup succeed, and was it
+// proven restorable. These are deliberately separate — a green backup with a red verification is
+// the most dangerous state in the product and must never collapse into one indicator.
+message BackupSummary {
+  google.protobuf.Timestamp last_backup_at = 1;
+  BackupState last_backup_state = 2;
+  google.protobuf.Timestamp last_verification_at = 3;
+  VerificationStatus last_verification_status = 4;
+  string last_backup_id = 5;
+}
+
+enum BackupState {
+  BACKUP_STATE_UNSPECIFIED = 0;
+  BACKUP_STATE_PENDING = 1;
+  BACKUP_STATE_RUNNING = 2;
+  BACKUP_STATE_SUCCEEDED = 3;
+  BACKUP_STATE_FAILED = 4;
+  BACKUP_STATE_CANCELED = 5;
+  BACKUP_STATE_EXPIRED = 6;
+}
+
+message ListEnvironmentsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListEnvironmentsResponse {
+  repeated Environment environments = 1;
+  string next_page_token = 2;
+}
+
+message CreateEnvironmentRequest {
+  string name = 1;
+  string description = 2;
+  bool is_production = 3;
+}
+
+message CreateEnvironmentResponse {
+  Environment environment = 1;
+}
+
+message ListInstancesRequest {
+  string environment_id = 1;
+  // Filter by engine. Display-level filtering only; core does not branch on this value.
+  string engine_type = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListInstancesResponse {
+  repeated Instance instances = 1;
+  string next_page_token = 2;
+  int32 total_size = 3;
+}
+
+message GetInstanceRequest {
+  string instance_id = 1;
+}
+
+message GetInstanceResponse {
+  Instance instance = 1;
+  // Capabilities of the plugin serving this instance. The UI renders its tabs from this, which is
+  // how a capability-adaptive detail view stays engine-agnostic.
+  Capabilities capabilities = 2;
+  ServerInfo server = 3;
+  repeated DatabaseInfo databases = 4;
+  Topology topology = 5;
+}
+
+message CreateInstanceRequest {
+  string environment_id = 1;
+  string name = 2;
+  string engine_type = 3;
+  string host = 4;
+  int32 port = 5;
+  ConnectionSpec connection = 6;
+  map<string, string> labels = 7;
+}
+
+// ConnectionSpec carries credentials inbound only. No read API ever returns them: the secret is
+// write-only from the API's perspective (ADR-0009).
+message ConnectionSpec {
+  string username = 1;
+  string password = 2;
+  string database = 3;
+  TLSSettings tls = 4;
+  map<string, string> options = 5;
+}
+
+message CreateInstanceResponse {
+  Instance instance = 1;
+}
+
+message DeleteInstanceRequest {
+  string instance_id = 1;
+  // Also delete backup artifacts belonging to this instance. Defaults to false: removing an
+  // instance from the inventory must not silently destroy its backups.
+  bool delete_artifacts = 2;
+}
+
+message DeleteInstanceResponse {}
+
+message TestConnectionRequest {
+  string instance_id = 1;
+  // Supply to test credentials that have not been stored yet, during the add-instance wizard.
+  ConnectionSpec connection = 2;
+  string engine_type = 3;
+  string host = 4;
+  int32 port = 5;
+}
+
+message TestConnectionResponse {
+  bool success = 1;
+  HealthStatus health = 2;
+  string message = 3;
+}
+
+message DiscoverInstanceRequest {
+  string instance_id = 1;
+}
+
+message DiscoverInstanceResponse {
+  ServerInfo server = 1;
+  repeated DatabaseInfo databases = 2;
+  Topology topology = 3;
+}
+
+message ListPrincipalsForInstanceRequest {
+  string instance_id = 1;
+  bool include_privileges = 2;
+  bool include_system = 3;
+}
+
+message ListPrincipalsForInstanceResponse {
+  repeated Principal principals = 1;
+  PrincipalModel model = 2;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Backups
+// -----------------------------------------------------------------------------------------------
+
+message Backup {
+  string id = 1;
+  string tenant_id = 2;
+  string instance_id = 3;
+  string method_id = 4;
+  BackupState state = 5;
+  int64 size_bytes = 6;
+  Checksum checksum = 7;
+  google.protobuf.Timestamp started_at = 8;
+  google.protobuf.Timestamp completed_at = 9;
+  google.protobuf.Duration duration = 10;
+  google.protobuf.Timestamp consistency_point = 11;
+  google.protobuf.Timestamp expires_at = 12;
+  ObjectRef artifact = 13;
+  string error_message = 14;
+  // Most recent verification of this backup, if any.
+  Verification verification = 15;
+  bool triggered_manually = 16;
+}
+
+message Verification {
+  string id = 1;
+  string backup_id = 2;
+  VerificationStatus status = 3;
+  repeated CheckResult checks = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp completed_at = 6;
+  google.protobuf.Duration duration = 7;
+  string report = 8;
+  string error_message = 9;
+}
+
+message ListBackupsRequest {
+  string instance_id = 1;
+  string environment_id = 2;
+  TimeRange within = 3;
+  BackupState state = 4;
+  // Return only backups whose latest verification failed. This is the query an on-call DBA runs
+  // first, so it is a first-class filter rather than client-side work.
+  bool verification_failed_only = 5;
+  int32 page_size = 6;
+  string page_token = 7;
+}
+
+message ListBackupsResponse {
+  repeated Backup backups = 1;
+  string next_page_token = 2;
+  int32 total_size = 3;
+}
+
+message GetBackupRequest {
+  string backup_id = 1;
+}
+
+message GetBackupResponse {
+  Backup backup = 1;
+  SourceManifest manifest = 2;
+}
+
+message RunBackupRequest {
+  string instance_id = 1;
+  // Empty selects the plugin's default method.
+  string method_id = 2;
+  map<string, string> options = 3;
+  repeated string databases = 4;
+  // Run verification as soon as the backup completes, overriding the instance's policy.
+  bool verify_on_completion = 5;
+}
+
+message RunBackupResponse {
+  string backup_id = 1;
+  string job_id = 2;
+}
+
+message RunVerificationRequest {
+  string backup_id = 1;
+  // Checks to run. Empty runs every check the plugin supports.
+  repeated VerificationCheck checks = 2;
+}
+
+message RunVerificationResponse {
+  string verification_id = 1;
+  string job_id = 2;
+}
+
+message GetVerificationRequest {
+  string verification_id = 1;
+}
+
+message GetVerificationResponse {
+  Verification verification = 1;
+}
+
+message GetPITRWindowRequest {
+  string instance_id = 1;
+}
+
+message GetPITRWindowResponse {
+  PITRWindow window = 1;
+}

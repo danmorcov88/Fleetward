@@ -1,0 +1,56 @@
+name: New engine plugin
+description: Propose or claim support for a database engine
+labels: [plugin, enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Engine plugins are the most valuable contribution to Fleetward. Read
+        [writing an engine plugin](https://github.com/danmorcov88/Fleetward/blob/main/docs/dev/writing-an-engine-plugin.md)
+        before you start — adding an engine must never require changing core.
+
+  - type: input
+    id: engine
+    attributes:
+      label: Engine
+      placeholder: "ClickHouse"
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions you intend to support
+      placeholder: ">=24.1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: backup
+    attributes:
+      label: Native backup tooling to orchestrate
+      description: Fleetward orchestrates native tools; it does not implement backup formats.
+      placeholder: "BACKUP TABLE ... TO Disk(...)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: How a restore would be verified
+      description: >-
+        How would a restored instance be smoke-tested against a manifest captured at backup time?
+        This is the part that matters most.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: capabilities
+    attributes:
+      label: Capabilities you expect to declare
+      options:
+        - label: supports_pitr
+        - label: supports_sandbox_restore (required for automated verification)
+        - label: supports_replication / supports_replication_lag
+        - label: supports_storage_metrics
+        - label: supports_config_read

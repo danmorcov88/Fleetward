@@ -1,0 +1,735 @@
+syntax = "proto3";
+
+package fleetward.v1;
+
+import "fleetward/v1/common.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// EnginePlugin is the complete contract between the Fleetward control plane and an engine plugin.
+// It is a public, versioned interface: third parties implement it, and `buf breaking` guards it in
+// CI (ADR-0004).
+//
+// Two rules govern every implementation:
+//
+//  1. Core branches on Capabilities, never on engine name. If core would need to know that an
+//     instance is PostgreSQL in order to behave correctly, the missing information belongs in
+//     Capabilities.
+//  2. Plugins never persist credentials. They arrive per-request and must not outlive the call.
+//
+// A plugin is trusted only once it passes the shared conformance suite (ADR-0012).
+service EnginePlugin {
+  // GetCapabilities reports what this plugin can do. Core calls it at plugin startup and caches the
+  // result for the process lifetime. It must not require a database connection.
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (Capabilities);
+
+  // Discover returns topology, version, and databases for one instance.
+  rpc Discover(DiscoverRequest) returns (DiscoverResponse);
+
+  // GetConfig returns the instance's configuration as normalized key/value pairs plus, where the
+  // engine exposes one, the raw form.
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
+
+  // CollectMetrics streams one or more batches of metrics for a single collection cycle. Metric
+  // names follow OpenTelemetry database semantic conventions (ADR-0011).
+  rpc CollectMetrics(CollectMetricsRequest) returns (stream MetricBatch);
+
+  // Backup runs a backup and streams progress. The artifact is written to object storage through
+  // the presigned URLs supplied in the request; plugins never receive storage credentials.
+  // The final message carries either a BackupResult or a PluginError.
+  rpc Backup(BackupRequest) returns (stream BackupProgress);
+
+  // Restore restores artifacts into a sandbox or an existing instance, streaming progress.
+  // Restoring into an existing instance is destructive; core is responsible for authorizing it.
+  rpc Restore(RestoreRequest) returns (stream RestoreProgress);
+
+  // VerifyRestore runs smoke checks against an instance that Restore has just populated, comparing
+  // it to the manifest captured at backup time. This is the RPC the product exists for.
+  rpc VerifyRestore(VerifyRestoreRequest) returns (VerifyRestoreResult);
+
+  // ListPITRTargets reports the point-in-time-recovery window currently available for an instance.
+  // Plugins whose capabilities set supports_pitr = false return available = false.
+  rpc ListPITRTargets(ListPITRTargetsRequest) returns (PITRWindow);
+
+  // ListPrincipals enumerates users, roles, and privileges. This RPC is strictly read-only:
+  // Fleetward surfaces access, it does not administer it.
+  rpc ListPrincipals(ListPrincipalsRequest) returns (ListPrincipalsResponse);
+
+  // HealthCheck reports instance liveness and health signals. It returns a HealthStatus with
+  // HEALTH_STATE_DOWN rather than a gRPC error when the instance is unreachable — being down is a
+  // valid answer, not an RPC failure.
+  rpc HealthCheck(HealthCheckRequest) returns (HealthStatus);
+}
+
+// -----------------------------------------------------------------------------------------------
+// Capabilities
+// -----------------------------------------------------------------------------------------------
+
+message GetCapabilitiesRequest {}
+
+// Capabilities is the typed feature matrix that core and the UI branch on. Declaring a capability
+// the plugin does not actually implement is the one defect that will get a plugin rejected: core
+// trusts this matrix when deciding what is safe to do to a production database.
+message Capabilities {
+  // Canonical engine identifier, e.g. "postgresql", "mysql", "mariadb", "mongodb", "redis".
+  // Used for display, sandbox image resolution, and grouping only — never for behavioral branching
+  // in core.
+  string engine_type = 1;
+  string engine_display_name = 2;
+  string plugin_version = 3;
+  // Version of this contract the plugin was built against, e.g. "v1".
+  string contract_version = 4;
+  // Engine versions this plugin is known to support, as semver ranges, e.g. ">=13 <17".
+  repeated string supported_engine_versions = 5;
+
+  // Point-in-time recovery is available for instances of this engine.
+  bool supports_pitr = 10;
+  // The engine has a schema/database hierarchy worth discovering and displaying.
+  bool supports_schema_discovery = 11;
+  // GetConfig returns meaningful data.
+  bool supports_config_read = 12;
+  // The engine has a replication topology Discover can report.
+  bool supports_replication = 13;
+  // Replication lag can be measured and is emitted as a metric. Core gates the lag health rule and
+  // the UI's lag column on this flag.
+  bool supports_replication_lag = 14;
+  // Storage utilization metrics are available, enabling the "storage > 85%" alert rule.
+  bool supports_storage_metrics = 15;
+  // At least one backup method runs without taking the instance offline.
+  bool supports_online_backup = 16;
+  // Restore into a sandbox is possible. Automated backup verification requires this; without it
+  // core can back up but will report verification as unsupported rather than failed.
+  bool supports_sandbox_restore = 17;
+  // Restore can target a point in time, not just the artifact's own consistency point.
+  bool supports_point_in_time_restore = 18;
+
+  repeated BackupMethod backup_methods = 20;
+  PrincipalModel principal_model = 21;
+  // Verification checks this plugin implements. Core requests a subset of these.
+  repeated VerificationCheck supported_verification_checks = 22;
+  // Metrics this plugin may emit, so core can register them without a collection round-trip.
+  repeated MetricDescriptor metrics = 23;
+  // How to provision a sandbox for this engine. Core's SandboxProvider consumes this and stays
+  // engine-agnostic.
+  SandboxTemplate sandbox_template = 24;
+  // External executables the plugin needs on its PATH, e.g. "pg_basebackup". Core surfaces missing
+  // tools as a plugin health problem rather than letting a backup fail at 3am.
+  repeated string required_tools = 25;
+
+  // Display-only metadata. Core must not branch on these.
+  map<string, string> metadata = 30;
+}
+
+enum PrincipalModel {
+  PRINCIPAL_MODEL_UNSPECIFIED = 0;
+  // Flat users with no role hierarchy.
+  PRINCIPAL_MODEL_USERS = 1;
+  // Users plus roles that can be granted to one another (PostgreSQL, MongoDB).
+  PRINCIPAL_MODEL_USERS_AND_ROLES = 2;
+  // Users with per-object grants and no first-class role membership (classic MySQL).
+  PRINCIPAL_MODEL_USERS_AND_GRANTS = 3;
+  // Access-control-list style rules attached to users (Redis ACL).
+  PRINCIPAL_MODEL_ACL = 4;
+  // The engine exposes no principal model Fleetward can read.
+  PRINCIPAL_MODEL_NONE = 5;
+}
+
+message BackupMethod {
+  // Stable identifier referenced by BackupRequest.method_id, e.g. "pg_basebackup", "mysqldump".
+  string id = 1;
+  string display_name = 2;
+  string description = 3;
+  BackupKind kind = 4;
+  // Exactly one method per plugin should set this.
+  bool is_default = 5;
+  // Backups taken with this method can serve as a PITR baseline.
+  bool enables_pitr = 6;
+  bool supports_incremental = 7;
+  bool supports_compression = 8;
+  bool supports_parallelism = 9;
+  // The instance must be offline or locked for the duration. Core warns loudly before scheduling.
+  bool requires_downtime = 10;
+  repeated string required_tools = 11;
+  repeated MethodOption options = 12;
+}
+
+enum BackupKind {
+  BACKUP_KIND_UNSPECIFIED = 0;
+  // Byte-level copy of the data directory or files.
+  BACKUP_KIND_PHYSICAL = 1;
+  // Exported statements or documents.
+  BACKUP_KIND_LOGICAL = 2;
+  // Storage- or filesystem-level snapshot.
+  BACKUP_KIND_SNAPSHOT = 3;
+}
+
+// MethodOption describes one tunable of a backup method so the UI can render a form without
+// knowing anything about the engine.
+message MethodOption {
+  string name = 1;
+  string display_name = 2;
+  string description = 3;
+  OptionType type = 4;
+  string default_value = 5;
+  bool required = 6;
+  // Populated when type is OPTION_TYPE_ENUM.
+  repeated string allowed_values = 7;
+}
+
+enum OptionType {
+  OPTION_TYPE_UNSPECIFIED = 0;
+  OPTION_TYPE_STRING = 1;
+  OPTION_TYPE_INT = 2;
+  OPTION_TYPE_BOOL = 3;
+  OPTION_TYPE_ENUM = 4;
+  OPTION_TYPE_DURATION = 5;
+}
+
+// SandboxTemplate tells core how to stand up a throwaway instance of this engine for verification.
+// Keeping it here — rather than in a core lookup table — is what allows a new engine to arrive as a
+// plugin with no core change.
+message SandboxTemplate {
+  // Image repository without a tag, e.g. "postgres".
+  string image_repository = 1;
+  // Tag to use when the source instance's version cannot be matched, e.g. "16".
+  string default_tag = 2;
+  // Go text/template evaluated with the discovered engine version to produce a tag, e.g.
+  // "{{ .Major }}". Empty means always use default_tag.
+  string tag_template = 3;
+  map<string, string> env = 4;
+  int32 container_port = 5;
+  // Command run inside the container to decide readiness, e.g. ["pg_isready", "-U", "postgres"].
+  repeated string readiness_command = 6;
+  google.protobuf.Duration readiness_timeout = 7;
+  repeated string command = 8;
+  // Minimum tmpfs/volume size hint in bytes for the sandbox data directory.
+  int64 min_disk_bytes = 9;
+}
+
+message MetricDescriptor {
+  // OpenTelemetry semantic-convention name, e.g. "db.client.connection.count".
+  string name = 1;
+  MetricType type = 2;
+  // UCUM unit, e.g. "1", "By", "s".
+  string unit = 3;
+  string description = 4;
+  // Attribute keys this metric carries.
+  repeated string attribute_keys = 5;
+}
+
+enum MetricType {
+  METRIC_TYPE_UNSPECIFIED = 0;
+  METRIC_TYPE_GAUGE = 1;
+  METRIC_TYPE_SUM = 2;
+  METRIC_TYPE_UP_DOWN_COUNTER = 3;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Discover
+// -----------------------------------------------------------------------------------------------
+
+message DiscoverRequest {
+  ConnectionRef connection = 1;
+  Credentials credentials = 2;
+  // Skip per-database size and object counts, which can be expensive on large estates.
+  bool skip_database_details = 3;
+}
+
+message DiscoverResponse {
+  ServerInfo server = 1;
+  repeated DatabaseInfo databases = 2;
+  Topology topology = 3;
+}
+
+message ServerInfo {
+  string engine_type = 1;
+  // Normalized semver where possible, e.g. "16.2".
+  string version = 2;
+  // Raw version string as the engine reports it.
+  string version_string = 3;
+  google.protobuf.Duration uptime = 4;
+  string cluster_name = 5;
+  string data_directory = 6;
+  bool read_only = 7;
+  map<string, string> attributes = 8;
+}
+
+message DatabaseInfo {
+  string name = 1;
+  int64 size_bytes = 2;
+  string owner = 3;
+  string encoding = 4;
+  string collation = 5;
+  // Tables, collections, or the engine's nearest equivalent.
+  int64 object_count = 6;
+  // System or internal database, which the UI de-emphasizes and backups usually skip.
+  bool is_system = 7;
+}
+
+message Topology {
+  repeated Node nodes = 1;
+  // The engine reports a topology but this instance is standalone.
+  bool is_standalone = 2;
+}
+
+message Node {
+  string id = 1;
+  string host = 2;
+  int32 port = 3;
+  NodeRole role = 4;
+  string state = 5;
+  // Populated only when Capabilities.supports_replication_lag is true.
+  double replication_lag_seconds = 6;
+  bool is_self = 7;
+}
+
+enum NodeRole {
+  NODE_ROLE_UNSPECIFIED = 0;
+  NODE_ROLE_PRIMARY = 1;
+  NODE_ROLE_REPLICA = 2;
+  NODE_ROLE_ARBITER = 3;
+  NODE_ROLE_ROUTER = 4;
+  NODE_ROLE_STANDALONE = 5;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Config
+// -----------------------------------------------------------------------------------------------
+
+message GetConfigRequest {
+  ConnectionRef connection = 1;
+  Credentials credentials = 2;
+  // Normalized keys to return. Empty returns everything the plugin exposes.
+  repeated string keys = 3;
+  bool include_raw = 4;
+}
+
+message GetConfigResponse {
+  repeated ConfigEntry entries = 1;
+  // Raw configuration as the engine presents it, when include_raw was set and the engine has one.
+  string raw = 2;
+}
+
+message ConfigEntry {
+  // Normalized, cross-engine key where a normalization exists, e.g. "max_connections".
+  string key = 1;
+  // The engine's own name for this setting.
+  string engine_key = 2;
+  string value = 3;
+  string unit = 4;
+  string default_value = 5;
+  bool is_default = 6;
+  ConfigSource source = 7;
+  bool requires_restart = 8;
+  string description = 9;
+  // The value is sensitive and has been redacted. Plugins MUST redact rather than omit, so the UI
+  // can show that a setting exists without exposing it.
+  bool redacted = 10;
+}
+
+enum ConfigSource {
+  CONFIG_SOURCE_UNSPECIFIED = 0;
+  CONFIG_SOURCE_DEFAULT = 1;
+  CONFIG_SOURCE_FILE = 2;
+  CONFIG_SOURCE_COMMAND_LINE = 3;
+  CONFIG_SOURCE_ENVIRONMENT = 4;
+  CONFIG_SOURCE_RUNTIME_OVERRIDE = 5;
+  CONFIG_SOURCE_COMPUTED = 6;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Metrics
+// -----------------------------------------------------------------------------------------------
+
+message CollectMetricsRequest {
+  ConnectionRef connection = 1;
+  Credentials credentials = 2;
+  // Metric names to collect. Empty collects everything the plugin declares.
+  repeated string metric_names = 3;
+}
+
+message MetricBatch {
+  repeated Metric metrics = 1;
+  google.protobuf.Timestamp collected_at = 2;
+}
+
+message Metric {
+  // OpenTelemetry semantic-convention name (ADR-0011).
+  string name = 1;
+  MetricType type = 2;
+  double value = 3;
+  map<string, string> attributes = 4;
+  string unit = 5;
+  google.protobuf.Timestamp timestamp = 6;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Backup
+// -----------------------------------------------------------------------------------------------
+
+message BackupRequest {
+  ConnectionRef connection = 1;
+  Credentials credentials = 2;
+  // Core-assigned identifier, echoed back in every progress message.
+  string backup_id = 3;
+  // Must match a BackupMethod.id from Capabilities. Empty selects the default method.
+  string method_id = 4;
+  // Values for the method's declared MethodOptions.
+  map<string, string> options = 5;
+  ArtifactTarget target = 6;
+  // Databases to include. Empty means the whole instance.
+  repeated string databases = 7;
+  // Previous backup to base an incremental on. Only valid for methods declaring
+  // supports_incremental.
+  repeated ArtifactSource base_artifacts = 8;
+  google.protobuf.Duration timeout = 9;
+}
+
+// ArtifactTarget carries scoped, time-limited grants to write one artifact. Plugins receive URLs,
+// never storage credentials (ADR-0007).
+message ArtifactTarget {
+  ObjectRef object = 1;
+  // Single-shot upload grant. Used when part_urls is empty.
+  PresignedURL upload_url = 2;
+  // Ordered part upload grants for multipart uploads of large artifacts.
+  repeated PresignedURL part_urls = 3;
+  int64 part_size_bytes = 4;
+  ChecksumAlgorithm checksum_algorithm = 5;
+}
+
+message BackupProgress {
+  string backup_id = 1;
+  JobPhase phase = 2;
+  // 0-100. Plugins that cannot estimate progress leave this at 0 and report bytes instead.
+  double percent_complete = 3;
+  int64 bytes_written = 4;
+  string message = 5;
+  // Set only on the final message when phase is JOB_PHASE_COMPLETED.
+  BackupResult result = 6;
+  // Set only when phase is JOB_PHASE_FAILED.
+  PluginError error = 7;
+}
+
+enum JobPhase {
+  JOB_PHASE_UNSPECIFIED = 0;
+  JOB_PHASE_PENDING = 1;
+  JOB_PHASE_PREPARING = 2;
+  JOB_PHASE_RUNNING = 3;
+  JOB_PHASE_TRANSFERRING = 4;
+  JOB_PHASE_FINALIZING = 5;
+  JOB_PHASE_COMPLETED = 6;
+  JOB_PHASE_FAILED = 7;
+  JOB_PHASE_CANCELED = 8;
+}
+
+message BackupResult {
+  ObjectRef artifact = 1;
+  int64 size_bytes = 2;
+  Checksum checksum = 3;
+  google.protobuf.Duration duration = 4;
+  string method_id = 5;
+  string engine_version = 6;
+  // Point in time to which this artifact restores.
+  google.protobuf.Timestamp consistency_point = 7;
+  // Ground truth captured at backup time. VerifyRestore compares the restored instance against it;
+  // without it, verification degrades to "did it start", which is not verification.
+  SourceManifest manifest = 8;
+  // Additional artifacts written alongside the main one, e.g. WAL segments.
+  repeated ArtifactSource additional_artifacts = 9;
+  map<string, string> metadata = 10;
+}
+
+// SourceManifest records what the source instance contained at backup time.
+message SourceManifest {
+  google.protobuf.Timestamp captured_at = 1;
+  repeated ManifestEntry entries = 2;
+  int64 total_objects = 3;
+  int64 total_records = 4;
+  // The plugin could only sample, so count comparisons are indicative rather than exact.
+  bool is_sampled = 5;
+}
+
+message ManifestEntry {
+  string database = 1;
+  // Table, collection, keyspace, or key pattern.
+  string object_name = 2;
+  // Rows, documents, or keys.
+  int64 record_count = 3;
+  int64 size_bytes = 4;
+  // Optional per-object content checksum, when the engine can produce one cheaply.
+  string checksum = 5;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Restore
+// -----------------------------------------------------------------------------------------------
+
+message RestoreRequest {
+  string restore_id = 1;
+  // Ordered artifacts to apply: base first, then incrementals, then logs.
+  repeated ArtifactSource artifacts = 2;
+  RestoreTarget target = 3;
+  // Requested recovery point. Only honored when Capabilities.supports_point_in_time_restore is set.
+  google.protobuf.Timestamp point_in_time = 4;
+  // Databases to restore. Empty means everything in the artifact.
+  repeated string databases = 5;
+  string method_id = 6;
+  map<string, string> options = 7;
+  google.protobuf.Duration timeout = 8;
+}
+
+message ArtifactSource {
+  ObjectRef object = 1;
+  PresignedURL download_url = 2;
+  Checksum checksum = 3;
+  ArtifactRole role = 4;
+  int64 size_bytes = 5;
+  // Ordering within a chain of artifacts of the same role.
+  int32 sequence = 6;
+}
+
+enum ArtifactRole {
+  ARTIFACT_ROLE_UNSPECIFIED = 0;
+  ARTIFACT_ROLE_BASE = 1;
+  ARTIFACT_ROLE_INCREMENTAL = 2;
+  // Write-ahead log, binlog, oplog, or equivalent.
+  ARTIFACT_ROLE_LOG = 3;
+  ARTIFACT_ROLE_MANIFEST = 4;
+}
+
+message RestoreTarget {
+  RestoreTargetKind kind = 1;
+  ConnectionRef connection = 2;
+  Credentials credentials = 3;
+  // Identifier of the sandbox core provisioned. Set when kind is RESTORE_TARGET_KIND_SANDBOX.
+  string sandbox_id = 4;
+}
+
+enum RestoreTargetKind {
+  RESTORE_TARGET_KIND_UNSPECIFIED = 0;
+  // A throwaway container core provisioned for verification. Always safe to overwrite.
+  RESTORE_TARGET_KIND_SANDBOX = 1;
+  // A real instance. Destructive; core is responsible for authorization and typed confirmation.
+  RESTORE_TARGET_KIND_INSTANCE = 2;
+}
+
+message RestoreProgress {
+  string restore_id = 1;
+  JobPhase phase = 2;
+  double percent_complete = 3;
+  int64 bytes_read = 4;
+  string message = 5;
+  // Set only on the final message when phase is JOB_PHASE_COMPLETED.
+  RestoreResult result = 6;
+  // Set only when phase is JOB_PHASE_FAILED.
+  PluginError error = 7;
+}
+
+message RestoreResult {
+  google.protobuf.Duration duration = 1;
+  repeated string restored_databases = 2;
+  string engine_version = 3;
+  // Point in time the restored instance actually reached, which may differ from the one requested.
+  google.protobuf.Timestamp recovered_to = 4;
+  map<string, string> metadata = 5;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Verification
+// -----------------------------------------------------------------------------------------------
+
+message VerifyRestoreRequest {
+  string verification_id = 1;
+  // The instance Restore has just populated — normally a sandbox.
+  RestoreTarget target = 2;
+  // Manifest captured at backup time, to compare the restored instance against.
+  SourceManifest expected = 3;
+  // Checks to run. Empty runs every check the plugin declares support for.
+  repeated VerificationCheck checks = 4;
+  string backup_id = 5;
+  google.protobuf.Duration timeout = 6;
+}
+
+enum VerificationCheck {
+  VERIFICATION_CHECK_UNSPECIFIED = 0;
+  // The restored instance accepts connections and reports a sane version.
+  VERIFICATION_CHECK_CONNECTIVITY = 1;
+  // Row, document, or key counts match the source manifest.
+  VERIFICATION_CHECK_RECORD_COUNTS = 2;
+  // Every database and object named in the manifest exists.
+  VERIFICATION_CHECK_SCHEMA_PRESENCE = 3;
+  // Engine-specific integrity verification, e.g. amcheck, CHECK TABLE, dbHash.
+  VERIFICATION_CHECK_INTEGRITY = 4;
+  // Representative reads succeed against restored data.
+  VERIFICATION_CHECK_QUERYABILITY = 5;
+}
+
+message VerifyRestoreResult {
+  string verification_id = 1;
+  VerificationStatus status = 2;
+  repeated CheckResult checks = 3;
+  google.protobuf.Duration duration = 4;
+  // Human-readable summary shown in the UI and included in the alert on failure.
+  string report = 5;
+  // Set when verification could not run to completion.
+  PluginError error = 6;
+}
+
+enum VerificationStatus {
+  VERIFICATION_STATUS_UNSPECIFIED = 0;
+  VERIFICATION_STATUS_VERIFIED = 1;
+  // At least one check failed. Core treats this as critical — a backup believed good but proven
+  // bad is more dangerous than a known-missing backup.
+  VERIFICATION_STATUS_FAILED = 2;
+  // Verification could not reach a conclusion, e.g. the sandbox never became ready. Distinct from
+  // FAILED so that infrastructure problems are not reported as data loss.
+  VERIFICATION_STATUS_INCONCLUSIVE = 3;
+}
+
+message CheckResult {
+  VerificationCheck check = 1;
+  bool passed = 2;
+  Severity severity = 3;
+  string message = 4;
+  repeated Discrepancy discrepancies = 5;
+  google.protobuf.Duration duration = 6;
+}
+
+message Discrepancy {
+  string database = 1;
+  string object_name = 2;
+  int64 expected = 3;
+  int64 actual = 4;
+  string detail = 5;
+}
+
+// -----------------------------------------------------------------------------------------------
+// PITR
+// -----------------------------------------------------------------------------------------------
+
+message ListPITRTargetsRequest {
+  ConnectionRef connection = 1;
+  Credentials credentials = 2;
+  // Baselines core knows about, so the plugin can compute coverage without querying storage itself.
+  repeated PITRBaseline known_baselines = 3;
+  // Restrict the reported window. Empty reports everything available.
+  TimeRange within = 4;
+}
+
+message PITRWindow {
+  // False when the engine or configuration does not currently support PITR — for example WAL
+  // archiving is off. The UI explains why using the reason field rather than showing an empty
+  // timeline.
+  bool available = 1;
+  string unavailable_reason = 2;
+  google.protobuf.Timestamp earliest = 3;
+  google.protobuf.Timestamp latest = 4;
+  // Periods inside [earliest, latest] that cannot actually be recovered to.
+  repeated PITRGap gaps = 5;
+  repeated PITRBaseline baselines = 6;
+  // Smallest resolvable recovery interval.
+  google.protobuf.Duration granularity = 7;
+}
+
+message PITRGap {
+  TimeRange range = 1;
+  string reason = 2;
+}
+
+message PITRBaseline {
+  string backup_id = 1;
+  google.protobuf.Timestamp taken_at = 2;
+  ObjectRef artifact = 3;
+  string method_id = 4;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Principals
+// -----------------------------------------------------------------------------------------------
+
+message ListPrincipalsRequest {
+  ConnectionRef connection = 1;
+  Credentials credentials = 2;
+  // Enumerating privileges can be expensive on large estates; core makes it opt-in.
+  bool include_privileges = 3;
+  // Include built-in and internal principals.
+  bool include_system = 4;
+}
+
+message ListPrincipalsResponse {
+  repeated Principal principals = 1;
+  PrincipalModel model = 2;
+}
+
+message Principal {
+  string name = 1;
+  PrincipalKind kind = 2;
+  bool can_login = 3;
+  // Holds unrestricted or near-unrestricted rights. The UI flags these prominently.
+  bool is_superuser = 4;
+  bool is_system = 5;
+  // Names of roles or groups this principal is a member of.
+  repeated string member_of = 6;
+  repeated Privilege privileges = 7;
+  google.protobuf.Timestamp password_expires_at = 8;
+  google.protobuf.Timestamp last_login_at = 9;
+  map<string, string> attributes = 10;
+}
+
+enum PrincipalKind {
+  PRINCIPAL_KIND_UNSPECIFIED = 0;
+  PRINCIPAL_KIND_USER = 1;
+  PRINCIPAL_KIND_ROLE = 2;
+  PRINCIPAL_KIND_GROUP = 3;
+  PRINCIPAL_KIND_SERVICE = 4;
+}
+
+message Privilege {
+  // What the privilege applies to, as "type:identifier", e.g. "database:app",
+  // "table:public.users", "key:cache:*". Rendered as an opaque string by the UI.
+  string scope = 1;
+  // The permitted action in the engine's own vocabulary, e.g. "SELECT", "readWrite", "+get".
+  string action = 2;
+  // The principal may grant this privilege onward.
+  bool grantable = 3;
+  string granted_by = 4;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Health
+// -----------------------------------------------------------------------------------------------
+
+message HealthCheckRequest {
+  ConnectionRef connection = 1;
+  Credentials credentials = 2;
+  google.protobuf.Duration timeout = 3;
+}
+
+message HealthStatus {
+  HealthState state = 1;
+  string message = 2;
+  // Round-trip latency of the health probe itself.
+  google.protobuf.Duration latency = 3;
+  repeated HealthSignal signals = 4;
+  string engine_version = 5;
+  // Set when the instance could not be reached. Accompanies HEALTH_STATE_DOWN rather than
+  // replacing it.
+  PluginError error = 6;
+}
+
+enum HealthState {
+  HEALTH_STATE_UNSPECIFIED = 0;
+  HEALTH_STATE_UP = 1;
+  // Reachable but with at least one warning-level signal.
+  HEALTH_STATE_DEGRADED = 2;
+  HEALTH_STATE_DOWN = 3;
+  HEALTH_STATE_UNKNOWN = 4;
+}
+
+message HealthSignal {
+  string name = 1;
+  Severity severity = 2;
+  string message = 3;
+  double value = 4;
+  string unit = 5;
+}

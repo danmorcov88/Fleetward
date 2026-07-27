@@ -1,0 +1,16 @@
+version: v2
+modules:
+  - path: api/proto
+deps:
+  - buf.build/googleapis/googleapis
+lint:
+  use:
+    - STANDARD
+  except:
+    # The plugin contract intentionally names responses for what they are (Capabilities,
+    # HealthStatus, PITRWindow) rather than mechanically suffixing "Response". These names are part
+    # of the published contract that third-party plugin authors implement against.
+    - RPC_RESPONSE_STANDARD_NAME
+    # `EnginePlugin` is the published name of the plugin contract, used throughout the docs and by
+    # third-party implementors. Renaming it to `EnginePluginService` would buy nothing.
+    - SERVICE_SUFFIX

@@ -1,0 +1,10 @@
+# Generation template for the vendored Prometheus remote-write wire format.
+#
+# It lives next to the proto it generates rather than at the repository root: this is not part of
+# Fleetward's published contract, so it is deliberately outside the root buf module and outside
+# `make proto`'s main invocation. See remote.proto for why the format is vendored at all.
+version: v2
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.6
+    out: internal/storage/tsdb/prompb
+    opt: paths=source_relative

@@ -1,0 +1,67 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. If this is a security issue, **stop** and follow
+        [SECURITY.md](https://github.com/danmorcov88/Fleetward/blob/main/.github/SECURITY.md) instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. docker compose up
+        2. fleetward-cli instance add ...
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Fleetward version
+      description: Output of `fleetward-cli version`.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Database engine involved
+      options: [None / not engine specific, PostgreSQL, MySQL or MariaDB, MongoDB, Redis, Other]
+    validations:
+      required: true
+
+  - type: input
+    id: engine-version
+    attributes:
+      label: Engine version
+      placeholder: "PostgreSQL 16.2"
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Linux amd64, Linux arm64, macOS Apple Silicon, macOS Intel, Other]
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: >-
+        Control plane and plugin logs. **Redact anything sensitive** — connection strings,
+        presigned URLs, and credentials must not appear here.
+      render: shell
