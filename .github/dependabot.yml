@@ -27,6 +27,16 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
+      # These groups exist because the packages inside them cannot move independently. Dependabot
+      # opened vite 6→8 and @vitejs/plugin-react 4→6 as separate pull requests, and both failed:
+      # plugin-react 6 requires a newer Vite, and Vite 8 requires a newer plugin. Neither half is
+      # mergeable alone, so an atomic upgrade has to arrive as one pull request.
+      vite:
+        patterns: ["vite", "@vitejs/*"]
+      # Same reasoning: ESLint 10 needs a typescript-eslint that supports it, and the plugins
+      # declare peer ranges on the ESLint major.
+      eslint:
+        patterns: ["eslint", "@eslint/*", "typescript-eslint", "eslint-plugin-*", "globals"]
       tanstack:
         patterns: ["@tanstack/*"]
       react:
@@ -45,3 +55,10 @@ updates:
       interval: weekly
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      # The Node base image tracks an LTS line, and which line that is deliberate rather than
+      # automatic. Dependabot proposed 22 → 26; Node 26 is Current, not LTS. It also has to move in
+      # lockstep with NODE_VERSION in ci.yml, or we would build the image on one major and test on
+      # another. Major moves are therefore made by hand.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
