@@ -8,29 +8,71 @@
 
 ## 1. What Fleetward is
 
-Fleetward is an open-source, multi-engine **DBA operations control plane**: estate inventory,
-health monitoring, **backup with automated restore verification**, access visibility, and alerting —
-unified across SQL and NoSQL engines through a strict plugin contract.
+Fleetward is an open-source, multi-engine **DBA operations control plane** for an estate of database
+servers, unified through a strict plugin contract.
 
-**MVP engines:** PostgreSQL, MySQL/MariaDB, MongoDB, Redis.
+### Who it is for, and the problem it solves
 
-The architecture must support adding SQL Server, Oracle, Informix, ClickHouse, and Cassandra later
-**without modifying core** — only by adding a plugin. This constraint is the single most important
-architectural test: if a change would require core to know an engine's name, the change is wrong.
+The user is a DBA responsible for roughly fifty servers. They cannot physically check all of them in
+a week. The questions they cannot currently answer at a glance are:
+
+- Did every server's backup run on the schedule it was supposed to, and did it succeed?
+- Is any of those backups actually restorable?
+- Who has access to each database, does their account expire, and is anyone non-compliant?
+- Did the schema change in a way nobody intended?
+
+All four have the same shape, and that shape is the product thesis:
+
+> **Declare what should be true → detect what actually is → show me the gap.**
+
+That framing is stronger than "a backup tool with verification", and it is why the three pillars
+below belong in one place rather than three tools.
+
+| Pillar | Declared | Detected | Gap surfaced as |
+|---|---|---|---|
+| **Backup compliance** | schedule, retention | runs observed and managed | missed window, failed run, unverified artifact |
+| **Access compliance** | expiry required, least privilege | principals and grants | expired account, no expiry, unexpected superuser |
+| **Structural drift** | schema changes only via known migrations | schema snapshots over time | unexplained change |
 
 **Killer feature:** every backup can be automatically restored into an isolated sandbox container
 and smoke-tested. Verification status is a first-class, prominently surfaced state — never a
-footnote.
+footnote. It is what makes the first pillar trustworthy rather than merely informative.
+
+### Managed and observed backups
+
+Fleetward operates in two modes at once, and the distinction runs through the whole product:
+
+- **Observed** — a backup someone else's cron, script, or tooling took. Fleetward reads the
+  evidence and reports compliance. This is what makes adoption on an existing estate possible: a
+  tool that demands you migrate fifty servers' backups before showing you anything useful does not
+  get adopted.
+- **Managed** — a backup Fleetward took. Only these carry a manifest Fleetward captured, and only
+  these can be fully verified.
+
+See [ADR-0015](docs/adr/0015-observed-and-managed-backups.md).
+
+### Engines
+
+**Target engines:** PostgreSQL, MySQL/MariaDB, MongoDB, Redis, SQL Server, Oracle, ClickHouse.
+All of these exist in the user's real estate, so the "nine-engine-ready" architecture is a
+requirement rather than a thought experiment. **Informix is out of scope.**
+
+Adding an engine must never require modifying core. This constraint is the single most important
+architectural test: if a change would require core to know an engine's name, the change is wrong.
 
 ### Non-goals — do NOT build these
 
-- A SQL query client or GUI.
 - Our own backup engines. We *orchestrate* native tools (`pg_basebackup`, `xtrabackup`,
   `mongodump`, `BGSAVE`).
 - Our own time-series database. We use VictoriaMetrics.
 - A Kubernetes operator (later phase).
 - BI / analytics features.
-- The five non-MVP engines (they are an architecture constraint, not Phase 1 scope).
+- **Writing to database access control.** Fleetward reports non-compliant principals and generates
+  the remediation SQL; a human runs it. See [ADR-0017](docs/adr/0017-access-compliance-read-only.md).
+
+A SQL query client was previously a non-goal. It is now the final phase of the roadmap, deliberately
+last and gated on conditions recorded in
+[ADR-0018](docs/adr/0018-query-editor-on-the-roadmap.md).
 
 ### Meta-constraints
 
@@ -60,6 +102,18 @@ supersedes the old.
 | Testing | Unit + `testcontainers-go` integration; one shared **plugin-conformance suite** run against all plugins | [0012](docs/adr/0012-testcontainers-and-conformance-suite.md) |
 | Scheduler | Internal cron-style scheduler in control plane (`robfig/cron`), jobs persisted in Postgres, at-most-once via lease locking | [0013](docs/adr/0013-internal-scheduler-with-leases.md) |
 | Logging | `log/slog`, JSON in prod, pretty in dev | [0014](docs/adr/0014-slog-structured-logging.md) |
+
+### Product and scope decisions
+
+These came later, from understanding who the user is and what their day actually looks like. They
+change *what* is built rather than what it is built with.
+
+| Decision | ADR |
+|---|---|
+| Backups have two origins: observed and managed | [0015](docs/adr/0015-observed-and-managed-backups.md) |
+| Structural drift detected via normalized schema snapshots | [0016](docs/adr/0016-schema-drift-snapshots.md) |
+| Access compliance is read-only, with generated remediation SQL | [0017](docs/adr/0017-access-compliance-read-only.md) |
+| The query editor moves from non-goal to final phase | [0018](docs/adr/0018-query-editor-on-the-roadmap.md) |
 
 Design tokens and mockups arrive from a **separate design workstream**. Build the UI skeleton
 first and restyle when tokens are delivered. Backend work must never block on design.
@@ -180,37 +234,96 @@ This is the product. Correctness here outranks everything else.
 
 ---
 
-## 6. Build order
+## 6. Roadmap
 
-Each stage must end compilable, CI-green, and demoable.
+Work is cut into **slices**, not stages. Each slice is independently demoable and ends with
+`docs/dev/STATUS.md` updated. This matters more than speed: development is sporadic, so a session
+must be able to start without reconstructing context, and finish leaving the tree green.
 
-- **Stage 0 — Foundation.** Scaffold §3; CLAUDE.md + ADRs; buf setup + contract compiled; plugin
-  manager (launch/handshake/supervise/restart with backoff); metadata schema v1; docker-compose;
-  CI (golangci-lint, test, `buf lint`/`buf breaking`, govulncheck, build); Makefile.
-  *Exit:* `docker compose up` → healthy control plane, `/readyz` green, empty UI shell, CI green.
-- **Stage 1 — PostgreSQL plugin end-to-end.** The reference plugin: full contract incl.
-  backup/restore/verify + PITR window; inventory service + REST/OpenAPI; conformance suite born
-  here; CLI `instance add/list`, `backup run`, `backup verify`.
-  *Exit:* add a Postgres instance via CLI, run a backup, watch verification pass; conformance green.
-- **Stage 2 — Metrics & health.** Collection loop (30s default) → `remote_write` to
-  VictoriaMetrics; health evaluation (up/down, connections, capability-gated replication lag,
-  storage %); events table.
-- **Stage 3 — Remaining plugins.** MySQL/MariaDB, MongoDB, Redis against the same conformance
-  suite. Expect and fix contract leaks — finding them here, before UI polish, is the point.
-- **Stage 4 — Web UI** (overlaps Stage 3). Estate Overview (virtualized grid), Instance Detail
-  (capability-adaptive tabs), Backups (list + calendar + PITR timeline + restore wizard with typed
-  confirmation), Alerts, OIDC login, Admin users/roles, first-run onboarding.
-- **Stage 5 — RBAC/AuthZ + alerting engine.** OIDC end-to-end; middleware enforcing role×scope on
-  every route (**server-side**; UI hints only); default alert rules (instance down, verification
-  failed, storage >85%, replication lag); webhook + SMTP notifiers; immutable `audit_log` on every
-  mutating action.
-- **Stage 6 — Release readiness.** CLI polish; README 60-second quickstart; goreleaser
-  (darwin/linux × arm64/amd64, signed, SBOM via syft); OpenSSF Scorecard; "writing an engine
-  plugin" guide; 5+ `good-first-issue`s; e2e happy path in CI.
+Phases are ordered by when they start paying the user back, not by architectural tidiness.
 
-**Current stage: see `docs/dev/STATUS.md`.**
+### Phase A — Prove the loop (PostgreSQL)
 
----
+The thinnest path through the entire product, using the simplest possible backup method.
+
+| Slice | Content |
+|---|---|
+| A1 | PG plugin: real `HealthCheck` + `Discover`, testcontainers integration tests |
+| A2 | `inventory` service, credential storage, CLI `instance add\|list\|health` |
+| A3 | `SandboxProvider` (Docker) with teardown guaranteed on every path including panic |
+| A4 | Backup via `pg_dump` + `SourceManifest` (per-table row counts) + presigned upload |
+| A5 | `Restore` into sandbox + `VerifyRestore` (connectivity, record counts) |
+| A6 | Deliberately corrupted artifact → `FAILED`; conformance suite grows to cover the path |
+
+`pg_dump` before `pg_basebackup` deliberately: a logical dump yields exact row counts trivially and
+restores into any empty database, while a physical backup restores a whole cluster and needs a
+version-exact image plus recovery configuration. Both will exist — the contract already supports
+several methods per engine. Starting with the physical one means debugging two hard things at once.
+
+*Exit:* acceptance criterion §7.3, proven for one engine.
+
+### Phase B — The compliance console
+
+This is where Fleetward starts solving the user's actual problem.
+
+| Slice | Content |
+|---|---|
+| B1 | ADR-0015; `ListBackupHistory` RPC; `backups.origin` (`managed` / `observed`) |
+| B2 | PG implementation: read existing backup evidence (`pg_stat_archiver`, configured directory) |
+| B3 | Expectation model: declared schedule vs observed runs → adherence |
+| B4 | Scheduler: lease, heartbeat, and what happens to a job when the control plane restarts |
+| B5 | **Estate Overview** — the first real screen; virtualized grid, two-part backup status |
+| B6 | Alerts: backup missing, backup failed, verification failed. Webhook + SMTP notifiers |
+
+*Exit:* one screen answers "which of my fifty servers need attention right now".
+
+### Phase C — Access compliance
+
+The contract already carries most of what this needs: `Principal` has `password_expires_at`,
+`last_login_at`, `is_superuser`, `can_login`, and `privileges`. Only `created_at` is missing.
+
+| Slice | Content |
+|---|---|
+| C1 | `ListPrincipals` for PostgreSQL; add `created_at` to `Principal` |
+| C2 | ADR-0017; policy engine: no expiry, expired, unexpected superuser, dormant account |
+| C3 | Generated remediation SQL (read-only — a human runs it) + UI screen |
+
+### Phase D — Structural drift
+
+| Slice | Content |
+|---|---|
+| D1 | ADR-0016; `GetSchemaSnapshot` RPC returning a normalized structural fingerprint |
+| D2 | Snapshot storage, diffing, timeline |
+| D3 | Alert on unexplained change + UI screen |
+
+### Phase E — The remaining engines
+
+Each runs the same conformance suite, unmodified, in the order the user's estate needs them:
+MySQL/MariaDB → MongoDB → Redis → SQL Server → Oracle → ClickHouse.
+
+This is where the architecture is genuinely tested. If an engine requires changing the suite, that
+is a contract leak, and the fix belongs in the contract rather than in the test.
+
+### Phase F — Production readiness
+
+RBAC/OIDC enforced on every route, full audit log, metric collection, backup retention and expiry,
+signed release artifacts with SBOM.
+
+### Phase G — Query editor
+
+Last, deliberately. ADR-0018 records what must be true before it ships: server-side RBAC, an audit
+record per execution, a read/write distinction, and typed confirmation against production. A tool
+holding credentials for fifty production servers *and* executing arbitrary SQL has a materially
+larger blast radius than a monitoring tool.
+
+### Demoted from the original plan
+
+**Performance metric collection.** The original brief placed it at Stage 2. The user never named
+monitoring as a pain — that need is already met by existing tooling. VictoriaMetrics stays wired
+and health-checked, but the collection loop moves to Phase F. Simple up/down health stays early,
+because Estate Overview depends on it.
+
+**Current position: see `docs/dev/STATUS.md`.**
 
 ## 7. Phase 1 acceptance criteria
 

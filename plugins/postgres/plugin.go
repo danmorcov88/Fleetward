@@ -4,10 +4,10 @@
 // is written against it (ADR-0012); the other three engines then run that same suite unmodified,
 // which is how contract leaks get found.
 //
-// Stage 0 status: the plugin handshakes and reports its identity. Every capability flag is false
-// and no backup methods are declared, because none are implemented yet. Capabilities are a promise
-// core relies on when deciding what to do to a production database, so they are turned on in the
-// same change that implements them — never before.
+// Slice A1 status: HealthCheck and Discover are implemented against a real instance. Only the two
+// capabilities those RPCs deliver are declared. Capabilities are a promise core relies on when
+// deciding what to do to a production database, so they are turned on in the same change that
+// implements them — never before.
 package postgres
 
 import (
@@ -46,16 +46,23 @@ func (p *Plugin) Capabilities(context.Context) (*fwv1.Capabilities, error) {
 		ContractVersion:         version.ContractVersion,
 		SupportedEngineVersions: []string{">=13 <18"},
 
-		// Stage 1 turns these on alongside the implementations behind them:
-		//   SupportsPitr, SupportsSchemaDiscovery, SupportsConfigRead, SupportsReplication,
-		//   SupportsReplicationLag, SupportsStorageMetrics, SupportsOnlineBackup,
-		//   SupportsSandboxRestore, SupportsPointInTimeRestore,
-		//   BackupMethods (pg_basebackup + WAL archiving, with pgbackrest as a later method),
-		//   PrincipalModel PRINCIPAL_MODEL_USERS_AND_ROLES,
-		//   SandboxTemplate (postgres image, pg_isready readiness probe).
+		// Delivered by Discover: databases with sizes and owners, and the replication layout as
+		// seen from this node.
+		SupportsSchemaDiscovery: true,
+		SupportsReplication:     true,
+		// Delivered by HealthCheck: replay lag is reported for a standby, and core gates its lag
+		// health rule and the UI's lag column on this flag.
+		SupportsReplicationLag: true,
+
+		// Not yet implemented, so not yet declared. Each is turned on by the slice that builds it:
+		//   A4  SupportsOnlineBackup, BackupMethods (pg_dump first, pg_basebackup in B)
+		//   A5  SupportsSandboxRestore, SandboxTemplate, SupportedVerificationChecks
+		//   B   SupportsPitr, SupportsPointInTimeRestore
+		//   C   PrincipalModel PRINCIPAL_MODEL_USERS_AND_ROLES
+		//   F   SupportsConfigRead, SupportsStorageMetrics, Metrics
 
 		Metadata: map[string]string{
-			"stage": "0 — handshake only",
+			"slice": "A1 — health and discovery",
 		},
 	}, nil
 }

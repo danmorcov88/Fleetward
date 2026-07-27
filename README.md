@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.25%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![Contract](https://img.shields.io/badge/plugin%20contract-v1-6E56CF)](api/proto/fleetward/v1/plugin.proto)
-[![Status](https://img.shields.io/badge/status-pre--alpha%20·%20Stage%200-orange)](docs/dev/STATUS.md)
+[![Status](https://img.shields.io/badge/status-pre--alpha%20·%20Phase%20A-orange)](docs/dev/STATUS.md)
 
 [Why](#why-fleetward) · [Architecture](#architecture) · [Verification](#the-backup-verification-flow) · [Quickstart](#quickstart) · [Engines](#supported-engines) · [Contributing](.github/CONTRIBUTING.md)
 
@@ -41,8 +41,23 @@ A backup that succeeded but failed verification is surfaced as **critical** — 
 backup at all, because it is more dangerous. It is the difference between knowing you are exposed
 and believing you are safe.
 
-Beyond that, Fleetward gives DBA teams one place for estate inventory, health monitoring, access
-visibility, and alerting — unified across SQL and NoSQL engines through a single strict contract.
+### Built for an estate you cannot check by hand
+
+Fleetward exists for the DBA responsible for fifty servers who cannot physically verify all of them
+in a working week. Three questions, one shape — *declare what should be true, detect what actually
+is, show the gap*:
+
+| Pillar | The question it answers |
+|---|---|
+| **Backup compliance** | Did every server's backup run on schedule, succeed, and is it restorable? |
+| **Access compliance** | Who has access, does their account expire, and who is non-compliant? |
+| **Structural drift** | Did the schema change in a way nobody intended? |
+
+Backups already taken by your existing cron and scripts are read as **observed** backups, so
+Fleetward reports on your whole estate from day one without you migrating anything. Backups it takes
+itself are **managed**, and only those carry a manifest that makes full verification possible —
+the two are never shown as the same green checkmark
+([ADR-0015](docs/adr/0015-observed-and-managed-backups.md)).
 
 ---
 
@@ -110,7 +125,7 @@ flowchart TB
 
 > **Core branches on a plugin's declared capabilities — never on its engine name.**
 
-Adding SQL Server, Oracle, Informix, ClickHouse, or Cassandra means writing a plugin. It never means
+Adding SQL Server, Oracle, or ClickHouse means writing a plugin. It never means
 modifying core. If core would need to know that an instance is PostgreSQL in order to behave
 correctly, the missing information belongs in the capability matrix.
 
@@ -119,7 +134,7 @@ tag, port, and readiness probe used to verify a restore — lives *inside* `Capa
 control plane provisions verification containers from what a plugin declares and never needs a
 lookup table of engines.
 
-Architecture decisions are recorded in [`docs/adr/`](docs/adr/) — 14 of them, each with context,
+Architecture decisions are recorded in [`docs/adr/`](docs/adr/) — 18 of them, each with context,
 consequences, and the alternatives that were rejected.
 
 ---
@@ -187,7 +202,7 @@ alert that matters most.
 | **MySQL / MariaDB** | `xtrabackup`, with `mysqldump` shipping first | Stage 3 |
 | **MongoDB** | `mongodump`, snapshot-based to follow | Stage 3 |
 | **Redis** | RDB via `BGSAVE` + fetch, AOF expressed in capabilities | Stage 3 |
-| SQL Server · Oracle · Informix · ClickHouse · Cassandra | — | Supported **by architecture**: a plugin, never a core change |
+| SQL Server · Oracle · ClickHouse | — | Phase E — in the target estate, so the multi-engine architecture is a requirement, not a thought experiment |
 
 Fleetward orchestrates native tooling rather than implementing backup formats. Your engine's
 maintainers have spent years on those tools; the value is in scheduling, verifying, and reporting
@@ -325,7 +340,7 @@ fleetward/
 ├── web/                      # React app
 ├── test/{conformance,e2e}/   # the shared conformance suite
 ├── deploy/{docker,dev,helm}/ # container definitions, dev IdP config
-├── docs/{adr,dev}/           # 14 ADRs, developer guides, project status
+├── docs/{adr,dev}/           # 18 ADRs, developer guides, project status
 └── .github/                  # CI, contributing, security policy, templates
 ```
 
@@ -373,21 +388,22 @@ it cannot quietly rot between releases.
 
 ## Project status
 
-**Pre-alpha — Stage 0 (Foundation) complete.** The contract, plugin system, metadata schema, dev
-stack, and CI are in place and verified end to end. The four plugin binaries handshake and declare
-their identity; no engine logic yet.
+**Pre-alpha — foundation complete, building Phase A.** The contract, plugin system, metadata
+schema, dev stack, and CI are in place and verified end to end. Work is now cut into slices, each
+independently demoable.
 
-| Stage | Scope | Status |
+| Phase | Scope | Status |
 |---|---|---|
-| **0** | Foundation: contract, plugin manager, schema, dev stack, CI | ✅ Complete |
-| **1** | PostgreSQL reference plugin end-to-end + conformance suite | 🔜 Next |
-| **2** | Metrics collection and health evaluation | ⬜ |
-| **3** | MySQL/MariaDB, MongoDB, Redis plugins | ⬜ |
-| **4** | Web UI against the real API | ⬜ |
-| **5** | RBAC enforcement and the alerting engine | ⬜ |
-| **6** | Release readiness: signed binaries, SBOM, quickstart | ⬜ |
+| **Foundation** | Contract, plugin manager, schema, dev stack, CI | ✅ Complete |
+| **A** | Prove the loop: PostgreSQL backup → sandbox restore → verification | 🔨 In progress |
+| **B** | Compliance console: observed backups, schedule adherence, Estate Overview, alerts | ⬜ |
+| **C** | Access compliance: who has access, expiry, non-compliant accounts | ⬜ |
+| **D** | Structural drift: schema snapshots and diffs over time | ⬜ |
+| **E** | Remaining engines: MySQL/MariaDB, MongoDB, Redis, SQL Server, Oracle, ClickHouse | ⬜ |
+| **F** | Production readiness: RBAC enforcement, audit, metrics, signed releases | ⬜ |
+| **G** | Query editor — last, and gated on the conditions in ADR-0018 | ⬜ |
 
-Detail and per-stage checklists: [`docs/dev/STATUS.md`](docs/dev/STATUS.md).
+Detail and per-slice checklists: [`docs/dev/STATUS.md`](docs/dev/STATUS.md).
 
 > Capability flags are all `false` today. A flag is turned on in the same change that implements the
 > behaviour behind it — never in advance. Core trusts that matrix when deciding what is safe to do
@@ -399,11 +415,19 @@ Detail and per-stage checklists: [`docs/dev/STATUS.md`](docs/dev/STATUS.md).
 
 Deliberately out of scope, and staying that way:
 
-- A SQL query client or GUI
 - Our own backup engines — we orchestrate the native tools
 - Our own time-series database — we use VictoriaMetrics
 - BI or analytics features
-- A Kubernetes operator (a later phase, not a non-goal)
+- **Writing to database access control.** Fleetward reports non-compliant accounts and generates the
+  remediation SQL; a human runs it. A false positive in a read-only report costs two minutes of
+  review; the same false positive with execution attached revokes a service account at 3am
+  ([ADR-0017](docs/adr/0017-access-compliance-read-only.md))
+
+A SQL query client used to be on this list. It is now the final phase of the roadmap, gated on
+server-side RBAC, per-execution audit, and typed confirmation against production
+([ADR-0018](docs/adr/0018-query-editor-on-the-roadmap.md)). A tool holding credentials for fifty
+production servers *and* executing arbitrary SQL has a materially larger blast radius than a
+monitoring tool.
 
 The ambition lives in the contract and the architecture. The discipline lives in the scope.
 

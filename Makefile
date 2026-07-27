@@ -104,7 +104,7 @@ test-all: ## Run all Go tests, including those that build plugin binaries
 
 .PHONY: test-integration
 test-integration: ## Run testcontainers-based integration tests (requires Docker)
-	go test -race -tags=integration -timeout 20m ./test/... $(GO_PACKAGES)
+	go test -race -tags=integration -timeout 20m $(GO_PACKAGES)
 
 .PHONY: conformance
 conformance: build-plugins ## Run the plugin conformance suite against every plugin
