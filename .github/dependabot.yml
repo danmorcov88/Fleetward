@@ -41,6 +41,15 @@ updates:
         patterns: ["@tanstack/*"]
       react:
         patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+    ignore:
+      # TypeScript 7 is the rewritten compiler, and the web app does not build under it — the Web
+      # and dev-stack jobs both failed on the proposed bump, before any merge conflict.
+      #
+      # Deferred rather than fixed: this is a skeleton that Phase B5 rewrites when Estate Overview
+      # is built, so migrating the compiler now buys nothing that survives. Revisit as a deliberate
+      # piece of work at B5, and delete this entry then.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
