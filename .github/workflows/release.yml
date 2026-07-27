@@ -20,7 +20,7 @@ jobs:
           # goreleaser derives the changelog from commit history, so it needs all of it.
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.25"
           cache: true
