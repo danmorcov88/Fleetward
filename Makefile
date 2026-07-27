@@ -152,6 +152,16 @@ web-dev: ## Run the web app in development mode
 web-build: ## Build the web app for production
 	cd web && npm run build
 
+# --- Repository configuration --------------------------------------------------------------------
+
+.PHONY: ruleset-apply
+ruleset-apply: ## Apply the versioned branch protection ruleset (needs `gh auth login`)
+	.github/scripts/apply-ruleset.sh
+
+.PHONY: ruleset-diff
+ruleset-diff: ## Show what the ruleset would send, without applying it
+	DRY_RUN=1 .github/scripts/apply-ruleset.sh
+
 # --- Tooling -------------------------------------------------------------------------------------
 
 .PHONY: tools

@@ -28,6 +28,19 @@ You need Go 1.25+, Node 22+, and Docker. `buf` is required only if you touch `ap
 
 ## Development workflow
 
+`main` is protected: it cannot be pushed to directly, force-pushed, or deleted, and every CI job
+must pass before a pull request can merge. The protection itself is versioned as
+[`.github/rulesets/main-protection.json`](rulesets/main-protection.json) and applied with
+`make ruleset-apply`, so a change to what guards `main` shows up in a diff rather than only in the
+web UI.
+
+```bash
+git switch -c feat/my-change
+# ... work ...
+git push -u origin feat/my-change
+gh pr create
+```
+
 - Branch from `main`. Keep PRs review-sized — one concern per PR.
 - **Conventional Commits** for every commit and PR title:
   `feat(plugin/postgres): add PITR window discovery`,
