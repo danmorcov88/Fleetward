@@ -41,6 +41,10 @@ git push -u origin feat/my-change
 gh pr create
 ```
 
+Work on the roadmap is organised into **slices**, each with a self-contained brief in
+[`docs/dev/slices/`](../docs/dev/slices/). If you are picking up planned work rather than proposing
+your own, start there — `docs/dev/STATUS.md` says which slice is next.
+
 - Branch from `main`. Keep PRs review-sized — one concern per PR.
 - **Conventional Commits** for every commit and PR title:
   `feat(plugin/postgres): add PITR window discovery`,

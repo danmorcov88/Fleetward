@@ -6,6 +6,9 @@ after `CLAUDE.md`.
 **Current position: Phase A, slice A2 — inventory service and CLI instance commands.**
 Foundation and slice A1 are complete.
 
+Brief: [`docs/dev/slices/A2-inventory-and-cli.md`](slices/A2-inventory-and-cli.md).
+Session protocol: [`docs/dev/slices/README.md`](slices/README.md).
+
 ---
 
 ## Foundation ✅
@@ -72,7 +75,8 @@ Work is cut into slices, not stages. Each is independently demoable and ends wit
 updated. Development is sporadic, so a session must be able to start without reconstructing context
 and finish leaving the tree green. That matters more than speed.
 
-Full rationale for the phase ordering is in `CLAUDE.md` §6.
+Each slice has a self-contained brief in [`docs/dev/slices/`](slices/), written so a session can
+start cold from the repository alone. Full rationale for the phase ordering is in `CLAUDE.md` §6.
 
 ---
 

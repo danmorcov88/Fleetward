@@ -376,7 +376,12 @@ restore, where correctness *is* the product.
 
 ## 10. Working agreements for AI sessions
 
-- Start by reading this file and `docs/dev/STATUS.md`.
+- Start by reading this file, then `docs/dev/STATUS.md`, then the brief for the slice `STATUS.md`
+  says is next, in `docs/dev/slices/`. The session protocol — branch, verify, close out, ship — is
+  in [`docs/dev/slices/README.md`](docs/dev/slices/README.md).
+- **Respect the slice's scope fence.** Each brief lists what is deliberately *not* in it. A session
+  reading the whole roadmap will naturally try to build too much, and a half-finished slice is worse
+  than a small complete one.
 - Never introduce an engine-name branch in `internal/` or `web/`. Extend `Capabilities` instead.
 - Never widen scope into a §1 non-goal, even if it seems like a small addition.
 - Run `make lint test` before declaring work complete. If something fails, say so with the output.
