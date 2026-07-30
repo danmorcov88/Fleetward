@@ -19,6 +19,7 @@ import (
 	"github.com/danmorcov88/fleetward/internal/config"
 	"github.com/danmorcov88/fleetward/internal/controlplane/api"
 	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
+	"github.com/danmorcov88/fleetward/internal/controlplane/sandbox"
 	"github.com/danmorcov88/fleetward/internal/plugin/manager"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 	"github.com/danmorcov88/fleetward/internal/storage/objstore"
@@ -147,6 +148,31 @@ func run() error {
 			slog.String("message", info.Message))
 	}
 
+	// --- Sandboxes ------------------------------------------------------------------------------
+
+	sandboxes, err := sandbox.New(cfg.Sandbox, log)
+	if err != nil {
+		return fmt.Errorf("sandbox provider: %w", err)
+	}
+	defer func() { _ = sandboxes.Close() }()
+
+	// The orphan sweep is the cleanup defence that covers the case the other two cannot: a control
+	// plane killed mid-verification, leaving a container nobody will ever tear down. Startup is the
+	// only moment we can be sure those containers are ours and abandoned.
+	//
+	// It is best-effort, for the same reason the bucket check above is. A missing Docker socket
+	// means verification is unavailable, which readiness reports as degraded — it is not a reason
+	// to refuse to serve the estate view.
+	sweepCtx, cancelSweep := context.WithTimeout(ctx, 60*time.Second)
+	if removed, err := sandboxes.Sweep(sweepCtx); err != nil {
+		log.Warn("could not sweep orphaned verification sandboxes; check for leaked containers",
+			slog.String("error", err.Error()))
+	} else if removed > 0 {
+		log.Warn("removed verification sandboxes left behind by a previous process",
+			slog.Int("count", removed))
+	}
+	cancelSweep()
+
 	// --- API ------------------------------------------------------------------------------------
 
 	health := api.NewHealth(log, 5*time.Second)
@@ -158,6 +184,10 @@ func run() error {
 	health.Register("objstore", false, store)
 	health.Register("tsdb", false, metrics)
 	health.Register("plugins", false, plugins)
+	// Non-critical: without a container runtime a backup can still be taken and reported, it just
+	// cannot be verified. Degrading readiness says exactly that, and says it before someone
+	// discovers it at 3am.
+	health.Register("sandbox", false, api.CheckerFunc(sandboxes.HealthCheck))
 
 	server, err := api.NewServer(cfg.HTTP, log, health)
 	if err != nil {

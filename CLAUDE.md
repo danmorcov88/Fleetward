@@ -103,6 +103,7 @@ supersedes the old.
 | Testing | Unit + `testcontainers-go` integration; one shared **plugin-conformance suite** run against all plugins | [0012](docs/adr/0012-testcontainers-and-conformance-suite.md) |
 | Scheduler | Internal cron-style scheduler in control plane (`robfig/cron`), jobs persisted in Postgres, at-most-once via lease locking | [0013](docs/adr/0013-internal-scheduler-with-leases.md) |
 | Logging | `log/slog`, JSON in prod, pretty in dev | [0014](docs/adr/0014-slog-structured-logging.md) |
+| Sandbox credentials | Core generates the identity; the plugin's `SandboxTemplate` places it via `{{ .Username }}` / `{{ .Password }}` / `{{ .Database }}` / `{{ .Port }}` | [0020](docs/adr/0020-sandbox-credentials-from-template-placeholders.md) |
 
 ### Product and scope decisions
 
