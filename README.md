@@ -74,7 +74,7 @@ flowchart TB
     end
 
     subgraph core["Control plane · Go"]
-        API["REST + gRPC API<br/><i>grpc-gateway · OpenAPI v3</i>"]
+        API["REST API<br/><i>grpc-gateway · OpenAPI v3</i>"]
         RBAC["AuthN / AuthZ<br/><i>OIDC · role × scope</i>"]
         INV["Inventory"]
         SCHED["Scheduler<br/><i>cron · lease locking</i>"]
@@ -134,7 +134,7 @@ tag, port, and readiness probe used to verify a restore — lives *inside* `Capa
 control plane provisions verification containers from what a plugin declares and never needs a
 lookup table of engines.
 
-Architecture decisions are recorded in [`docs/adr/`](docs/adr/) — 18 of them, each with context,
+Architecture decisions are recorded in [`docs/adr/`](docs/adr/) — 19 of them, each with context,
 consequences, and the alternatives that were rejected.
 
 ---
@@ -262,6 +262,55 @@ rather than failing it, so a MinIO outage does not take the estate view offline.
 > The compose stack is **development configuration**. Every credential in it is published in this
 > repository, TLS is disabled on every listener, and authentication is off by default. Never expose
 > it to a network you do not fully control. See [SECURITY.md](.github/SECURITY.md).
+
+### Add your first server
+
+```bash
+make build-cli
+
+bin/fleetward-cli environment add production --production
+
+FLEETWARD_DB_PASSWORD=… bin/fleetward-cli instance add prod-1 \
+  --environment production \
+  --engine postgresql \
+  --host db.example.internal --port 5432 \
+  --username fleetward --database app
+
+bin/fleetward-cli instance health prod-1
+```
+
+```
+prod-1  UP
+  endpoint   db.example.internal:5432
+  version    16.2
+  latency    3.1ms
+  signal     connection_usage       INFO 4%
+```
+
+`instance discover prod-1` then fills in the topology, the version, and the databases with their
+sizes and owners; `instance list` shows the estate.
+
+There is deliberately **no `--password` flag**. The password comes from `FLEETWARD_DB_PASSWORD` or
+from `--password-stdin`, because a password in a command line is visible to every process on the host
+through `ps` and is kept in the shell history of whoever typed it.
+
+The CLI is a REST client and nothing more — it never opens a connection to the metadata store. A CLI
+holding that password would put it on every operator's laptop and would duplicate authorization in a
+second place.
+
+The same operations over HTTP, since the API is the only interface either client uses:
+
+```bash
+curl -sS -X POST localhost:8080/api/v1/environments \
+  -H 'content-type: application/json' \
+  -d '{"name":"production","is_production":true}' | jq
+
+curl -sS localhost:8080/api/v1/instances | jq
+```
+
+Credentials go in and never come back out. The password is encrypted by the `SecretsProvider`
+([ADR-0009](docs/adr/0009-secrets-provider-interface.md)) and stored apart from everything else about
+the connection; `ConnectionSpec` is inbound-only, and no read path has a field that could return it.
 
 ---
 
@@ -392,6 +441,10 @@ it cannot quietly rot between releases.
 schema, dev stack, and CI are in place and verified end to end. Work is now cut into slices, each
 independently demoable.
 
+Slices A1 and A2 are done: the PostgreSQL plugin answers `HealthCheck` and `Discover` against a real
+server, and the inventory service, REST API, and CLI make that reachable — a server can be added and
+seen healthy. Backup, sandbox restore, and verification are next.
+
 | Phase | Scope | Status |
 |---|---|---|
 | **Foundation** | Contract, plugin manager, schema, dev stack, CI | ✅ Complete |
@@ -405,9 +458,11 @@ independently demoable.
 
 Detail and per-slice checklists: [`docs/dev/STATUS.md`](docs/dev/STATUS.md).
 
-> Capability flags are all `false` today. A flag is turned on in the same change that implements the
-> behaviour behind it — never in advance. Core trusts that matrix when deciding what is safe to do
-> to a production database, and a premature flag produces its failure during a recovery.
+> The PostgreSQL plugin declares exactly three capabilities today — schema discovery, replication,
+> and replication lag — and every other flag is still `false`. A flag is turned on in the same change
+> that implements the behaviour behind it, never in advance. Core trusts that matrix when deciding
+> what is safe to do to a production database, and a premature flag produces its failure during a
+> recovery.
 
 ---
 

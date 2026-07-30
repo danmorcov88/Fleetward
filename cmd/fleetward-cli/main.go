@@ -1,8 +1,11 @@
 // Command fleetward-cli is the Fleetward command-line client.
 //
-// Stage 0 ships the commands that need no server: version reporting, a readiness probe, and master
-// key generation. Stage 1 adds `instance add/list`, `backup run`, and `backup verify` against the
-// REST API.
+// `version` and `keygen` need no server. Everything else goes through the control plane's REST API,
+// never directly to the metadata store: a CLI holding the metadata database's password would put it
+// on every operator's laptop and duplicate authorization in a second place.
+//
+// Today that is `health`, `environment`, and `instance`. `backup run` and `backup verify` arrive
+// with slices A4 and A5.
 package main
 
 import (
@@ -27,7 +30,10 @@ func main() {
 }
 
 func newRootCommand() *cobra.Command {
-	var serverURL string
+	var (
+		serverURL string
+		timeout   time.Duration
+	)
 
 	root := &cobra.Command{
 		Use:   "fleetward",
@@ -42,11 +48,18 @@ func newRootCommand() *cobra.Command {
 
 	root.PersistentFlags().StringVar(&serverURL, "server", envOr("FLEETWARD_SERVER", "http://localhost:8080"),
 		"control plane base URL")
+	// Every command that talks to the control plane is bounded by the same deadline. Probing an
+	// estate means routinely contacting servers that will not answer, and a command that hangs is
+	// worse than one that fails.
+	root.PersistentFlags().DurationVar(&timeout, "timeout", 30*time.Second,
+		"how long to wait for the control plane to respond")
 
 	root.AddCommand(
 		newVersionCommand(),
-		newHealthCommand(&serverURL),
+		newHealthCommand(&serverURL, &timeout),
 		newKeygenCommand(),
+		newEnvironmentCommand(&serverURL, &timeout),
+		newInstanceCommand(&serverURL, &timeout),
 	)
 
 	return root
@@ -73,16 +86,14 @@ func newVersionCommand() *cobra.Command {
 	return cmd
 }
 
-func newHealthCommand(serverURL *string) *cobra.Command {
-	var timeout time.Duration
-
+func newHealthCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "health",
 		Short: "Check control plane readiness",
 		Long: "Queries the control plane's /readyz endpoint and reports each dependency.\n" +
 			"Exits non-zero when the control plane is unhealthy, so it can be used in scripts.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
+			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, *serverURL+"/readyz", nil)
@@ -131,7 +142,6 @@ func newHealthCommand(serverURL *string) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "how long to wait for a response")
 	return cmd
 }
 
