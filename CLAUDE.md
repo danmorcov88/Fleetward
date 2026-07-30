@@ -92,6 +92,7 @@ supersedes the old.
 | Core language | Go 1.25+ (control plane, agent, all plugins) | [0002](docs/adr/0002-go-as-core-language.md) |
 | Plugin architecture | `hashicorp/go-plugin` — each engine plugin is a separate binary, gRPC over local socket, launched and supervised by the plugin manager | [0003](docs/adr/0003-hashicorp-go-plugin.md) |
 | API definitions | Protobuf via `buf`; internal gRPC; external REST via `grpc-gateway` + generated OpenAPI v3 | [0004](docs/adr/0004-protobuf-buf-grpc-gateway.md) |
+| API serving | grpc-gateway handlers registered in-process; **no gRPC listener** until something needs one | [0019](docs/adr/0019-rest-api-without-a-grpc-listener.md) |
 | Metadata DB | PostgreSQL 16 (`pgx/v5`, `sqlc` for queries, `golang-migrate` for migrations) | [0005](docs/adr/0005-postgres-metadata-store.md) |
 | Metrics store | VictoriaMetrics single-node; ingest via Prometheus `remote_write`; query via its Prometheus-compatible HTTP API | [0006](docs/adr/0006-victoriametrics-for-metrics.md) |
 | Backup artifacts | S3-compatible object storage (MinIO in dev) via `minio-go`, behind our own `ObjectStore` interface | [0007](docs/adr/0007-s3-object-storage-for-artifacts.md) |

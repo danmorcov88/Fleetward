@@ -15,8 +15,10 @@ import (
 	"syscall"
 	"time"
 
+	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
 	"github.com/danmorcov88/fleetward/internal/config"
 	"github.com/danmorcov88/fleetward/internal/controlplane/api"
+	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
 	"github.com/danmorcov88/fleetward/internal/plugin/manager"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 	"github.com/danmorcov88/fleetward/internal/storage/objstore"
@@ -161,6 +163,17 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("http server: %w", err)
 	}
+
+	// The REST API is served by grpc-gateway handlers mounted on the same mux as the health
+	// endpoints. `GET /api/v1/version` stays registered on its own, more specific pattern, which
+	// takes precedence over this subtree.
+	gateway := api.NewGatewayMux()
+	inventorySvc := inventory.New(db.Pool(), secretsProvider, plugins, log)
+	if err := fwv1.RegisterInventoryServiceHandlerServer(ctx, gateway,
+		inventory.NewGRPCServer(inventorySvc, log)); err != nil {
+		return fmt.Errorf("inventory api: %w", err)
+	}
+	server.Mux().Handle("/api/v1/", gateway)
 
 	if err := server.Start(ctx); err != nil {
 		return fmt.Errorf("http server: %w", err)

@@ -22,13 +22,13 @@ Lucrăm la Fleetward. Citește în ordine, înainte să scrii cod:
 1. CLAUDE.md                                  — contextul proiectului, regulile care nu se negociază
 2. docs/dev/STATUS.md                         — unde suntem acum
 3. docs/dev/slices/README.md                  — protocolul de sesiune
-4. docs/dev/slices/A2-inventory-and-cli.md    — slice-ul de executat
+4. docs/dev/slices/A3-sandbox-provider.md     — slice-ul de executat
 
 Execută slice-ul respectând protocolul: branch nou, teste verzi, STATUS.md actualizat,
 push și pull request. Nu depăși scope fence-ul din brief.
 ```
 
-Replace `A2-inventory-and-cli.md` with whichever slice `STATUS.md` says is next.
+Replace `A3-sandbox-provider.md` with whichever slice `STATUS.md` says is next.
 
 ---
 
@@ -132,8 +132,8 @@ If you write a new one, follow this shape — it is what makes a cold start poss
 | Slice | Brief | State |
 |---|---|---|
 | A1 | — (delivered; notes in `STATUS.md`) | ✅ |
-| A2 | [Inventory service and CLI](A2-inventory-and-cli.md) | next |
-| A3 | [Sandbox provider](A3-sandbox-provider.md) | ⬜ |
+| A2 | [Inventory service and CLI](A2-inventory-and-cli.md) | ✅ |
+| A3 | [Sandbox provider](A3-sandbox-provider.md) | next |
 | A4 | [Backup with manifest](A4-backup-and-manifest.md) | ⬜ |
 | A5 | [Restore and verification](A5-restore-and-verify.md) | ⬜ |
 | A6 | [Proving verification fails](A6-verification-fails-loudly.md) | ⬜ |

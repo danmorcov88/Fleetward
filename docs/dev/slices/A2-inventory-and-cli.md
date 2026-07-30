@@ -151,3 +151,29 @@ docker compose exec -T postgres psql -U fleetward -d fleetward \
   -c "SELECT name, length(ciphertext) FROM secrets;"
 # a row exists, and no plaintext password appears anywhere in the table
 ```
+
+## Findings — delivered 2026-07-28
+
+Recorded here because they were only visible once the code existed.
+
+**`TestConnection` cannot express "nothing is stored yet" over REST.** Its HTTP annotation is
+`POST /api/v1/instances/{instance_id}/test-connection`, so `instance_id` is a path segment and the
+add-instance wizard has no way to omit it while it is still deciding whether to add the instance at
+all. The implementation therefore treats the instance lookup as **best-effort** whenever a
+`ConnectionSpec` is supplied: an identifier that resolves to nothing means "not stored yet" rather
+than a 404, provided the request also carries `engine_type`, `host`, and `port`. Covered by
+`TestTestConnectionToleratesAPlaceholderInstanceID`.
+
+The alternative — a second route without the path parameter — is a contract change, and the brief's
+scope fence rules out adding RPCs in this slice. If a UI ever finds the placeholder awkward, the fix
+is an additional HTTP binding on the existing RPC rather than new behaviour.
+
+**The schema has nowhere to put non-secret TLS detail.** `connections` has a `tls_enabled` boolean
+and nothing else, while `TLSSettings` also carries `server_name`, `insecure_skip_verify`, `ca_pem`,
+and the client certificate pair. `connections.options` is now a structured document —
+`{"engine": {...}, "tls": {...}}` — rather than a flat option bag, which keeps Fleetward's own fields
+from colliding with keys the plugin passes straight to its driver. The client *private key* goes to
+the `SecretsProvider` with the password; its certificate goes with it, because a half-configured
+mutual-TLS connection is a worse failure than a slightly over-protected certificate.
+
+**No gRPC listener was needed.** See [ADR-0019](../../adr/0019-rest-api-without-a-grpc-listener.md).
