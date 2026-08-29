@@ -1,5 +1,9 @@
 # Slice A3 — Sandbox provider
 
+> **Delivered.** Two things in this brief did not survive contact with the code; both are recorded
+> under [Findings](#findings) at the end, and the delivered decisions are in
+> [`docs/dev/STATUS.md`](../STATUS.md).
+
 ## Goal
 
 Provision a throwaway database container from a plugin's declared `SandboxTemplate`, and guarantee
@@ -158,3 +162,37 @@ The integration test must prove, not assume, that nothing survives:
 docker ps -a --filter "label=fleetward.sandbox" --format '{{.Names}}'
 # empty, after the full test run
 ```
+
+This last check is not left to a human: `TestMain` in `docker_test.go` runs it and fails the suite
+if anything survived.
+
+---
+
+## Findings
+
+Two things in the brief above were wrong, and one question it did not ask turned out to be the
+important one.
+
+**The Docker SDK import path.** The brief said `github.com/docker/docker/client`, "already in
+`go.sum` via testcontainers". That stopped being true at testcontainers-go v0.43, which moved to
+the split-out `github.com/moby/moby/client` and `github.com/moby/moby/api` modules;
+`github.com/docker/docker` remains in `go.sum` only as a test dependency of `golang-migrate`, so
+importing it would have pulled a large module into the build for nothing. The implementation uses
+`moby/moby/client`, which added no module — only two promotions from indirect to direct. The
+decision the brief was actually making — the Docker SDK directly rather than testcontainers,
+because Ryuk's cleanup is tied to a test-session lifecycle and a long-lived control plane is not
+one — is unchanged and correct.
+
+**The suggested `Spec`/`Provider` shape omitted the hard part.** `Sandbox.Credentials()` has to
+return a username and a password, and `SandboxTemplate` has no field for either — the knowledge
+that `POSTGRES_PASSWORD` means something lives in the plugin, which is exactly where core is
+forbidden from looking. Resolving this needed a decision rather than an implementation, and it is
+recorded as [ADR-0020](../../adr/0020-sandbox-credentials-from-template-placeholders.md): core
+generates the identity, the template places it via `{{ .Username }}`, `{{ .Password }}`,
+`{{ .Database }}`, and `{{ .Port }}`. `Spec` gained `Username` and `Database` overrides, which A5
+will need so a restore target can match its source.
+
+**One trap the brief did not name, which cost the most time.** `ContainerStart` returning does not
+mean the container's port is published. Docker Desktop sets its port proxy up asynchronously, so an
+inspect issued immediately after start reports an empty binding — on macOS, which is this project's
+development platform. The mapped port has to be polled for, exactly like readiness.

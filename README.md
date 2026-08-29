@@ -132,9 +132,11 @@ correctly, the missing information belongs in the capability matrix.
 That constraint is enforced structurally rather than by convention. `SandboxTemplate` — the image,
 tag, port, and readiness probe used to verify a restore — lives *inside* `Capabilities`, so the
 control plane provisions verification containers from what a plugin declares and never needs a
-lookup table of engines.
+lookup table of engines. Even the sandbox's credentials keep the rule: core generates a fresh
+username, password, and database name, and the plugin's template says where they belong by writing
+`{{ .Password }}` where its engine expects one ([ADR-0020](docs/adr/0020-sandbox-credentials-from-template-placeholders.md)).
 
-Architecture decisions are recorded in [`docs/adr/`](docs/adr/) — 19 of them, each with context,
+Architecture decisions are recorded in [`docs/adr/`](docs/adr/) — 20 of them, each with context,
 consequences, and the alternatives that were rejected.
 
 ---
@@ -190,7 +192,10 @@ check is worse than shipping no check at all.
 infrastructure problem, not data loss. Collapsing them would train operators to ignore the one
 alert that matters most.
 
-**The sandbox is always destroyed.** Guaranteed teardown on every path, including panic.
+**The sandbox is always destroyed.** Guaranteed teardown on every path, including panic — and
+defended twice more behind that, because a leaked container breaks nothing until it has eaten the
+machine. A lifetime ceiling reaps a verification that hung rather than failed, and a label-driven
+sweep at startup removes whatever a control plane killed mid-verification left behind.
 
 ---
 
@@ -441,9 +446,10 @@ it cannot quietly rot between releases.
 schema, dev stack, and CI are in place and verified end to end. Work is now cut into slices, each
 independently demoable.
 
-Slices A1 and A2 are done: the PostgreSQL plugin answers `HealthCheck` and `Discover` against a real
-server, and the inventory service, REST API, and CLI make that reachable — a server can be added and
-seen healthy. Backup, sandbox restore, and verification are next.
+Slices A1 to A3 are done: the PostgreSQL plugin answers `HealthCheck` and `Discover` against a real
+server, the inventory service, REST API, and CLI make that reachable — a server can be added and
+seen healthy — and the control plane can provision a throwaway database container from a plugin's
+`SandboxTemplate` and is proven not to leak one. Backup and verification are next.
 
 | Phase | Scope | Status |
 |---|---|---|
