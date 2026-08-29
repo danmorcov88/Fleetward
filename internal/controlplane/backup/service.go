@@ -1,0 +1,732 @@
+// Package backup orchestrates taking a backup: it creates the metadata rows, hands the plugin a
+// scoped grant to write the artifact, consumes the progress stream, and persists what came back.
+//
+// Three rules run through it.
+//
+//   - Nothing here knows what an engine is. The method, the artifact's shape, and the manifest's
+//     contents all come from the plugin; core supplies identity, storage, and bookkeeping.
+//   - A backup row is only ever green when the artifact behind it exists and is complete. Every
+//     failure path aborts the upload, so a partial artifact never becomes a visible object.
+//   - The plugin holds no storage credential. It writes through presigned part grants and reports
+//     receipts; core assembles the object (ADR-0007, ADR-0021).
+package backup
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
+	"github.com/danmorcov88/fleetward/internal/plugin/sdk"
+	"github.com/danmorcov88/fleetward/internal/storage/metadb"
+	"github.com/danmorcov88/fleetward/internal/storage/objstore"
+)
+
+// Sentinel errors. The gRPC layer maps them to status codes and is the only thing that decides what
+// a client sees.
+var (
+	// ErrNotFound reports that no such row exists in this tenant.
+	ErrNotFound = errors.New("not found")
+	// ErrInvalidArgument reports a malformed request.
+	ErrInvalidArgument = errors.New("invalid argument")
+	// ErrAlreadyRunning reports that this instance already has a backup in flight.
+	ErrAlreadyRunning = errors.New("a backup is already running for this instance")
+	// ErrEngineUnavailable reports that no plugin currently serves the instance's engine.
+	ErrEngineUnavailable = errors.New("engine unavailable")
+	// ErrUnsupported reports that the plugin cannot back this instance up.
+	ErrUnsupported = errors.New("unsupported")
+	// ErrPluginFailed reports a failure the plugin returned. Its message is safe to show a client:
+	// the contract forbids credentials in one.
+	ErrPluginFailed = errors.New("plugin call failed")
+)
+
+const (
+	// artifactFilename is the object's leaf name. It is deliberately neutral: the artifact's format
+	// is the plugin's business, recorded in the backup's metadata, and core naming it "dump" or
+	// "tar" would be core acquiring engine knowledge it must not have.
+	artifactFilename = "artifact"
+
+	// uploadParts is how many presigned part grants core issues for one backup.
+	//
+	// The size of a streamed artifact is unknown when the grants are minted, so a bound has to be
+	// chosen in advance. At the default 64 MiB part size this covers a 64 GiB artifact; the plugin
+	// fails loudly with an actionable message rather than silently truncating if it runs out.
+	uploadParts = 1024
+
+	// runTimeout bounds one backup run. A backup that has not finished in this long is not going to,
+	// and leaving it running holds a repeatable-read transaction open on a production server.
+	runTimeout = 6 * time.Hour
+
+	// runGrace is how much longer core gives a run than the deadline it hands the plugin, so a
+	// plugin that honours its timeout is always the one that decides the outcome.
+	runGrace = 5 * time.Minute
+
+	// progressLogInterval throttles progress logging. A plugin may emit a message per part, and a
+	// large backup would otherwise write thousands of identical-looking lines.
+	progressLogInterval = 30 * time.Second
+)
+
+// Router is the slice of the plugin manager this service needs.
+type Router interface {
+	Client(engineType string) (fwv1.EnginePluginClient, *fwv1.Capabilities, error)
+}
+
+// Resolver materializes an instance's credentials for a single plugin call. The inventory service
+// implements it; depending on the interface keeps this package's tests free of a secrets provider.
+type Resolver interface {
+	ResolveConnection(ctx context.Context, instanceID string) (*inventory.Connection, error)
+}
+
+// Service runs backups and answers questions about them.
+type Service struct {
+	pool     *pgxpool.Pool
+	store    objstore.ObjectStore
+	plugins  Router
+	resolver Resolver
+	log      *slog.Logger
+	tenantID string
+
+	// runCtx outlives the request that started a backup: an HTTP request cannot stay open for the
+	// hours a real backup takes, so RunBackup returns as soon as the rows exist and the work
+	// continues here. Close cancels it, and running backups then fail rather than being abandoned
+	// silently.
+	runCtx    context.Context
+	cancelRun context.CancelFunc
+	running   sync.WaitGroup
+}
+
+// New builds the service. The tenant is fixed until OIDC lands in phase F, exactly as in inventory.
+func New(pool *pgxpool.Pool, store objstore.ObjectStore, plugins Router, resolver Resolver, log *slog.Logger) *Service {
+	runCtx, cancel := context.WithCancel(context.Background())
+	return &Service{
+		pool:      pool,
+		store:     store,
+		plugins:   plugins,
+		resolver:  resolver,
+		log:       log.With(slog.String("component", "backup")),
+		tenantID:  metadb.DefaultTenantID,
+		runCtx:    runCtx,
+		cancelRun: cancel,
+	}
+}
+
+// Close cancels every running backup and waits for them to record their outcome.
+//
+// Waiting matters: a run that is killed without writing its row leaves a backup stuck in `running`
+// forever, and slice B4 — which owns leases and restart recovery — is what will make that
+// recoverable. Until then, a clean shutdown is the only thing that closes the row.
+func (s *Service) Close() error {
+	s.cancelRun()
+	s.running.Wait()
+	return nil
+}
+
+// RunBackupInput describes a manually triggered backup.
+type RunBackupInput struct {
+	InstanceID string
+	MethodID   string
+	Options    map[string]string
+	Databases  []string
+	// TriggeredManually records that a human asked for this run rather than a schedule.
+	TriggeredManually bool
+}
+
+// RunBackup starts a backup and returns as soon as it has been recorded.
+//
+// It is asynchronous because a backup takes minutes to hours and an HTTP request must not. The
+// caller polls GetBackup; the run itself is bounded by runTimeout and by the service's lifetime.
+func (s *Service) RunBackup(ctx context.Context, in RunBackupInput) (backupID, jobID string, err error) {
+	conn, err := s.resolver.ResolveConnection(ctx, in.InstanceID)
+	if err != nil {
+		return "", "", err
+	}
+
+	client, caps, err := s.plugins.Client(conn.EngineType)
+	if err != nil {
+		return "", "", fmt.Errorf("%w: %s: %w", ErrEngineUnavailable, conn.EngineType, err)
+	}
+
+	method, err := selectMethod(caps, in.MethodID)
+	if err != nil {
+		return "", "", err
+	}
+	if err := validateOptions(method, in.Options); err != nil {
+		return "", "", err
+	}
+
+	// The rows are created before any work starts, so a backup that fails at the very first step is
+	// still visible as a failed backup rather than as nothing at all.
+	jobID, backupID, err = s.createRows(ctx, conn.InstanceID, method.GetId(), in.TriggeredManually)
+	if err != nil {
+		return "", "", err
+	}
+
+	s.log.InfoContext(ctx, "backup started",
+		slog.String("backup_id", backupID),
+		slog.String("job_id", jobID),
+		slog.String("instance_id", conn.InstanceID),
+		slog.String("engine_type", conn.EngineType),
+		slog.String("method_id", method.GetId()))
+
+	s.running.Add(1)
+	go func() {
+		defer s.running.Done()
+		s.execute(client, runRequest{
+			backupID:   backupID,
+			jobID:      jobID,
+			connection: conn,
+			methodID:   method.GetId(),
+			options:    in.Options,
+			databases:  in.Databases,
+		})
+	}()
+
+	return backupID, jobID, nil
+}
+
+// runRequest is one backup's inputs, assembled while the caller's context was still alive.
+type runRequest struct {
+	backupID   string
+	jobID      string
+	connection *inventory.Connection
+	methodID   string
+	options    map[string]string
+	databases  []string
+}
+
+// execute performs the run and records its outcome. It never returns an error: there is no caller
+// left to receive one, so every outcome is written to the database and the log instead.
+func (s *Service) execute(client fwv1.EnginePluginClient, req runRequest) {
+	ctx, cancel := context.WithTimeout(s.runCtx, runTimeout+runGrace)
+	defer cancel()
+
+	log := s.log.With(slog.String("backup_id", req.backupID), slog.String("instance_id", req.connection.InstanceID))
+	started := time.Now()
+
+	result, err := s.transfer(ctx, client, req, log)
+	if err != nil {
+		// The recording context is detached from the run's: a run cancelled by shutdown or by the
+		// timeout must still be able to write down that it failed.
+		recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer recordCancel()
+
+		log.ErrorContext(recordCtx, "backup failed", slog.String("error", err.Error()))
+		if err := s.recordFailure(recordCtx, req, err); err != nil {
+			log.ErrorContext(recordCtx, "could not record the backup failure", slog.String("error", err.Error()))
+		}
+		return
+	}
+
+	recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer recordCancel()
+
+	if err := s.recordSuccess(recordCtx, req, result); err != nil {
+		// The artifact exists but the row does not describe it. That is the one outcome worse than
+		// a failed backup, because the estate view would show nothing where a good artifact sits,
+		// so it is logged at error level with the key needed to find the object by hand.
+		log.ErrorContext(recordCtx, "backup succeeded but its result could not be recorded",
+			slog.String("object_key", result.GetArtifact().GetKey()),
+			slog.String("error", err.Error()))
+		return
+	}
+
+	log.InfoContext(recordCtx, "backup succeeded",
+		slog.Int64("size_bytes", result.GetSizeBytes()),
+		slog.Int64("manifest_objects", result.GetManifest().GetTotalObjects()),
+		slog.Int64("manifest_records", result.GetManifest().GetTotalRecords()),
+		slog.Duration("duration", time.Since(started)))
+}
+
+// transfer mints the upload grant, drives the plugin, and completes the object.
+//
+// The deferred abort is the guarantee the whole design rests on: on every path that does not reach
+// a completed upload — a plugin failure, a stream that died, a checksum core could not persist, a
+// panic — the parts already written are discarded and no object appears. A partial artifact that
+// reported success would be a backup believed good and proven bad only at restore time.
+func (s *Service) transfer(ctx context.Context, client fwv1.EnginePluginClient, req runRequest, log *slog.Logger) (*fwv1.BackupResult, error) {
+	key := artifactKeyFor(s.tenantID, req.connection.InstanceID, req.backupID)
+
+	upload, err := s.store.CreateMultipartUpload(ctx, key, uploadParts, 0)
+	if err != nil {
+		return nil, fmt.Errorf("begin the artifact upload: %w", err)
+	}
+
+	completed := false
+	defer func() {
+		if completed {
+			return
+		}
+		abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		if err := s.store.AbortMultipartUpload(abortCtx, key, upload.UploadID); err != nil {
+			// Nothing is visible in the bucket either way; what leaks is storage the parts occupy
+			// until a lifecycle rule reaps them, which is worth an operator's attention.
+			log.WarnContext(abortCtx, "could not abort the incomplete artifact upload",
+				slog.String("object_key", key), slog.String("error", err.Error()))
+		}
+	}()
+
+	result, err := s.stream(ctx, client, req, upload, log)
+	if err != nil {
+		return nil, err
+	}
+
+	parts := make([]objstore.CompletedPart, 0, len(result.GetParts()))
+	for _, part := range result.GetParts() {
+		parts = append(parts, objstore.CompletedPart{PartNumber: int(part.GetPartNumber()), ETag: part.GetEtag()})
+	}
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("the plugin reported success without uploading any part of the artifact")
+	}
+
+	info, err := s.store.CompleteMultipartUpload(ctx, key, upload.UploadID, parts)
+	if err != nil {
+		return nil, fmt.Errorf("complete the artifact upload: %w", err)
+	}
+	completed = true
+
+	// The store's own view of the object is authoritative for its size. A disagreement means the
+	// plugin and the bucket describe different artifacts, and there is no safe way to guess which.
+	if info.Size != result.GetSizeBytes() {
+		if err := s.store.Delete(context.WithoutCancel(ctx), key); err != nil {
+			log.WarnContext(ctx, "could not delete a mismatched artifact",
+				slog.String("object_key", key), slog.String("error", err.Error()))
+		}
+		return nil, fmt.Errorf("the stored artifact is %d bytes but the plugin reported %d",
+			info.Size, result.GetSizeBytes())
+	}
+
+	result.Artifact = &fwv1.ObjectRef{Bucket: s.store.Bucket(), Key: key}
+	return result, nil
+}
+
+// stream drives the plugin's Backup RPC to its terminal message.
+func (s *Service) stream(ctx context.Context, client fwv1.EnginePluginClient, req runRequest, upload objstore.MultipartUpload, log *slog.Logger) (*fwv1.BackupResult, error) {
+	partURLs := make([]*fwv1.PresignedURL, 0, len(upload.Parts))
+	for _, grant := range upload.Parts {
+		partURLs = append(partURLs, &fwv1.PresignedURL{
+			Url:       grant.URL,
+			Method:    grant.Method,
+			Headers:   grant.Headers,
+			ExpiresAt: timestamppb.New(grant.ExpiresAt),
+		})
+	}
+
+	stream, err := client.Backup(ctx, &fwv1.BackupRequest{
+		Connection:  req.connection.Ref,
+		Credentials: req.connection.Credentials,
+		BackupId:    req.backupID,
+		MethodId:    req.methodID,
+		Options:     req.options,
+		Databases:   req.databases,
+		Timeout:     durationpb.New(runTimeout),
+		Target: &fwv1.ArtifactTarget{
+			Object:            &fwv1.ObjectRef{Bucket: s.store.Bucket(), Key: upload.Key},
+			PartUrls:          partURLs,
+			PartSizeBytes:     upload.PartSize,
+			ChecksumAlgorithm: fwv1.ChecksumAlgorithm_CHECKSUM_ALGORITHM_SHA256,
+		},
+	})
+	if err != nil {
+		return nil, pluginError("backup", err)
+	}
+
+	var (
+		result   *fwv1.BackupResult
+		lastLog  time.Time
+		terminal bool
+	)
+
+	for {
+		progress, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, pluginError("backup", err)
+		}
+
+		switch progress.GetPhase() {
+		case fwv1.JobPhase_JOB_PHASE_COMPLETED:
+			result = progress.GetResult()
+			terminal = true
+		case fwv1.JobPhase_JOB_PHASE_FAILED:
+			pe := progress.GetError()
+			return nil, fmt.Errorf("%w: %s", classifyPluginError(pe), pe.GetMessage())
+		case fwv1.JobPhase_JOB_PHASE_CANCELED:
+			return nil, fmt.Errorf("the plugin canceled the backup: %s", progress.GetMessage())
+		default:
+			if time.Since(lastLog) >= progressLogInterval {
+				lastLog = time.Now()
+				log.InfoContext(ctx, "backup progress",
+					slog.String("phase", progress.GetPhase().String()),
+					slog.Int64("bytes_written", progress.GetBytesWritten()),
+					slog.String("message", progress.GetMessage()))
+			}
+		}
+	}
+
+	// A stream that ended without a terminal message is the one case core cannot interpret: the
+	// plugin may have finished, or may have died half way. Treating it as a failure is the only
+	// safe reading, because the alternative is a green backup nobody can account for.
+	if !terminal || result == nil {
+		return nil, fmt.Errorf("the plugin ended the backup stream without reporting an outcome")
+	}
+	return result, nil
+}
+
+// classifyPluginError picks the sentinel for a plugin's structured failure, so a caller can tell an
+// unsupported operation from a genuine one without reading the message.
+func classifyPluginError(pe *fwv1.PluginError) error {
+	if pe.GetCode() == fwv1.ErrorCode_ERROR_CODE_UNSUPPORTED {
+		return ErrUnsupported
+	}
+	return ErrPluginFailed
+}
+
+// pluginError turns a failed plugin RPC into a service error, preferring the structured detail.
+func pluginError(operation string, err error) error {
+	if pe, ok := sdk.PluginErrorFrom(err); ok {
+		return fmt.Errorf("%w: %s: %s", classifyPluginError(pe), operation, pe.GetMessage())
+	}
+	// Only the status message travels: a transport-level error can carry the target address, and a
+	// client is where that must not appear.
+	return fmt.Errorf("%w: %s: %s", ErrPluginFailed, operation, status.Convert(err).Message())
+}
+
+// -----------------------------------------------------------------------------------------------
+// Method selection
+// -----------------------------------------------------------------------------------------------
+
+// selectMethod resolves the requested method against what the plugin declares.
+//
+// Core reads the capability matrix and nothing else. An engine's method list is the plugin's to
+// publish, which is what lets a new engine arrive without core learning its name.
+func selectMethod(caps *fwv1.Capabilities, requested string) (*fwv1.BackupMethod, error) {
+	if len(caps.GetBackupMethods()) == 0 {
+		return nil, fmt.Errorf("%w: the %s plugin declares no backup method",
+			ErrUnsupported, caps.GetEngineType())
+	}
+	if requested == "" {
+		method := sdk.DefaultBackupMethod(caps)
+		if method == nil {
+			return nil, fmt.Errorf("%w: the %s plugin declares no default backup method",
+				ErrUnsupported, caps.GetEngineType())
+		}
+		return method, nil
+	}
+
+	method := sdk.FindBackupMethod(caps, requested)
+	if method == nil {
+		return nil, fmt.Errorf("%w: %s has no backup method %q", ErrInvalidArgument, caps.GetEngineType(), requested)
+	}
+	return method, nil
+}
+
+// validateOptions rejects options the method does not declare, and values outside a declared enum.
+//
+// Rejecting an unknown option rather than passing it through is deliberate: a misspelled option
+// that is silently ignored produces a backup taken with settings nobody chose.
+func validateOptions(method *fwv1.BackupMethod, options map[string]string) error {
+	if len(options) == 0 {
+		return nil
+	}
+
+	declared := make(map[string]*fwv1.MethodOption, len(method.GetOptions()))
+	for _, opt := range method.GetOptions() {
+		declared[opt.GetName()] = opt
+	}
+
+	for name, value := range options {
+		opt, ok := declared[name]
+		if !ok {
+			return fmt.Errorf("%w: the %s method has no option %q", ErrInvalidArgument, method.GetId(), name)
+		}
+		if opt.GetType() != fwv1.OptionType_OPTION_TYPE_ENUM {
+			continue
+		}
+		if !contains(opt.GetAllowedValues(), value) {
+			return fmt.Errorf("%w: option %q must be one of %v, got %q",
+				ErrInvalidArgument, name, opt.GetAllowedValues(), value)
+		}
+	}
+	return nil
+}
+
+func contains(values []string, want string) bool {
+	for _, v := range values {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
+// -----------------------------------------------------------------------------------------------
+// Persistence
+// -----------------------------------------------------------------------------------------------
+
+// createRows inserts the job and the backup that describe this run.
+//
+// The unique index idx_jobs_one_active_per_instance_kind is what makes two concurrent backups of
+// one instance impossible. Enforcing it in the database rather than in code is deliberate: two
+// simultaneous dumps of one production server is an operational incident, not a race to lose.
+func (s *Service) createRows(ctx context.Context, instanceID, methodID string, manual bool) (jobID, backupID string, err error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("backup: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	err = tx.QueryRow(ctx, `
+		INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at)
+		VALUES ($1, $2, 'backup', 'running', now())
+		RETURNING id`,
+		s.tenantID, instanceID).Scan(&jobID)
+	if metadb.IsUniqueViolation(err) {
+		return "", "", fmt.Errorf("%w: %s", ErrAlreadyRunning, instanceID)
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("backup: create job: %w", err)
+	}
+
+	err = tx.QueryRow(ctx, `
+		INSERT INTO backups (tenant_id, instance_id, job_id, method_id, state, started_at, triggered_manually)
+		VALUES ($1, $2, $3, $4, 'running', now(), $5)
+		RETURNING id`,
+		s.tenantID, instanceID, jobID, methodID, manual).Scan(&backupID)
+	if err != nil {
+		return "", "", fmt.Errorf("backup: create backup: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", "", fmt.Errorf("backup: commit: %w", err)
+	}
+	return jobID, backupID, nil
+}
+
+// recordSuccess writes the artifact's coordinates, the checksum, and the manifest.
+func (s *Service) recordSuccess(ctx context.Context, req runRequest, result *fwv1.BackupResult) error {
+	manifest, err := protojson.Marshal(result.GetManifest())
+	if err != nil {
+		return fmt.Errorf("backup: encode manifest: %w", err)
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("backup: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	_, err = tx.Exec(ctx, `
+		UPDATE backups
+		SET state              = 'succeeded',
+		    bucket             = $1,
+		    object_key         = $2,
+		    size_bytes         = $3,
+		    checksum_algorithm = $4,
+		    checksum_value     = $5,
+		    engine_version     = $6,
+		    consistency_point  = $7,
+		    manifest           = $8,
+		    metadata           = $9,
+		    completed_at       = now(),
+		    duration_ms        = $10,
+		    updated_at         = now()
+		WHERE id = $11 AND tenant_id = $12`,
+		result.GetArtifact().GetBucket(),
+		result.GetArtifact().GetKey(),
+		result.GetSizeBytes(),
+		result.GetChecksum().GetAlgorithm().String(),
+		result.GetChecksum().GetValue(),
+		result.GetEngineVersion(),
+		nullableTime(result.GetConsistencyPoint()),
+		manifest,
+		metadataOrEmpty(result.GetMetadata()),
+		result.GetDuration().AsDuration().Milliseconds(),
+		req.backupID, s.tenantID)
+	if err != nil {
+		return fmt.Errorf("backup: record success: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE jobs SET state = 'succeeded', finished_at = now(), updated_at = now()
+		WHERE id = $1 AND tenant_id = $2`, req.jobID, s.tenantID); err != nil {
+		return fmt.Errorf("backup: finish job: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}
+
+// recordFailure writes why the run failed.
+func (s *Service) recordFailure(ctx context.Context, req runRequest, cause error) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("backup: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	message := cause.Error()
+	if _, err := tx.Exec(ctx, `
+		UPDATE backups
+		SET state = 'failed', error_message = $1, completed_at = now(), updated_at = now()
+		WHERE id = $2 AND tenant_id = $3`, message, req.backupID, s.tenantID); err != nil {
+		return fmt.Errorf("backup: record failure: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE jobs
+		SET state = 'failed', error_message = $1, finished_at = now(), attempts = attempts + 1, updated_at = now()
+		WHERE id = $2 AND tenant_id = $3`, message, req.jobID, s.tenantID); err != nil {
+		return fmt.Errorf("backup: fail job: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}
+
+// GetBackup returns one backup together with the manifest captured when it was taken.
+func (s *Service) GetBackup(ctx context.Context, backupID string) (*fwv1.Backup, *fwv1.SourceManifest, error) {
+	id, err := requireUUID("backup_id", backupID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var (
+		out               = &fwv1.Backup{Id: id, TenantId: s.tenantID}
+		state             string
+		checksumAlgorithm string
+		checksumValue     string
+		bucket            string
+		objectKey         string
+		startedAt         *time.Time
+		completedAt       *time.Time
+		consistencyPoint  *time.Time
+		expiresAt         *time.Time
+		durationMS        int64
+		manifestRaw       []byte
+	)
+
+	err = s.pool.QueryRow(ctx, `
+		SELECT instance_id, method_id, state, size_bytes, checksum_algorithm, checksum_value,
+		       bucket, object_key, started_at, completed_at, consistency_point, expires_at,
+		       duration_ms, error_message, triggered_manually, manifest
+		FROM backups
+		WHERE id = $1 AND tenant_id = $2`, id, s.tenantID).
+		Scan(&out.InstanceId, &out.MethodId, &state, &out.SizeBytes, &checksumAlgorithm, &checksumValue,
+			&bucket, &objectKey, &startedAt, &completedAt, &consistencyPoint, &expiresAt,
+			&durationMS, &out.ErrorMessage, &out.TriggeredManually, &manifestRaw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, fmt.Errorf("%w: backup %s", ErrNotFound, backupID)
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("backup: load backup: %w", err)
+	}
+
+	out.State = parseBackupState(state)
+	out.Duration = durationpb.New(time.Duration(durationMS) * time.Millisecond)
+	if checksumValue != "" {
+		out.Checksum = &fwv1.Checksum{Algorithm: parseChecksumAlgorithm(checksumAlgorithm), Value: checksumValue}
+	}
+	if objectKey != "" {
+		out.Artifact = &fwv1.ObjectRef{Bucket: bucket, Key: objectKey}
+	}
+	out.StartedAt = timestampOrNil(startedAt)
+	out.CompletedAt = timestampOrNil(completedAt)
+	out.ConsistencyPoint = timestampOrNil(consistencyPoint)
+	out.ExpiresAt = timestampOrNil(expiresAt)
+
+	manifest := &fwv1.SourceManifest{}
+	if len(manifestRaw) > 0 && string(manifestRaw) != "{}" {
+		// A manifest written by an older contract must not make the backup unreadable: the row is
+		// still the record that an artifact exists.
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(manifestRaw, manifest); err != nil {
+			s.log.WarnContext(ctx, "stored manifest could not be decoded",
+				slog.String("backup_id", id), slog.String("error", err.Error()))
+			manifest = &fwv1.SourceManifest{}
+		}
+	}
+
+	return out, manifest, nil
+}
+
+// -----------------------------------------------------------------------------------------------
+// Row helpers
+// -----------------------------------------------------------------------------------------------
+
+// artifactKeyFor builds the object key for one backup's artifact.
+func artifactKeyFor(tenantID, instanceID, backupID string) string {
+	return objstore.ArtifactKey(tenantID, instanceID, backupID, artifactFilename)
+}
+
+func parseBackupState(name string) fwv1.BackupState {
+	switch name {
+	case "pending":
+		return fwv1.BackupState_BACKUP_STATE_PENDING
+	case "running":
+		return fwv1.BackupState_BACKUP_STATE_RUNNING
+	case "succeeded":
+		return fwv1.BackupState_BACKUP_STATE_SUCCEEDED
+	case "failed":
+		return fwv1.BackupState_BACKUP_STATE_FAILED
+	case "canceled":
+		return fwv1.BackupState_BACKUP_STATE_CANCELED
+	case "expired":
+		return fwv1.BackupState_BACKUP_STATE_EXPIRED
+	default:
+		return fwv1.BackupState_BACKUP_STATE_UNSPECIFIED
+	}
+}
+
+// parseChecksumAlgorithm reads back the enum name the column stores. An unknown value becomes
+// UNSPECIFIED rather than an error: a checksum whose algorithm cannot be named is still evidence
+// worth showing, and refusing to read the row would hide the backup entirely.
+func parseChecksumAlgorithm(name string) fwv1.ChecksumAlgorithm {
+	if v, ok := fwv1.ChecksumAlgorithm_value[name]; ok {
+		return fwv1.ChecksumAlgorithm(v)
+	}
+	return fwv1.ChecksumAlgorithm_CHECKSUM_ALGORITHM_UNSPECIFIED
+}
+
+func timestampOrNil(t *time.Time) *timestamppb.Timestamp {
+	if t == nil {
+		return nil
+	}
+	return timestamppb.New(*t)
+}
+
+func nullableTime(ts *timestamppb.Timestamp) *time.Time {
+	if ts == nil || !ts.IsValid() {
+		return nil
+	}
+	t := ts.AsTime()
+	return &t
+}
+
+// metadataOrEmpty keeps a nil map from being written as SQL NULL into a NOT NULL JSONB column.
+func metadataOrEmpty(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
+}
+
+// requireUUID validates an identifier before it reaches a query, so a typo in a URL is a 400 rather
+// than a failed cast reported as a 500.
+func requireUUID(field, value string) (string, error) {
+	if !metadb.IsUUID(value) {
+		return "", fmt.Errorf("%w: %s must be a UUID", ErrInvalidArgument, field)
+	}
+	return value, nil
+}

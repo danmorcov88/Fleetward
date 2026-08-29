@@ -97,6 +97,16 @@ jobs:
       - name: Test
         run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
+      # The one host tool the integration suite needs. Plugins orchestrate native tooling by design,
+      # so the pg_dump backup test cannot mock it away — and pg_dump refuses to dump a server newer
+      # than itself, which is why the client major is pinned to the test server's. Without this step
+      # the backup test skips, and a skipped merge gate is not a merge gate.
+      - name: Install the PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          pg_dump --version
+
       # A tool that talks to databases and has only been tested against mocks has not been tested
       # (ADR-0012). These spin real engines with testcontainers; the runner already has Docker.
       # They live in the same job so the required-check set stays stable.

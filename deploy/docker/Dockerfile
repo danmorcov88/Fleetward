@@ -27,10 +27,15 @@ RUN LDFLAGS="-s -w \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/plugins/fleetward-plugin-mongodb    ./cmd/plugins/mongodb && \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/plugins/fleetward-plugin-redis      ./cmd/plugins/redis
 
-# Debian rather than distroless or Alpine: plugins orchestrate native tooling (pg_basebackup,
-# mysqldump, mongodump, redis-cli), and those clients need a normal userland. Choosing a smaller
-# base here would only push the problem into Stage 1.
-FROM debian:bookworm-slim
+# Debian rather than distroless or Alpine: plugins orchestrate native tooling (pg_dump,
+# pg_basebackup, mysqldump, mongodump, redis-cli), and those clients need a normal userland.
+# Choosing a smaller base here would only push the problem into a later phase.
+#
+# trixie rather than bookworm because of one hard rule: pg_dump refuses to dump a server newer than
+# itself. bookworm's postgresql-client is 15, which cannot back up the PostgreSQL 16 in the dev
+# stack — and could not back up most of the estate this tool is for. trixie ships 17, which covers
+# every version the plugin declares support for (>=13 <18).
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \

@@ -2489,9 +2489,14 @@ func (x *BackupRequest) GetTimeout() *durationpb.Duration {
 type ArtifactTarget struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Object *ObjectRef             `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
-	// Single-shot upload grant. Used when part_urls is empty.
+	// Single-shot upload grant, usable only when the plugin knows the artifact's exact size before
+	// it starts writing: an S3 PUT requires Content-Length and rejects a chunked body. A plugin that
+	// streams a native tool's stdout does not know the size, and must use part_urls instead
+	// (ADR-0021).
 	UploadUrl *PresignedURL `protobuf:"bytes,2,opt,name=upload_url,json=uploadUrl,proto3" json:"upload_url,omitempty"`
-	// Ordered part upload grants for multipart uploads of large artifacts.
+	// Ordered part upload grants for a multipart upload. Every part except the last must be exactly
+	// part_size_bytes long; the last may be shorter. The plugin reports each part's ETag back in
+	// BackupResult.parts, and core completes the upload.
 	PartUrls          []*PresignedURL   `protobuf:"bytes,3,rep,name=part_urls,json=partUrls,proto3" json:"part_urls,omitempty"`
 	PartSizeBytes     int64             `protobuf:"varint,4,opt,name=part_size_bytes,json=partSizeBytes,proto3" json:"part_size_bytes,omitempty"`
 	ChecksumAlgorithm ChecksumAlgorithm `protobuf:"varint,5,opt,name=checksum_algorithm,json=checksumAlgorithm,proto3,enum=fleetward.v1.ChecksumAlgorithm" json:"checksum_algorithm,omitempty"`
@@ -2564,6 +2569,71 @@ func (x *ArtifactTarget) GetChecksumAlgorithm() ChecksumAlgorithm {
 	return ChecksumAlgorithm_CHECKSUM_ALGORITHM_UNSPECIFIED
 }
 
+// UploadedPart is the receipt for one part of a multipart upload. Core needs the ETag the object
+// store returned for each part in order to complete the upload; the plugin cannot complete it
+// itself, because completing requires a storage credential it must never hold (ADR-0007).
+type UploadedPart struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 1-based index into ArtifactTarget.part_urls.
+	PartNumber int32 `protobuf:"varint,1,opt,name=part_number,json=partNumber,proto3" json:"part_number,omitempty"`
+	// ETag exactly as the store returned it, quotes included. Core passes it back verbatim.
+	Etag          string `protobuf:"bytes,2,opt,name=etag,proto3" json:"etag,omitempty"`
+	SizeBytes     int64  `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadedPart) Reset() {
+	*x = UploadedPart{}
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadedPart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadedPart) ProtoMessage() {}
+
+func (x *UploadedPart) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadedPart.ProtoReflect.Descriptor instead.
+func (*UploadedPart) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *UploadedPart) GetPartNumber() int32 {
+	if x != nil {
+		return x.PartNumber
+	}
+	return 0
+}
+
+func (x *UploadedPart) GetEtag() string {
+	if x != nil {
+		return x.Etag
+	}
+	return ""
+}
+
+func (x *UploadedPart) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
 type BackupProgress struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	BackupId string                 `protobuf:"bytes,1,opt,name=backup_id,json=backupId,proto3" json:"backup_id,omitempty"`
@@ -2582,7 +2652,7 @@ type BackupProgress struct {
 
 func (x *BackupProgress) Reset() {
 	*x = BackupProgress{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[20]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2594,7 +2664,7 @@ func (x *BackupProgress) String() string {
 func (*BackupProgress) ProtoMessage() {}
 
 func (x *BackupProgress) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[20]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2607,7 +2677,7 @@ func (x *BackupProgress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackupProgress.ProtoReflect.Descriptor instead.
 func (*BackupProgress) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{20}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *BackupProgress) GetBackupId() string {
@@ -2675,13 +2745,16 @@ type BackupResult struct {
 	// Additional artifacts written alongside the main one, e.g. WAL segments.
 	AdditionalArtifacts []*ArtifactSource `protobuf:"bytes,9,rep,name=additional_artifacts,json=additionalArtifacts,proto3" json:"additional_artifacts,omitempty"`
 	Metadata            map[string]string `protobuf:"bytes,10,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Receipts for a multipart upload, in part order. Empty when the artifact was written through
+	// ArtifactTarget.upload_url.
+	Parts         []*UploadedPart `protobuf:"bytes,11,rep,name=parts,proto3" json:"parts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BackupResult) Reset() {
 	*x = BackupResult{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[21]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2693,7 +2766,7 @@ func (x *BackupResult) String() string {
 func (*BackupResult) ProtoMessage() {}
 
 func (x *BackupResult) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[21]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2706,7 +2779,7 @@ func (x *BackupResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackupResult.ProtoReflect.Descriptor instead.
 func (*BackupResult) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{21}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *BackupResult) GetArtifact() *ObjectRef {
@@ -2779,6 +2852,13 @@ func (x *BackupResult) GetMetadata() map[string]string {
 	return nil
 }
 
+func (x *BackupResult) GetParts() []*UploadedPart {
+	if x != nil {
+		return x.Parts
+	}
+	return nil
+}
+
 // SourceManifest records what the source instance contained at backup time.
 type SourceManifest struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
@@ -2794,7 +2874,7 @@ type SourceManifest struct {
 
 func (x *SourceManifest) Reset() {
 	*x = SourceManifest{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[22]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2806,7 +2886,7 @@ func (x *SourceManifest) String() string {
 func (*SourceManifest) ProtoMessage() {}
 
 func (x *SourceManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[22]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2819,7 +2899,7 @@ func (x *SourceManifest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceManifest.ProtoReflect.Descriptor instead.
 func (*SourceManifest) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{22}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SourceManifest) GetCapturedAt() *timestamppb.Timestamp {
@@ -2873,7 +2953,7 @@ type ManifestEntry struct {
 
 func (x *ManifestEntry) Reset() {
 	*x = ManifestEntry{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[23]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2885,7 +2965,7 @@ func (x *ManifestEntry) String() string {
 func (*ManifestEntry) ProtoMessage() {}
 
 func (x *ManifestEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[23]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2898,7 +2978,7 @@ func (x *ManifestEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManifestEntry.ProtoReflect.Descriptor instead.
 func (*ManifestEntry) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{23}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ManifestEntry) GetDatabase() string {
@@ -2955,7 +3035,7 @@ type RestoreRequest struct {
 
 func (x *RestoreRequest) Reset() {
 	*x = RestoreRequest{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[24]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2967,7 +3047,7 @@ func (x *RestoreRequest) String() string {
 func (*RestoreRequest) ProtoMessage() {}
 
 func (x *RestoreRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[24]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2980,7 +3060,7 @@ func (x *RestoreRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestoreRequest.ProtoReflect.Descriptor instead.
 func (*RestoreRequest) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{24}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *RestoreRequest) GetRestoreId() string {
@@ -3054,7 +3134,7 @@ type ArtifactSource struct {
 
 func (x *ArtifactSource) Reset() {
 	*x = ArtifactSource{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[25]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3066,7 +3146,7 @@ func (x *ArtifactSource) String() string {
 func (*ArtifactSource) ProtoMessage() {}
 
 func (x *ArtifactSource) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[25]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3079,7 +3159,7 @@ func (x *ArtifactSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArtifactSource.ProtoReflect.Descriptor instead.
 func (*ArtifactSource) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{25}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ArtifactSource) GetObject() *ObjectRef {
@@ -3137,7 +3217,7 @@ type RestoreTarget struct {
 
 func (x *RestoreTarget) Reset() {
 	*x = RestoreTarget{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[26]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3149,7 +3229,7 @@ func (x *RestoreTarget) String() string {
 func (*RestoreTarget) ProtoMessage() {}
 
 func (x *RestoreTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[26]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3162,7 +3242,7 @@ func (x *RestoreTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestoreTarget.ProtoReflect.Descriptor instead.
 func (*RestoreTarget) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{26}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *RestoreTarget) GetKind() RestoreTargetKind {
@@ -3210,7 +3290,7 @@ type RestoreProgress struct {
 
 func (x *RestoreProgress) Reset() {
 	*x = RestoreProgress{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[27]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3222,7 +3302,7 @@ func (x *RestoreProgress) String() string {
 func (*RestoreProgress) ProtoMessage() {}
 
 func (x *RestoreProgress) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[27]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3235,7 +3315,7 @@ func (x *RestoreProgress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestoreProgress.ProtoReflect.Descriptor instead.
 func (*RestoreProgress) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{27}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *RestoreProgress) GetRestoreId() string {
@@ -3301,7 +3381,7 @@ type RestoreResult struct {
 
 func (x *RestoreResult) Reset() {
 	*x = RestoreResult{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[28]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3313,7 +3393,7 @@ func (x *RestoreResult) String() string {
 func (*RestoreResult) ProtoMessage() {}
 
 func (x *RestoreResult) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[28]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3326,7 +3406,7 @@ func (x *RestoreResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestoreResult.ProtoReflect.Descriptor instead.
 func (*RestoreResult) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{28}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *RestoreResult) GetDuration() *durationpb.Duration {
@@ -3381,7 +3461,7 @@ type VerifyRestoreRequest struct {
 
 func (x *VerifyRestoreRequest) Reset() {
 	*x = VerifyRestoreRequest{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[29]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3393,7 +3473,7 @@ func (x *VerifyRestoreRequest) String() string {
 func (*VerifyRestoreRequest) ProtoMessage() {}
 
 func (x *VerifyRestoreRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[29]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3406,7 +3486,7 @@ func (x *VerifyRestoreRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyRestoreRequest.ProtoReflect.Descriptor instead.
 func (*VerifyRestoreRequest) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{29}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *VerifyRestoreRequest) GetVerificationId() string {
@@ -3467,7 +3547,7 @@ type VerifyRestoreResult struct {
 
 func (x *VerifyRestoreResult) Reset() {
 	*x = VerifyRestoreResult{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[30]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3479,7 +3559,7 @@ func (x *VerifyRestoreResult) String() string {
 func (*VerifyRestoreResult) ProtoMessage() {}
 
 func (x *VerifyRestoreResult) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[30]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3492,7 +3572,7 @@ func (x *VerifyRestoreResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyRestoreResult.ProtoReflect.Descriptor instead.
 func (*VerifyRestoreResult) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{30}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *VerifyRestoreResult) GetVerificationId() string {
@@ -3551,7 +3631,7 @@ type CheckResult struct {
 
 func (x *CheckResult) Reset() {
 	*x = CheckResult{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[31]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3563,7 +3643,7 @@ func (x *CheckResult) String() string {
 func (*CheckResult) ProtoMessage() {}
 
 func (x *CheckResult) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[31]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3576,7 +3656,7 @@ func (x *CheckResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckResult.ProtoReflect.Descriptor instead.
 func (*CheckResult) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{31}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *CheckResult) GetCheck() VerificationCheck {
@@ -3634,7 +3714,7 @@ type Discrepancy struct {
 
 func (x *Discrepancy) Reset() {
 	*x = Discrepancy{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[32]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3646,7 +3726,7 @@ func (x *Discrepancy) String() string {
 func (*Discrepancy) ProtoMessage() {}
 
 func (x *Discrepancy) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[32]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3659,7 +3739,7 @@ func (x *Discrepancy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Discrepancy.ProtoReflect.Descriptor instead.
 func (*Discrepancy) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{32}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *Discrepancy) GetDatabase() string {
@@ -3711,7 +3791,7 @@ type ListPITRTargetsRequest struct {
 
 func (x *ListPITRTargetsRequest) Reset() {
 	*x = ListPITRTargetsRequest{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[33]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3723,7 +3803,7 @@ func (x *ListPITRTargetsRequest) String() string {
 func (*ListPITRTargetsRequest) ProtoMessage() {}
 
 func (x *ListPITRTargetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[33]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3736,7 +3816,7 @@ func (x *ListPITRTargetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPITRTargetsRequest.ProtoReflect.Descriptor instead.
 func (*ListPITRTargetsRequest) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{33}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListPITRTargetsRequest) GetConnection() *ConnectionRef {
@@ -3787,7 +3867,7 @@ type PITRWindow struct {
 
 func (x *PITRWindow) Reset() {
 	*x = PITRWindow{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[34]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3799,7 +3879,7 @@ func (x *PITRWindow) String() string {
 func (*PITRWindow) ProtoMessage() {}
 
 func (x *PITRWindow) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[34]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3812,7 +3892,7 @@ func (x *PITRWindow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PITRWindow.ProtoReflect.Descriptor instead.
 func (*PITRWindow) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{34}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *PITRWindow) GetAvailable() bool {
@@ -3874,7 +3954,7 @@ type PITRGap struct {
 
 func (x *PITRGap) Reset() {
 	*x = PITRGap{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[35]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3886,7 +3966,7 @@ func (x *PITRGap) String() string {
 func (*PITRGap) ProtoMessage() {}
 
 func (x *PITRGap) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[35]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3899,7 +3979,7 @@ func (x *PITRGap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PITRGap.ProtoReflect.Descriptor instead.
 func (*PITRGap) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{35}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *PITRGap) GetRange() *TimeRange {
@@ -3928,7 +4008,7 @@ type PITRBaseline struct {
 
 func (x *PITRBaseline) Reset() {
 	*x = PITRBaseline{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[36]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3940,7 +4020,7 @@ func (x *PITRBaseline) String() string {
 func (*PITRBaseline) ProtoMessage() {}
 
 func (x *PITRBaseline) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[36]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3953,7 +4033,7 @@ func (x *PITRBaseline) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PITRBaseline.ProtoReflect.Descriptor instead.
 func (*PITRBaseline) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{36}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *PITRBaseline) GetBackupId() string {
@@ -3998,7 +4078,7 @@ type ListPrincipalsRequest struct {
 
 func (x *ListPrincipalsRequest) Reset() {
 	*x = ListPrincipalsRequest{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[37]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4010,7 +4090,7 @@ func (x *ListPrincipalsRequest) String() string {
 func (*ListPrincipalsRequest) ProtoMessage() {}
 
 func (x *ListPrincipalsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[37]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4023,7 +4103,7 @@ func (x *ListPrincipalsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPrincipalsRequest.ProtoReflect.Descriptor instead.
 func (*ListPrincipalsRequest) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{37}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ListPrincipalsRequest) GetConnection() *ConnectionRef {
@@ -4064,7 +4144,7 @@ type ListPrincipalsResponse struct {
 
 func (x *ListPrincipalsResponse) Reset() {
 	*x = ListPrincipalsResponse{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[38]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4076,7 +4156,7 @@ func (x *ListPrincipalsResponse) String() string {
 func (*ListPrincipalsResponse) ProtoMessage() {}
 
 func (x *ListPrincipalsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[38]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4089,7 +4169,7 @@ func (x *ListPrincipalsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPrincipalsResponse.ProtoReflect.Descriptor instead.
 func (*ListPrincipalsResponse) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{38}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ListPrincipalsResponse) GetPrincipals() []*Principal {
@@ -4126,7 +4206,7 @@ type Principal struct {
 
 func (x *Principal) Reset() {
 	*x = Principal{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[39]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4138,7 +4218,7 @@ func (x *Principal) String() string {
 func (*Principal) ProtoMessage() {}
 
 func (x *Principal) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[39]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4151,7 +4231,7 @@ func (x *Principal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Principal.ProtoReflect.Descriptor instead.
 func (*Principal) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{39}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *Principal) GetName() string {
@@ -4240,7 +4320,7 @@ type Privilege struct {
 
 func (x *Privilege) Reset() {
 	*x = Privilege{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[40]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4252,7 +4332,7 @@ func (x *Privilege) String() string {
 func (*Privilege) ProtoMessage() {}
 
 func (x *Privilege) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[40]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4265,7 +4345,7 @@ func (x *Privilege) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Privilege.ProtoReflect.Descriptor instead.
 func (*Privilege) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{40}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *Privilege) GetScope() string {
@@ -4307,7 +4387,7 @@ type HealthCheckRequest struct {
 
 func (x *HealthCheckRequest) Reset() {
 	*x = HealthCheckRequest{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[41]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4319,7 +4399,7 @@ func (x *HealthCheckRequest) String() string {
 func (*HealthCheckRequest) ProtoMessage() {}
 
 func (x *HealthCheckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[41]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4332,7 +4412,7 @@ func (x *HealthCheckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthCheckRequest.ProtoReflect.Descriptor instead.
 func (*HealthCheckRequest) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{41}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *HealthCheckRequest) GetConnection() *ConnectionRef {
@@ -4373,7 +4453,7 @@ type HealthStatus struct {
 
 func (x *HealthStatus) Reset() {
 	*x = HealthStatus{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[42]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4385,7 +4465,7 @@ func (x *HealthStatus) String() string {
 func (*HealthStatus) ProtoMessage() {}
 
 func (x *HealthStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[42]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4398,7 +4478,7 @@ func (x *HealthStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthStatus.ProtoReflect.Descriptor instead.
 func (*HealthStatus) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{42}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *HealthStatus) GetState() HealthState {
@@ -4456,7 +4536,7 @@ type HealthSignal struct {
 
 func (x *HealthSignal) Reset() {
 	*x = HealthSignal{}
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[43]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4468,7 +4548,7 @@ func (x *HealthSignal) String() string {
 func (*HealthSignal) ProtoMessage() {}
 
 func (x *HealthSignal) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_plugin_proto_msgTypes[43]
+	mi := &file_fleetward_v1_plugin_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4481,7 +4561,7 @@ func (x *HealthSignal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthSignal.ProtoReflect.Descriptor instead.
 func (*HealthSignal) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{43}
+	return file_fleetward_v1_plugin_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *HealthSignal) GetName() string {
@@ -4708,7 +4788,13 @@ const file_fleetward_v1_plugin_proto_rawDesc = "" +
 	"upload_url\x18\x02 \x01(\v2\x1a.fleetward.v1.PresignedURLR\tuploadUrl\x127\n" +
 	"\tpart_urls\x18\x03 \x03(\v2\x1a.fleetward.v1.PresignedURLR\bpartUrls\x12&\n" +
 	"\x0fpart_size_bytes\x18\x04 \x01(\x03R\rpartSizeBytes\x12N\n" +
-	"\x12checksum_algorithm\x18\x05 \x01(\x0e2\x1f.fleetward.v1.ChecksumAlgorithmR\x11checksumAlgorithm\"\xaa\x02\n" +
+	"\x12checksum_algorithm\x18\x05 \x01(\x0e2\x1f.fleetward.v1.ChecksumAlgorithmR\x11checksumAlgorithm\"b\n" +
+	"\fUploadedPart\x12\x1f\n" +
+	"\vpart_number\x18\x01 \x01(\x05R\n" +
+	"partNumber\x12\x12\n" +
+	"\x04etag\x18\x02 \x01(\tR\x04etag\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x03 \x01(\x03R\tsizeBytes\"\xaa\x02\n" +
 	"\x0eBackupProgress\x12\x1b\n" +
 	"\tbackup_id\x18\x01 \x01(\tR\bbackupId\x12,\n" +
 	"\x05phase\x18\x02 \x01(\x0e2\x16.fleetward.v1.JobPhaseR\x05phase\x12)\n" +
@@ -4716,7 +4802,7 @@ const file_fleetward_v1_plugin_proto_rawDesc = "" +
 	"\rbytes_written\x18\x04 \x01(\x03R\fbytesWritten\x12\x18\n" +
 	"\amessage\x18\x05 \x01(\tR\amessage\x122\n" +
 	"\x06result\x18\x06 \x01(\v2\x1a.fleetward.v1.BackupResultR\x06result\x12/\n" +
-	"\x05error\x18\a \x01(\v2\x19.fleetward.v1.PluginErrorR\x05error\"\xe8\x04\n" +
+	"\x05error\x18\a \x01(\v2\x19.fleetward.v1.PluginErrorR\x05error\"\x9a\x05\n" +
 	"\fBackupResult\x123\n" +
 	"\bartifact\x18\x01 \x01(\v2\x17.fleetward.v1.ObjectRefR\bartifact\x12\x1d\n" +
 	"\n" +
@@ -4729,7 +4815,8 @@ const file_fleetward_v1_plugin_proto_rawDesc = "" +
 	"\bmanifest\x18\b \x01(\v2\x1c.fleetward.v1.SourceManifestR\bmanifest\x12O\n" +
 	"\x14additional_artifacts\x18\t \x03(\v2\x1c.fleetward.v1.ArtifactSourceR\x13additionalArtifacts\x12D\n" +
 	"\bmetadata\x18\n" +
-	" \x03(\v2(.fleetward.v1.BackupResult.MetadataEntryR\bmetadata\x1a;\n" +
+	" \x03(\v2(.fleetward.v1.BackupResult.MetadataEntryR\bmetadata\x120\n" +
+	"\x05parts\x18\v \x03(\v2\x1a.fleetward.v1.UploadedPartR\x05parts\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xed\x01\n" +
@@ -5017,7 +5104,7 @@ func file_fleetward_v1_plugin_proto_rawDescGZIP() []byte {
 }
 
 var file_fleetward_v1_plugin_proto_enumTypes = make([]protoimpl.EnumInfo, 13)
-var file_fleetward_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
+var file_fleetward_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 54)
 var file_fleetward_v1_plugin_proto_goTypes = []any{
 	(PrincipalModel)(0),            // 0: fleetward.v1.PrincipalModel
 	(BackupKind)(0),                // 1: fleetward.v1.BackupKind
@@ -5052,50 +5139,51 @@ var file_fleetward_v1_plugin_proto_goTypes = []any{
 	(*Metric)(nil),                 // 30: fleetward.v1.Metric
 	(*BackupRequest)(nil),          // 31: fleetward.v1.BackupRequest
 	(*ArtifactTarget)(nil),         // 32: fleetward.v1.ArtifactTarget
-	(*BackupProgress)(nil),         // 33: fleetward.v1.BackupProgress
-	(*BackupResult)(nil),           // 34: fleetward.v1.BackupResult
-	(*SourceManifest)(nil),         // 35: fleetward.v1.SourceManifest
-	(*ManifestEntry)(nil),          // 36: fleetward.v1.ManifestEntry
-	(*RestoreRequest)(nil),         // 37: fleetward.v1.RestoreRequest
-	(*ArtifactSource)(nil),         // 38: fleetward.v1.ArtifactSource
-	(*RestoreTarget)(nil),          // 39: fleetward.v1.RestoreTarget
-	(*RestoreProgress)(nil),        // 40: fleetward.v1.RestoreProgress
-	(*RestoreResult)(nil),          // 41: fleetward.v1.RestoreResult
-	(*VerifyRestoreRequest)(nil),   // 42: fleetward.v1.VerifyRestoreRequest
-	(*VerifyRestoreResult)(nil),    // 43: fleetward.v1.VerifyRestoreResult
-	(*CheckResult)(nil),            // 44: fleetward.v1.CheckResult
-	(*Discrepancy)(nil),            // 45: fleetward.v1.Discrepancy
-	(*ListPITRTargetsRequest)(nil), // 46: fleetward.v1.ListPITRTargetsRequest
-	(*PITRWindow)(nil),             // 47: fleetward.v1.PITRWindow
-	(*PITRGap)(nil),                // 48: fleetward.v1.PITRGap
-	(*PITRBaseline)(nil),           // 49: fleetward.v1.PITRBaseline
-	(*ListPrincipalsRequest)(nil),  // 50: fleetward.v1.ListPrincipalsRequest
-	(*ListPrincipalsResponse)(nil), // 51: fleetward.v1.ListPrincipalsResponse
-	(*Principal)(nil),              // 52: fleetward.v1.Principal
-	(*Privilege)(nil),              // 53: fleetward.v1.Privilege
-	(*HealthCheckRequest)(nil),     // 54: fleetward.v1.HealthCheckRequest
-	(*HealthStatus)(nil),           // 55: fleetward.v1.HealthStatus
-	(*HealthSignal)(nil),           // 56: fleetward.v1.HealthSignal
-	nil,                            // 57: fleetward.v1.Capabilities.MetadataEntry
-	nil,                            // 58: fleetward.v1.SandboxTemplate.EnvEntry
-	nil,                            // 59: fleetward.v1.ServerInfo.AttributesEntry
-	nil,                            // 60: fleetward.v1.Metric.AttributesEntry
-	nil,                            // 61: fleetward.v1.BackupRequest.OptionsEntry
-	nil,                            // 62: fleetward.v1.BackupResult.MetadataEntry
-	nil,                            // 63: fleetward.v1.RestoreRequest.OptionsEntry
-	nil,                            // 64: fleetward.v1.RestoreResult.MetadataEntry
-	nil,                            // 65: fleetward.v1.Principal.AttributesEntry
-	(*durationpb.Duration)(nil),    // 66: google.protobuf.Duration
-	(*ConnectionRef)(nil),          // 67: fleetward.v1.ConnectionRef
-	(*Credentials)(nil),            // 68: fleetward.v1.Credentials
-	(*timestamppb.Timestamp)(nil),  // 69: google.protobuf.Timestamp
-	(*ObjectRef)(nil),              // 70: fleetward.v1.ObjectRef
-	(*PresignedURL)(nil),           // 71: fleetward.v1.PresignedURL
-	(ChecksumAlgorithm)(0),         // 72: fleetward.v1.ChecksumAlgorithm
-	(*PluginError)(nil),            // 73: fleetward.v1.PluginError
-	(*Checksum)(nil),               // 74: fleetward.v1.Checksum
-	(Severity)(0),                  // 75: fleetward.v1.Severity
-	(*TimeRange)(nil),              // 76: fleetward.v1.TimeRange
+	(*UploadedPart)(nil),           // 33: fleetward.v1.UploadedPart
+	(*BackupProgress)(nil),         // 34: fleetward.v1.BackupProgress
+	(*BackupResult)(nil),           // 35: fleetward.v1.BackupResult
+	(*SourceManifest)(nil),         // 36: fleetward.v1.SourceManifest
+	(*ManifestEntry)(nil),          // 37: fleetward.v1.ManifestEntry
+	(*RestoreRequest)(nil),         // 38: fleetward.v1.RestoreRequest
+	(*ArtifactSource)(nil),         // 39: fleetward.v1.ArtifactSource
+	(*RestoreTarget)(nil),          // 40: fleetward.v1.RestoreTarget
+	(*RestoreProgress)(nil),        // 41: fleetward.v1.RestoreProgress
+	(*RestoreResult)(nil),          // 42: fleetward.v1.RestoreResult
+	(*VerifyRestoreRequest)(nil),   // 43: fleetward.v1.VerifyRestoreRequest
+	(*VerifyRestoreResult)(nil),    // 44: fleetward.v1.VerifyRestoreResult
+	(*CheckResult)(nil),            // 45: fleetward.v1.CheckResult
+	(*Discrepancy)(nil),            // 46: fleetward.v1.Discrepancy
+	(*ListPITRTargetsRequest)(nil), // 47: fleetward.v1.ListPITRTargetsRequest
+	(*PITRWindow)(nil),             // 48: fleetward.v1.PITRWindow
+	(*PITRGap)(nil),                // 49: fleetward.v1.PITRGap
+	(*PITRBaseline)(nil),           // 50: fleetward.v1.PITRBaseline
+	(*ListPrincipalsRequest)(nil),  // 51: fleetward.v1.ListPrincipalsRequest
+	(*ListPrincipalsResponse)(nil), // 52: fleetward.v1.ListPrincipalsResponse
+	(*Principal)(nil),              // 53: fleetward.v1.Principal
+	(*Privilege)(nil),              // 54: fleetward.v1.Privilege
+	(*HealthCheckRequest)(nil),     // 55: fleetward.v1.HealthCheckRequest
+	(*HealthStatus)(nil),           // 56: fleetward.v1.HealthStatus
+	(*HealthSignal)(nil),           // 57: fleetward.v1.HealthSignal
+	nil,                            // 58: fleetward.v1.Capabilities.MetadataEntry
+	nil,                            // 59: fleetward.v1.SandboxTemplate.EnvEntry
+	nil,                            // 60: fleetward.v1.ServerInfo.AttributesEntry
+	nil,                            // 61: fleetward.v1.Metric.AttributesEntry
+	nil,                            // 62: fleetward.v1.BackupRequest.OptionsEntry
+	nil,                            // 63: fleetward.v1.BackupResult.MetadataEntry
+	nil,                            // 64: fleetward.v1.RestoreRequest.OptionsEntry
+	nil,                            // 65: fleetward.v1.RestoreResult.MetadataEntry
+	nil,                            // 66: fleetward.v1.Principal.AttributesEntry
+	(*durationpb.Duration)(nil),    // 67: google.protobuf.Duration
+	(*ConnectionRef)(nil),          // 68: fleetward.v1.ConnectionRef
+	(*Credentials)(nil),            // 69: fleetward.v1.Credentials
+	(*timestamppb.Timestamp)(nil),  // 70: google.protobuf.Timestamp
+	(*ObjectRef)(nil),              // 71: fleetward.v1.ObjectRef
+	(*PresignedURL)(nil),           // 72: fleetward.v1.PresignedURL
+	(ChecksumAlgorithm)(0),         // 73: fleetward.v1.ChecksumAlgorithm
+	(*PluginError)(nil),            // 74: fleetward.v1.PluginError
+	(*Checksum)(nil),               // 75: fleetward.v1.Checksum
+	(Severity)(0),                  // 76: fleetward.v1.Severity
+	(*TimeRange)(nil),              // 77: fleetward.v1.TimeRange
 }
 var file_fleetward_v1_plugin_proto_depIdxs = []int32{
 	15,  // 0: fleetward.v1.Capabilities.backup_methods:type_name -> fleetward.v1.BackupMethod
@@ -5103,139 +5191,140 @@ var file_fleetward_v1_plugin_proto_depIdxs = []int32{
 	9,   // 2: fleetward.v1.Capabilities.supported_verification_checks:type_name -> fleetward.v1.VerificationCheck
 	18,  // 3: fleetward.v1.Capabilities.metrics:type_name -> fleetward.v1.MetricDescriptor
 	17,  // 4: fleetward.v1.Capabilities.sandbox_template:type_name -> fleetward.v1.SandboxTemplate
-	57,  // 5: fleetward.v1.Capabilities.metadata:type_name -> fleetward.v1.Capabilities.MetadataEntry
+	58,  // 5: fleetward.v1.Capabilities.metadata:type_name -> fleetward.v1.Capabilities.MetadataEntry
 	1,   // 6: fleetward.v1.BackupMethod.kind:type_name -> fleetward.v1.BackupKind
 	16,  // 7: fleetward.v1.BackupMethod.options:type_name -> fleetward.v1.MethodOption
 	2,   // 8: fleetward.v1.MethodOption.type:type_name -> fleetward.v1.OptionType
-	58,  // 9: fleetward.v1.SandboxTemplate.env:type_name -> fleetward.v1.SandboxTemplate.EnvEntry
-	66,  // 10: fleetward.v1.SandboxTemplate.readiness_timeout:type_name -> google.protobuf.Duration
+	59,  // 9: fleetward.v1.SandboxTemplate.env:type_name -> fleetward.v1.SandboxTemplate.EnvEntry
+	67,  // 10: fleetward.v1.SandboxTemplate.readiness_timeout:type_name -> google.protobuf.Duration
 	3,   // 11: fleetward.v1.MetricDescriptor.type:type_name -> fleetward.v1.MetricType
-	67,  // 12: fleetward.v1.DiscoverRequest.connection:type_name -> fleetward.v1.ConnectionRef
-	68,  // 13: fleetward.v1.DiscoverRequest.credentials:type_name -> fleetward.v1.Credentials
+	68,  // 12: fleetward.v1.DiscoverRequest.connection:type_name -> fleetward.v1.ConnectionRef
+	69,  // 13: fleetward.v1.DiscoverRequest.credentials:type_name -> fleetward.v1.Credentials
 	21,  // 14: fleetward.v1.DiscoverResponse.server:type_name -> fleetward.v1.ServerInfo
 	22,  // 15: fleetward.v1.DiscoverResponse.databases:type_name -> fleetward.v1.DatabaseInfo
 	23,  // 16: fleetward.v1.DiscoverResponse.topology:type_name -> fleetward.v1.Topology
-	66,  // 17: fleetward.v1.ServerInfo.uptime:type_name -> google.protobuf.Duration
-	59,  // 18: fleetward.v1.ServerInfo.attributes:type_name -> fleetward.v1.ServerInfo.AttributesEntry
+	67,  // 17: fleetward.v1.ServerInfo.uptime:type_name -> google.protobuf.Duration
+	60,  // 18: fleetward.v1.ServerInfo.attributes:type_name -> fleetward.v1.ServerInfo.AttributesEntry
 	24,  // 19: fleetward.v1.Topology.nodes:type_name -> fleetward.v1.Node
 	4,   // 20: fleetward.v1.Node.role:type_name -> fleetward.v1.NodeRole
-	67,  // 21: fleetward.v1.GetConfigRequest.connection:type_name -> fleetward.v1.ConnectionRef
-	68,  // 22: fleetward.v1.GetConfigRequest.credentials:type_name -> fleetward.v1.Credentials
+	68,  // 21: fleetward.v1.GetConfigRequest.connection:type_name -> fleetward.v1.ConnectionRef
+	69,  // 22: fleetward.v1.GetConfigRequest.credentials:type_name -> fleetward.v1.Credentials
 	27,  // 23: fleetward.v1.GetConfigResponse.entries:type_name -> fleetward.v1.ConfigEntry
 	5,   // 24: fleetward.v1.ConfigEntry.source:type_name -> fleetward.v1.ConfigSource
-	67,  // 25: fleetward.v1.CollectMetricsRequest.connection:type_name -> fleetward.v1.ConnectionRef
-	68,  // 26: fleetward.v1.CollectMetricsRequest.credentials:type_name -> fleetward.v1.Credentials
+	68,  // 25: fleetward.v1.CollectMetricsRequest.connection:type_name -> fleetward.v1.ConnectionRef
+	69,  // 26: fleetward.v1.CollectMetricsRequest.credentials:type_name -> fleetward.v1.Credentials
 	30,  // 27: fleetward.v1.MetricBatch.metrics:type_name -> fleetward.v1.Metric
-	69,  // 28: fleetward.v1.MetricBatch.collected_at:type_name -> google.protobuf.Timestamp
+	70,  // 28: fleetward.v1.MetricBatch.collected_at:type_name -> google.protobuf.Timestamp
 	3,   // 29: fleetward.v1.Metric.type:type_name -> fleetward.v1.MetricType
-	60,  // 30: fleetward.v1.Metric.attributes:type_name -> fleetward.v1.Metric.AttributesEntry
-	69,  // 31: fleetward.v1.Metric.timestamp:type_name -> google.protobuf.Timestamp
-	67,  // 32: fleetward.v1.BackupRequest.connection:type_name -> fleetward.v1.ConnectionRef
-	68,  // 33: fleetward.v1.BackupRequest.credentials:type_name -> fleetward.v1.Credentials
-	61,  // 34: fleetward.v1.BackupRequest.options:type_name -> fleetward.v1.BackupRequest.OptionsEntry
+	61,  // 30: fleetward.v1.Metric.attributes:type_name -> fleetward.v1.Metric.AttributesEntry
+	70,  // 31: fleetward.v1.Metric.timestamp:type_name -> google.protobuf.Timestamp
+	68,  // 32: fleetward.v1.BackupRequest.connection:type_name -> fleetward.v1.ConnectionRef
+	69,  // 33: fleetward.v1.BackupRequest.credentials:type_name -> fleetward.v1.Credentials
+	62,  // 34: fleetward.v1.BackupRequest.options:type_name -> fleetward.v1.BackupRequest.OptionsEntry
 	32,  // 35: fleetward.v1.BackupRequest.target:type_name -> fleetward.v1.ArtifactTarget
-	38,  // 36: fleetward.v1.BackupRequest.base_artifacts:type_name -> fleetward.v1.ArtifactSource
-	66,  // 37: fleetward.v1.BackupRequest.timeout:type_name -> google.protobuf.Duration
-	70,  // 38: fleetward.v1.ArtifactTarget.object:type_name -> fleetward.v1.ObjectRef
-	71,  // 39: fleetward.v1.ArtifactTarget.upload_url:type_name -> fleetward.v1.PresignedURL
-	71,  // 40: fleetward.v1.ArtifactTarget.part_urls:type_name -> fleetward.v1.PresignedURL
-	72,  // 41: fleetward.v1.ArtifactTarget.checksum_algorithm:type_name -> fleetward.v1.ChecksumAlgorithm
+	39,  // 36: fleetward.v1.BackupRequest.base_artifacts:type_name -> fleetward.v1.ArtifactSource
+	67,  // 37: fleetward.v1.BackupRequest.timeout:type_name -> google.protobuf.Duration
+	71,  // 38: fleetward.v1.ArtifactTarget.object:type_name -> fleetward.v1.ObjectRef
+	72,  // 39: fleetward.v1.ArtifactTarget.upload_url:type_name -> fleetward.v1.PresignedURL
+	72,  // 40: fleetward.v1.ArtifactTarget.part_urls:type_name -> fleetward.v1.PresignedURL
+	73,  // 41: fleetward.v1.ArtifactTarget.checksum_algorithm:type_name -> fleetward.v1.ChecksumAlgorithm
 	6,   // 42: fleetward.v1.BackupProgress.phase:type_name -> fleetward.v1.JobPhase
-	34,  // 43: fleetward.v1.BackupProgress.result:type_name -> fleetward.v1.BackupResult
-	73,  // 44: fleetward.v1.BackupProgress.error:type_name -> fleetward.v1.PluginError
-	70,  // 45: fleetward.v1.BackupResult.artifact:type_name -> fleetward.v1.ObjectRef
-	74,  // 46: fleetward.v1.BackupResult.checksum:type_name -> fleetward.v1.Checksum
-	66,  // 47: fleetward.v1.BackupResult.duration:type_name -> google.protobuf.Duration
-	69,  // 48: fleetward.v1.BackupResult.consistency_point:type_name -> google.protobuf.Timestamp
-	35,  // 49: fleetward.v1.BackupResult.manifest:type_name -> fleetward.v1.SourceManifest
-	38,  // 50: fleetward.v1.BackupResult.additional_artifacts:type_name -> fleetward.v1.ArtifactSource
-	62,  // 51: fleetward.v1.BackupResult.metadata:type_name -> fleetward.v1.BackupResult.MetadataEntry
-	69,  // 52: fleetward.v1.SourceManifest.captured_at:type_name -> google.protobuf.Timestamp
-	36,  // 53: fleetward.v1.SourceManifest.entries:type_name -> fleetward.v1.ManifestEntry
-	38,  // 54: fleetward.v1.RestoreRequest.artifacts:type_name -> fleetward.v1.ArtifactSource
-	39,  // 55: fleetward.v1.RestoreRequest.target:type_name -> fleetward.v1.RestoreTarget
-	69,  // 56: fleetward.v1.RestoreRequest.point_in_time:type_name -> google.protobuf.Timestamp
-	63,  // 57: fleetward.v1.RestoreRequest.options:type_name -> fleetward.v1.RestoreRequest.OptionsEntry
-	66,  // 58: fleetward.v1.RestoreRequest.timeout:type_name -> google.protobuf.Duration
-	70,  // 59: fleetward.v1.ArtifactSource.object:type_name -> fleetward.v1.ObjectRef
-	71,  // 60: fleetward.v1.ArtifactSource.download_url:type_name -> fleetward.v1.PresignedURL
-	74,  // 61: fleetward.v1.ArtifactSource.checksum:type_name -> fleetward.v1.Checksum
-	7,   // 62: fleetward.v1.ArtifactSource.role:type_name -> fleetward.v1.ArtifactRole
-	8,   // 63: fleetward.v1.RestoreTarget.kind:type_name -> fleetward.v1.RestoreTargetKind
-	67,  // 64: fleetward.v1.RestoreTarget.connection:type_name -> fleetward.v1.ConnectionRef
-	68,  // 65: fleetward.v1.RestoreTarget.credentials:type_name -> fleetward.v1.Credentials
-	6,   // 66: fleetward.v1.RestoreProgress.phase:type_name -> fleetward.v1.JobPhase
-	41,  // 67: fleetward.v1.RestoreProgress.result:type_name -> fleetward.v1.RestoreResult
-	73,  // 68: fleetward.v1.RestoreProgress.error:type_name -> fleetward.v1.PluginError
-	66,  // 69: fleetward.v1.RestoreResult.duration:type_name -> google.protobuf.Duration
-	69,  // 70: fleetward.v1.RestoreResult.recovered_to:type_name -> google.protobuf.Timestamp
-	64,  // 71: fleetward.v1.RestoreResult.metadata:type_name -> fleetward.v1.RestoreResult.MetadataEntry
-	39,  // 72: fleetward.v1.VerifyRestoreRequest.target:type_name -> fleetward.v1.RestoreTarget
-	35,  // 73: fleetward.v1.VerifyRestoreRequest.expected:type_name -> fleetward.v1.SourceManifest
-	9,   // 74: fleetward.v1.VerifyRestoreRequest.checks:type_name -> fleetward.v1.VerificationCheck
-	66,  // 75: fleetward.v1.VerifyRestoreRequest.timeout:type_name -> google.protobuf.Duration
-	10,  // 76: fleetward.v1.VerifyRestoreResult.status:type_name -> fleetward.v1.VerificationStatus
-	44,  // 77: fleetward.v1.VerifyRestoreResult.checks:type_name -> fleetward.v1.CheckResult
-	66,  // 78: fleetward.v1.VerifyRestoreResult.duration:type_name -> google.protobuf.Duration
-	73,  // 79: fleetward.v1.VerifyRestoreResult.error:type_name -> fleetward.v1.PluginError
-	9,   // 80: fleetward.v1.CheckResult.check:type_name -> fleetward.v1.VerificationCheck
-	75,  // 81: fleetward.v1.CheckResult.severity:type_name -> fleetward.v1.Severity
-	45,  // 82: fleetward.v1.CheckResult.discrepancies:type_name -> fleetward.v1.Discrepancy
-	66,  // 83: fleetward.v1.CheckResult.duration:type_name -> google.protobuf.Duration
-	67,  // 84: fleetward.v1.ListPITRTargetsRequest.connection:type_name -> fleetward.v1.ConnectionRef
-	68,  // 85: fleetward.v1.ListPITRTargetsRequest.credentials:type_name -> fleetward.v1.Credentials
-	49,  // 86: fleetward.v1.ListPITRTargetsRequest.known_baselines:type_name -> fleetward.v1.PITRBaseline
-	76,  // 87: fleetward.v1.ListPITRTargetsRequest.within:type_name -> fleetward.v1.TimeRange
-	69,  // 88: fleetward.v1.PITRWindow.earliest:type_name -> google.protobuf.Timestamp
-	69,  // 89: fleetward.v1.PITRWindow.latest:type_name -> google.protobuf.Timestamp
-	48,  // 90: fleetward.v1.PITRWindow.gaps:type_name -> fleetward.v1.PITRGap
-	49,  // 91: fleetward.v1.PITRWindow.baselines:type_name -> fleetward.v1.PITRBaseline
-	66,  // 92: fleetward.v1.PITRWindow.granularity:type_name -> google.protobuf.Duration
-	76,  // 93: fleetward.v1.PITRGap.range:type_name -> fleetward.v1.TimeRange
-	69,  // 94: fleetward.v1.PITRBaseline.taken_at:type_name -> google.protobuf.Timestamp
-	70,  // 95: fleetward.v1.PITRBaseline.artifact:type_name -> fleetward.v1.ObjectRef
-	67,  // 96: fleetward.v1.ListPrincipalsRequest.connection:type_name -> fleetward.v1.ConnectionRef
-	68,  // 97: fleetward.v1.ListPrincipalsRequest.credentials:type_name -> fleetward.v1.Credentials
-	52,  // 98: fleetward.v1.ListPrincipalsResponse.principals:type_name -> fleetward.v1.Principal
-	0,   // 99: fleetward.v1.ListPrincipalsResponse.model:type_name -> fleetward.v1.PrincipalModel
-	11,  // 100: fleetward.v1.Principal.kind:type_name -> fleetward.v1.PrincipalKind
-	53,  // 101: fleetward.v1.Principal.privileges:type_name -> fleetward.v1.Privilege
-	69,  // 102: fleetward.v1.Principal.password_expires_at:type_name -> google.protobuf.Timestamp
-	69,  // 103: fleetward.v1.Principal.last_login_at:type_name -> google.protobuf.Timestamp
-	65,  // 104: fleetward.v1.Principal.attributes:type_name -> fleetward.v1.Principal.AttributesEntry
-	67,  // 105: fleetward.v1.HealthCheckRequest.connection:type_name -> fleetward.v1.ConnectionRef
-	68,  // 106: fleetward.v1.HealthCheckRequest.credentials:type_name -> fleetward.v1.Credentials
-	66,  // 107: fleetward.v1.HealthCheckRequest.timeout:type_name -> google.protobuf.Duration
-	12,  // 108: fleetward.v1.HealthStatus.state:type_name -> fleetward.v1.HealthState
-	66,  // 109: fleetward.v1.HealthStatus.latency:type_name -> google.protobuf.Duration
-	56,  // 110: fleetward.v1.HealthStatus.signals:type_name -> fleetward.v1.HealthSignal
-	73,  // 111: fleetward.v1.HealthStatus.error:type_name -> fleetward.v1.PluginError
-	75,  // 112: fleetward.v1.HealthSignal.severity:type_name -> fleetward.v1.Severity
-	13,  // 113: fleetward.v1.EnginePlugin.GetCapabilities:input_type -> fleetward.v1.GetCapabilitiesRequest
-	19,  // 114: fleetward.v1.EnginePlugin.Discover:input_type -> fleetward.v1.DiscoverRequest
-	25,  // 115: fleetward.v1.EnginePlugin.GetConfig:input_type -> fleetward.v1.GetConfigRequest
-	28,  // 116: fleetward.v1.EnginePlugin.CollectMetrics:input_type -> fleetward.v1.CollectMetricsRequest
-	31,  // 117: fleetward.v1.EnginePlugin.Backup:input_type -> fleetward.v1.BackupRequest
-	37,  // 118: fleetward.v1.EnginePlugin.Restore:input_type -> fleetward.v1.RestoreRequest
-	42,  // 119: fleetward.v1.EnginePlugin.VerifyRestore:input_type -> fleetward.v1.VerifyRestoreRequest
-	46,  // 120: fleetward.v1.EnginePlugin.ListPITRTargets:input_type -> fleetward.v1.ListPITRTargetsRequest
-	50,  // 121: fleetward.v1.EnginePlugin.ListPrincipals:input_type -> fleetward.v1.ListPrincipalsRequest
-	54,  // 122: fleetward.v1.EnginePlugin.HealthCheck:input_type -> fleetward.v1.HealthCheckRequest
-	14,  // 123: fleetward.v1.EnginePlugin.GetCapabilities:output_type -> fleetward.v1.Capabilities
-	20,  // 124: fleetward.v1.EnginePlugin.Discover:output_type -> fleetward.v1.DiscoverResponse
-	26,  // 125: fleetward.v1.EnginePlugin.GetConfig:output_type -> fleetward.v1.GetConfigResponse
-	29,  // 126: fleetward.v1.EnginePlugin.CollectMetrics:output_type -> fleetward.v1.MetricBatch
-	33,  // 127: fleetward.v1.EnginePlugin.Backup:output_type -> fleetward.v1.BackupProgress
-	40,  // 128: fleetward.v1.EnginePlugin.Restore:output_type -> fleetward.v1.RestoreProgress
-	43,  // 129: fleetward.v1.EnginePlugin.VerifyRestore:output_type -> fleetward.v1.VerifyRestoreResult
-	47,  // 130: fleetward.v1.EnginePlugin.ListPITRTargets:output_type -> fleetward.v1.PITRWindow
-	51,  // 131: fleetward.v1.EnginePlugin.ListPrincipals:output_type -> fleetward.v1.ListPrincipalsResponse
-	55,  // 132: fleetward.v1.EnginePlugin.HealthCheck:output_type -> fleetward.v1.HealthStatus
-	123, // [123:133] is the sub-list for method output_type
-	113, // [113:123] is the sub-list for method input_type
-	113, // [113:113] is the sub-list for extension type_name
-	113, // [113:113] is the sub-list for extension extendee
-	0,   // [0:113] is the sub-list for field type_name
+	35,  // 43: fleetward.v1.BackupProgress.result:type_name -> fleetward.v1.BackupResult
+	74,  // 44: fleetward.v1.BackupProgress.error:type_name -> fleetward.v1.PluginError
+	71,  // 45: fleetward.v1.BackupResult.artifact:type_name -> fleetward.v1.ObjectRef
+	75,  // 46: fleetward.v1.BackupResult.checksum:type_name -> fleetward.v1.Checksum
+	67,  // 47: fleetward.v1.BackupResult.duration:type_name -> google.protobuf.Duration
+	70,  // 48: fleetward.v1.BackupResult.consistency_point:type_name -> google.protobuf.Timestamp
+	36,  // 49: fleetward.v1.BackupResult.manifest:type_name -> fleetward.v1.SourceManifest
+	39,  // 50: fleetward.v1.BackupResult.additional_artifacts:type_name -> fleetward.v1.ArtifactSource
+	63,  // 51: fleetward.v1.BackupResult.metadata:type_name -> fleetward.v1.BackupResult.MetadataEntry
+	33,  // 52: fleetward.v1.BackupResult.parts:type_name -> fleetward.v1.UploadedPart
+	70,  // 53: fleetward.v1.SourceManifest.captured_at:type_name -> google.protobuf.Timestamp
+	37,  // 54: fleetward.v1.SourceManifest.entries:type_name -> fleetward.v1.ManifestEntry
+	39,  // 55: fleetward.v1.RestoreRequest.artifacts:type_name -> fleetward.v1.ArtifactSource
+	40,  // 56: fleetward.v1.RestoreRequest.target:type_name -> fleetward.v1.RestoreTarget
+	70,  // 57: fleetward.v1.RestoreRequest.point_in_time:type_name -> google.protobuf.Timestamp
+	64,  // 58: fleetward.v1.RestoreRequest.options:type_name -> fleetward.v1.RestoreRequest.OptionsEntry
+	67,  // 59: fleetward.v1.RestoreRequest.timeout:type_name -> google.protobuf.Duration
+	71,  // 60: fleetward.v1.ArtifactSource.object:type_name -> fleetward.v1.ObjectRef
+	72,  // 61: fleetward.v1.ArtifactSource.download_url:type_name -> fleetward.v1.PresignedURL
+	75,  // 62: fleetward.v1.ArtifactSource.checksum:type_name -> fleetward.v1.Checksum
+	7,   // 63: fleetward.v1.ArtifactSource.role:type_name -> fleetward.v1.ArtifactRole
+	8,   // 64: fleetward.v1.RestoreTarget.kind:type_name -> fleetward.v1.RestoreTargetKind
+	68,  // 65: fleetward.v1.RestoreTarget.connection:type_name -> fleetward.v1.ConnectionRef
+	69,  // 66: fleetward.v1.RestoreTarget.credentials:type_name -> fleetward.v1.Credentials
+	6,   // 67: fleetward.v1.RestoreProgress.phase:type_name -> fleetward.v1.JobPhase
+	42,  // 68: fleetward.v1.RestoreProgress.result:type_name -> fleetward.v1.RestoreResult
+	74,  // 69: fleetward.v1.RestoreProgress.error:type_name -> fleetward.v1.PluginError
+	67,  // 70: fleetward.v1.RestoreResult.duration:type_name -> google.protobuf.Duration
+	70,  // 71: fleetward.v1.RestoreResult.recovered_to:type_name -> google.protobuf.Timestamp
+	65,  // 72: fleetward.v1.RestoreResult.metadata:type_name -> fleetward.v1.RestoreResult.MetadataEntry
+	40,  // 73: fleetward.v1.VerifyRestoreRequest.target:type_name -> fleetward.v1.RestoreTarget
+	36,  // 74: fleetward.v1.VerifyRestoreRequest.expected:type_name -> fleetward.v1.SourceManifest
+	9,   // 75: fleetward.v1.VerifyRestoreRequest.checks:type_name -> fleetward.v1.VerificationCheck
+	67,  // 76: fleetward.v1.VerifyRestoreRequest.timeout:type_name -> google.protobuf.Duration
+	10,  // 77: fleetward.v1.VerifyRestoreResult.status:type_name -> fleetward.v1.VerificationStatus
+	45,  // 78: fleetward.v1.VerifyRestoreResult.checks:type_name -> fleetward.v1.CheckResult
+	67,  // 79: fleetward.v1.VerifyRestoreResult.duration:type_name -> google.protobuf.Duration
+	74,  // 80: fleetward.v1.VerifyRestoreResult.error:type_name -> fleetward.v1.PluginError
+	9,   // 81: fleetward.v1.CheckResult.check:type_name -> fleetward.v1.VerificationCheck
+	76,  // 82: fleetward.v1.CheckResult.severity:type_name -> fleetward.v1.Severity
+	46,  // 83: fleetward.v1.CheckResult.discrepancies:type_name -> fleetward.v1.Discrepancy
+	67,  // 84: fleetward.v1.CheckResult.duration:type_name -> google.protobuf.Duration
+	68,  // 85: fleetward.v1.ListPITRTargetsRequest.connection:type_name -> fleetward.v1.ConnectionRef
+	69,  // 86: fleetward.v1.ListPITRTargetsRequest.credentials:type_name -> fleetward.v1.Credentials
+	50,  // 87: fleetward.v1.ListPITRTargetsRequest.known_baselines:type_name -> fleetward.v1.PITRBaseline
+	77,  // 88: fleetward.v1.ListPITRTargetsRequest.within:type_name -> fleetward.v1.TimeRange
+	70,  // 89: fleetward.v1.PITRWindow.earliest:type_name -> google.protobuf.Timestamp
+	70,  // 90: fleetward.v1.PITRWindow.latest:type_name -> google.protobuf.Timestamp
+	49,  // 91: fleetward.v1.PITRWindow.gaps:type_name -> fleetward.v1.PITRGap
+	50,  // 92: fleetward.v1.PITRWindow.baselines:type_name -> fleetward.v1.PITRBaseline
+	67,  // 93: fleetward.v1.PITRWindow.granularity:type_name -> google.protobuf.Duration
+	77,  // 94: fleetward.v1.PITRGap.range:type_name -> fleetward.v1.TimeRange
+	70,  // 95: fleetward.v1.PITRBaseline.taken_at:type_name -> google.protobuf.Timestamp
+	71,  // 96: fleetward.v1.PITRBaseline.artifact:type_name -> fleetward.v1.ObjectRef
+	68,  // 97: fleetward.v1.ListPrincipalsRequest.connection:type_name -> fleetward.v1.ConnectionRef
+	69,  // 98: fleetward.v1.ListPrincipalsRequest.credentials:type_name -> fleetward.v1.Credentials
+	53,  // 99: fleetward.v1.ListPrincipalsResponse.principals:type_name -> fleetward.v1.Principal
+	0,   // 100: fleetward.v1.ListPrincipalsResponse.model:type_name -> fleetward.v1.PrincipalModel
+	11,  // 101: fleetward.v1.Principal.kind:type_name -> fleetward.v1.PrincipalKind
+	54,  // 102: fleetward.v1.Principal.privileges:type_name -> fleetward.v1.Privilege
+	70,  // 103: fleetward.v1.Principal.password_expires_at:type_name -> google.protobuf.Timestamp
+	70,  // 104: fleetward.v1.Principal.last_login_at:type_name -> google.protobuf.Timestamp
+	66,  // 105: fleetward.v1.Principal.attributes:type_name -> fleetward.v1.Principal.AttributesEntry
+	68,  // 106: fleetward.v1.HealthCheckRequest.connection:type_name -> fleetward.v1.ConnectionRef
+	69,  // 107: fleetward.v1.HealthCheckRequest.credentials:type_name -> fleetward.v1.Credentials
+	67,  // 108: fleetward.v1.HealthCheckRequest.timeout:type_name -> google.protobuf.Duration
+	12,  // 109: fleetward.v1.HealthStatus.state:type_name -> fleetward.v1.HealthState
+	67,  // 110: fleetward.v1.HealthStatus.latency:type_name -> google.protobuf.Duration
+	57,  // 111: fleetward.v1.HealthStatus.signals:type_name -> fleetward.v1.HealthSignal
+	74,  // 112: fleetward.v1.HealthStatus.error:type_name -> fleetward.v1.PluginError
+	76,  // 113: fleetward.v1.HealthSignal.severity:type_name -> fleetward.v1.Severity
+	13,  // 114: fleetward.v1.EnginePlugin.GetCapabilities:input_type -> fleetward.v1.GetCapabilitiesRequest
+	19,  // 115: fleetward.v1.EnginePlugin.Discover:input_type -> fleetward.v1.DiscoverRequest
+	25,  // 116: fleetward.v1.EnginePlugin.GetConfig:input_type -> fleetward.v1.GetConfigRequest
+	28,  // 117: fleetward.v1.EnginePlugin.CollectMetrics:input_type -> fleetward.v1.CollectMetricsRequest
+	31,  // 118: fleetward.v1.EnginePlugin.Backup:input_type -> fleetward.v1.BackupRequest
+	38,  // 119: fleetward.v1.EnginePlugin.Restore:input_type -> fleetward.v1.RestoreRequest
+	43,  // 120: fleetward.v1.EnginePlugin.VerifyRestore:input_type -> fleetward.v1.VerifyRestoreRequest
+	47,  // 121: fleetward.v1.EnginePlugin.ListPITRTargets:input_type -> fleetward.v1.ListPITRTargetsRequest
+	51,  // 122: fleetward.v1.EnginePlugin.ListPrincipals:input_type -> fleetward.v1.ListPrincipalsRequest
+	55,  // 123: fleetward.v1.EnginePlugin.HealthCheck:input_type -> fleetward.v1.HealthCheckRequest
+	14,  // 124: fleetward.v1.EnginePlugin.GetCapabilities:output_type -> fleetward.v1.Capabilities
+	20,  // 125: fleetward.v1.EnginePlugin.Discover:output_type -> fleetward.v1.DiscoverResponse
+	26,  // 126: fleetward.v1.EnginePlugin.GetConfig:output_type -> fleetward.v1.GetConfigResponse
+	29,  // 127: fleetward.v1.EnginePlugin.CollectMetrics:output_type -> fleetward.v1.MetricBatch
+	34,  // 128: fleetward.v1.EnginePlugin.Backup:output_type -> fleetward.v1.BackupProgress
+	41,  // 129: fleetward.v1.EnginePlugin.Restore:output_type -> fleetward.v1.RestoreProgress
+	44,  // 130: fleetward.v1.EnginePlugin.VerifyRestore:output_type -> fleetward.v1.VerifyRestoreResult
+	48,  // 131: fleetward.v1.EnginePlugin.ListPITRTargets:output_type -> fleetward.v1.PITRWindow
+	52,  // 132: fleetward.v1.EnginePlugin.ListPrincipals:output_type -> fleetward.v1.ListPrincipalsResponse
+	56,  // 133: fleetward.v1.EnginePlugin.HealthCheck:output_type -> fleetward.v1.HealthStatus
+	124, // [124:134] is the sub-list for method output_type
+	114, // [114:124] is the sub-list for method input_type
+	114, // [114:114] is the sub-list for extension type_name
+	114, // [114:114] is the sub-list for extension extendee
+	0,   // [0:114] is the sub-list for field type_name
 }
 
 func init() { file_fleetward_v1_plugin_proto_init() }
@@ -5250,7 +5339,7 @@ func file_fleetward_v1_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetward_v1_plugin_proto_rawDesc), len(file_fleetward_v1_plugin_proto_rawDesc)),
 			NumEnums:      13,
-			NumMessages:   53,
+			NumMessages:   54,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

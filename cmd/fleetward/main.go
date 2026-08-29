@@ -18,6 +18,7 @@ import (
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
 	"github.com/danmorcov88/fleetward/internal/config"
 	"github.com/danmorcov88/fleetward/internal/controlplane/api"
+	"github.com/danmorcov88/fleetward/internal/controlplane/backup"
 	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
 	"github.com/danmorcov88/fleetward/internal/controlplane/sandbox"
 	"github.com/danmorcov88/fleetward/internal/plugin/manager"
@@ -202,6 +203,18 @@ func run() error {
 	if err := fwv1.RegisterInventoryServiceHandlerServer(ctx, gateway,
 		inventory.NewGRPCServer(inventorySvc, log)); err != nil {
 		return fmt.Errorf("inventory api: %w", err)
+	}
+
+	// Backups outlive the request that asks for them, so the service owns goroutines. Closing it
+	// before the HTTP server stops accepting would abandon a running backup; closing it after gives
+	// each run the chance to record its outcome, which is the difference between a failed backup
+	// and a row stuck in `running` with nothing to explain it.
+	backupSvc := backup.New(db.Pool(), store, plugins, inventorySvc, log)
+	defer func() { _ = backupSvc.Close() }()
+
+	if err := fwv1.RegisterBackupServiceHandlerServer(ctx, gateway,
+		backup.NewGRPCServer(backupSvc, log)); err != nil {
+		return fmt.Errorf("backup api: %w", err)
 	}
 	server.Mux().Handle("/api/v1/", gateway)
 

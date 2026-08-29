@@ -126,6 +126,21 @@ func Internal(format string, args ...any) *Error {
 	return NewError(fwv1.ErrorCode_ERROR_CODE_INTERNAL, format, args...)
 }
 
+// SafeURL strips the query string from a presigned URL, leaving something safe to log.
+//
+// A presigned URL's signature is a bearer credential for the object: anyone holding the full URL
+// can read or overwrite an artifact until it expires. It must never reach a log line or an error
+// message, and both core and every plugin handle these URLs, which is why the redaction lives in
+// the harness they share.
+func SafeURL(rawURL string) string {
+	for i := range len(rawURL) {
+		if rawURL[i] == '?' {
+			return rawURL[:i] + "?[signature redacted]"
+		}
+	}
+	return rawURL
+}
+
 // AsPluginError extracts a wire PluginError from any error, classifying plain errors as best it
 // can so that core always receives structured information.
 func AsPluginError(err error) *fwv1.PluginError {

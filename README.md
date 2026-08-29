@@ -156,11 +156,13 @@ sequenceDiagram
     participant SB as Sandbox container
 
     S->>C: BackupJob fires (lease claimed)
-    C->>P: Backup(method, presigned upload URL)
-    P->>DB: run native tool (pg_basebackup, mongodump, ...)
-    P->>DB: capture SourceManifest (databases, objects, record counts)
-    P-->>O: stream artifact
-    P-->>C: progress, then BackupResult (size, checksum, manifest)
+    C->>O: begin multipart upload, presign one grant per part
+    C->>P: Backup(method, presigned part grants)
+    P->>DB: open a snapshot, capture SourceManifest (objects, record counts)
+    P->>DB: run native tool (pg_dump, mongodump, ...) on that same snapshot
+    P-->>O: stream artifact part by part, hashing as it goes
+    P-->>C: progress, then BackupResult (size, checksum, manifest, part receipts)
+    C->>O: complete the upload — or abort it, on any failure
     C->>C: persist metadata row
 
     Note over S,C: On success the scheduler enqueues a VerifyJob<br/>(always / sampled / manual)
@@ -192,6 +194,11 @@ check is worse than shipping no check at all.
 infrastructure problem, not data loss. Collapsing them would train operators to ignore the one
 alert that matters most.
 
+**A partial artifact never becomes an object.** The plugin holds no storage credential: it writes
+parts through presigned grants and reports their receipts, and only core completes the upload
+([ADR-0021](docs/adr/0021-plugins-upload-artifacts-as-multipart-parts.md)). A backup that fails half
+way is aborted, so there is no window in which a truncated artifact exists to be restored later.
+
 **The sandbox is always destroyed.** Guaranteed teardown on every path, including panic — and
 defended twice more behind that, because a leaked container breaks nothing until it has eaten the
 machine. A lifetime ceiling reaps a verification that hung rather than failed, and a label-driven
@@ -203,7 +210,7 @@ sweep at startup removes whatever a control plane killed mid-verification left b
 
 | Engine | Backup method | Status |
 |---|---|---|
-| **PostgreSQL** | `pg_basebackup` + WAL archiving (`pgbackrest` as a later method) | Stage 1 — reference plugin |
+| **PostgreSQL** | `pg_dump` today; `pg_basebackup` + WAL archiving next, `pgbackrest` as a later method | Reference plugin — health, discovery, and backup implemented |
 | **MySQL / MariaDB** | `xtrabackup`, with `mysqldump` shipping first | Stage 3 |
 | **MongoDB** | `mongodump`, snapshot-based to follow | Stage 3 |
 | **Redis** | RDB via `BGSAVE` + fetch, AOF expressed in capabilities | Stage 3 |
@@ -316,6 +323,35 @@ curl -sS localhost:8080/api/v1/instances | jq
 Credentials go in and never come back out. The password is encrypted by the `SecretsProvider`
 ([ADR-0009](docs/adr/0009-secrets-provider-interface.md)) and stored apart from everything else about
 the connection; `ConnectionSpec` is inbound-only, and no read path has a field that could return it.
+
+### Take a backup
+
+```bash
+bin/fleetward-cli backup run --instance prod-1
+```
+
+```
+backup 99946af5-d519-44f6-8372-6a7279b9f52b started on prod-1
+  running
+  succeeded
+id             99946af5-d519-44f6-8372-6a7279b9f52b
+state          SUCCEEDED
+method         pg_dump
+artifact       fleetward-backups/tenants/…/backups/99946af5-…/artifact
+size           66.9 KiB
+checksum       SHA256 de833d41846a7489d917493d3d6b228a0807e088573bb5a1d92eae7c8d68306f
+duration       0.406s
+consistent to  2026-08-29T13:54:11Z
+manifest       19 objects, 12 records
+```
+
+The last line is the point. The manifest records what the source actually contained at the moment
+the artifact was taken — counted inside the same exported snapshot the dump reads, so the two can
+never describe different moments. `backup show <id> --manifest` lists every object and its record
+count. Verification, in the next slice, is what turns that record into a proven-restorable backup.
+
+`backup run` starts the backup and follows it; the run itself happens in the control plane, so
+`--wait=false` returns immediately and `backup show` picks it up later.
 
 ---
 
@@ -446,10 +482,14 @@ it cannot quietly rot between releases.
 schema, dev stack, and CI are in place and verified end to end. Work is now cut into slices, each
 independently demoable.
 
-Slices A1 to A3 are done: the PostgreSQL plugin answers `HealthCheck` and `Discover` against a real
-server, the inventory service, REST API, and CLI make that reachable — a server can be added and
-seen healthy — and the control plane can provision a throwaway database container from a plugin's
-`SandboxTemplate` and is proven not to leak one. Backup and verification are next.
+Slices A1 to A4 are done. The PostgreSQL plugin answers `HealthCheck` and `Discover` against a real
+server; the inventory service, REST API, and CLI make that reachable, so a server can be added and
+seen healthy; the control plane provisions a throwaway database container from a plugin's
+`SandboxTemplate` and is proven not to leak one; and `backup run` takes a real `pg_dump`, streams it
+into object storage without buffering it, and records a manifest of what the source contained.
+
+Restoring that artifact into the sandbox and verifying it against the manifest is next — which is
+the point of everything above it.
 
 | Phase | Scope | Status |
 |---|---|---|

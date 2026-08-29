@@ -655,6 +655,33 @@ type target struct {
 	credentials *fwv1.Credentials
 }
 
+// Connection is a resolved instance and the credentials for exactly one plugin call.
+//
+// It is the one way credentials leave this package, and it exists because backup and verification
+// need the same resolution the inventory already performs — a second implementation of it would be
+// a second place for the credential-handling rules to be got wrong. The rules travel with it: the
+// value must not be stored, logged, or held beyond the call that carries it (ADR-0009).
+type Connection struct {
+	InstanceID  string
+	EngineType  string
+	Ref         *fwv1.ConnectionRef
+	Credentials *fwv1.Credentials
+}
+
+// ResolveConnection materializes an instance's stored credentials for a single plugin call.
+func (s *Service) ResolveConnection(ctx context.Context, instanceID string) (*Connection, error) {
+	resolved, err := s.resolveStored(ctx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	return &Connection{
+		InstanceID:  resolved.instanceID,
+		EngineType:  resolved.engineType,
+		Ref:         resolved.ref,
+		Credentials: resolved.credentials,
+	}, nil
+}
+
 // resolveTarget produces the target for TestConnection, preferring the request's own connection
 // spec so the add-instance wizard can check credentials before anything is stored.
 func (s *Service) resolveTarget(ctx context.Context, req *fwv1.TestConnectionRequest) (*target, error) {

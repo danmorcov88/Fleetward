@@ -32,6 +32,7 @@ func ValidateCapabilities(caps *fwv1.Capabilities) error {
 	methodIDs := make(map[string]bool, len(caps.GetBackupMethods()))
 	defaults := 0
 	pitrCapableMethods := 0
+	onlineMethods := 0
 
 	for i, m := range caps.GetBackupMethods() {
 		switch {
@@ -52,6 +53,9 @@ func ValidateCapabilities(caps *fwv1.Capabilities) error {
 		if m.GetEnablesPitr() {
 			pitrCapableMethods++
 		}
+		if !m.GetRequiresDowntime() {
+			onlineMethods++
+		}
 
 		for j, opt := range m.GetOptions() {
 			if opt.GetName() == "" {
@@ -68,6 +72,14 @@ func ValidateCapabilities(caps *fwv1.Capabilities) error {
 	if len(caps.GetBackupMethods()) > 0 && defaults != 1 {
 		errs = append(errs, fmt.Errorf(
 			"exactly one backup method must set is_default, found %d", defaults))
+	}
+
+	// supports_online_backup is the flag core reads before scheduling a backup against a live
+	// production server. A plugin that sets it without offering a method that runs without downtime
+	// would have core scheduling an outage it never warned anybody about.
+	if caps.GetSupportsOnlineBackup() && onlineMethods == 0 {
+		errs = append(errs, errors.New(
+			"supports_online_backup is set but every backup method requires downtime"))
 	}
 
 	// A plugin that advertises point-in-time recovery but has no method that can produce a

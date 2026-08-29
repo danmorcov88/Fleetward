@@ -4,8 +4,8 @@
 // never directly to the metadata store: a CLI holding the metadata database's password would put it
 // on every operator's laptop and duplicate authorization in a second place.
 //
-// Today that is `health`, `environment`, and `instance`. `backup run` and `backup verify` arrive
-// with slices A4 and A5.
+// Today that is `health`, `environment`, `instance`, and `backup`. `backup verify` arrives with
+// slice A5.
 package main
 
 import (
@@ -60,6 +60,7 @@ func newRootCommand() *cobra.Command {
 		newKeygenCommand(),
 		newEnvironmentCommand(&serverURL, &timeout),
 		newInstanceCommand(&serverURL, &timeout),
+		newBackupCommand(&serverURL, &timeout),
 	)
 
 	return root
