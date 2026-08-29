@@ -6,7 +6,9 @@ import path from "node:path";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: { "@": path.resolve(__dirname, "./src") },
+    // import.meta.dirname rather than __dirname: Vite 8 warns that it rewrites __dirname when it
+    // loads this config natively, and the rewrite is what it plans to drop.
+    alias: { "@": path.resolve(import.meta.dirname, "./src") },
   },
   server: {
     host: true,
