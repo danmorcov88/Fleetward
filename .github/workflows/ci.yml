@@ -138,6 +138,26 @@ jobs:
             fi
           done
 
+  conformance:
+    name: Conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # The shared suite is the merge gate for a plugin (ADR-0012, CLAUDE.md §4). It asserts the
+      # contract against every plugin binary, which is what will later make a community-contributed
+      # plugin trustworthy — so it belongs in CI rather than in a habit of running it locally.
+      #
+      # It gets its own job because it is the slowest thing here and it grows with every engine.
+      # Keeping it out of Test Go means a failure names itself in the checks list.
+      - name: Conformance suite
+        run: make conformance
+
   vuln:
     name: Vulnerability scan
     runs-on: ubuntu-latest
