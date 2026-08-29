@@ -343,18 +343,23 @@ func (p *DockerProvider) create(ctx context.Context, spec Spec, id identity, ima
 		return nil, fmt.Errorf("%w: container_port: %w", ErrInvalidTemplate, err)
 	}
 
-	bindIP := p.bindAddress()
 	hostConfig := &container.HostConfig{
-		// An empty HostPort asks Docker for an ephemeral one. Fixed ports collide the moment two
-		// verifications run at once.
-		PortBindings: network.PortMap{port: []network.PortBinding{{HostIP: bindIP, HostPort: ""}}},
 		// A sandbox that dies must stay dead and stay inspectable. Restarting it would hide a
 		// verification failure, and auto-removing it would race the teardown path that reports one.
 		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},
 		AutoRemove:    false,
 	}
 	if p.cfg.Network != "" {
+		// On a shared network the sandbox is reached by container name, so nothing is published.
+		// A sandbox holds a full copy of a production database behind a password that lives for
+		// minutes; putting it on a host port nobody reads from is exposure bought for nothing.
 		hostConfig.NetworkMode = container.NetworkMode(p.cfg.Network)
+	} else {
+		// An empty HostPort asks Docker for an ephemeral one. Fixed ports collide the moment two
+		// verifications run at once.
+		hostConfig.PortBindings = network.PortMap{
+			port: []network.PortBinding{{HostIP: p.bindAddress(), HostPort: ""}},
+		}
 	}
 
 	name := p.namePrefix + "-sandbox-" + sandboxID

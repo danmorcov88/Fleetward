@@ -179,6 +179,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The control plane runs unprivileged and needs the Docker socket to provision verification
+      # sandboxes. The socket is root:docker on a Linux runner, so the group has to be discovered
+      # rather than assumed — the compose default of 0 is the macOS answer.
+      - name: Grant the control plane access to the Docker socket
+        run: echo "FLEETWARD_DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
+
       # Stage 0's exit criterion is that `docker compose up` yields a healthy control plane with a
       # green /readyz. Asserting it here means it cannot quietly rot between releases.
       - name: Start the stack

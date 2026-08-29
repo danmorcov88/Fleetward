@@ -224,6 +224,15 @@ Decisions worth carrying forward:
   second to start would sweep the first's sandboxes. Such a deployment needs a distinct
   `FLEETWARD_SANDBOX_LABEL_PREFIX` per control plane, and the failure would otherwise look like a
   random verification failure rather than a configuration mistake.
+- **The dev stack needed two changes to make verification actually possible in it**, and the
+  compose smoke test found both by going `degraded`. The control-plane image runs unprivileged, and
+  the Docker socket grants access by group — group 0 inside a Docker Desktop VM, the host's `docker`
+  GID on Linux — so `group_add: ["${FLEETWARD_DOCKER_GID:-0}"]` defaults to the macOS answer and CI
+  discovers the Linux one with `stat -c '%g'`. And because the control plane is itself a container
+  there, a sandbox's published host port is unreachable from it: `FLEETWARD_SANDBOX_NETWORK` puts
+  sandboxes on the stack's network to be addressed by container name. When a network is configured
+  the provider publishes no host port at all — on a shared network nothing reads it, and a sandbox
+  holding a copy of production data should not sit on a host port for free.
 - **`TestMain` fails the integration run if a single labelled container survives.** The acceptance
   check in the brief was `docker ps -a --filter "label=fleetward.sandbox"` being empty; a suite that
   passes while leaking has tested the wrong thing, so CI enforces it rather than a human running it.

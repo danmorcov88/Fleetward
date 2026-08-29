@@ -132,6 +132,11 @@ services:
 
       FLEETWARD_PLUGINS_DIR: /app/plugins
 
+      # The control plane runs inside a container here, so a sandbox's published host port is not
+      # reachable from it — 127.0.0.1 means something different on each side. Attaching sandboxes to
+      # this stack's network instead lets the control plane address them by container name.
+      FLEETWARD_SANDBOX_NETWORK: fleetward_default
+
       # Authentication is off in the default dev stack so the quickstart needs no login round trip.
       # Set to "true" to exercise the full OIDC flow against Dex; the control plane refuses to start
       # in production with it disabled.
@@ -156,6 +161,13 @@ services:
       # development convenience with real privilege attached — a production deployment should use a
       # scoped socket proxy or the Kubernetes SandboxProvider instead.
       - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      # The image runs unprivileged (see deploy/docker/Dockerfile), and the Docker socket grants
+      # access by group. Which group differs by platform: inside a Docker Desktop VM the socket is
+      # root:root, so group 0 is what opens it, while on a Linux host it is root:docker and the
+      # host's docker GID is needed. The default makes the macOS quickstart work with no .env;
+      # Linux and CI set FLEETWARD_DOCKER_GID — see .env.example.
+      - "${FLEETWARD_DOCKER_GID:-0}"
     healthcheck:
       test: ["CMD", "/usr/local/bin/fleetward-cli", "health", "--server", "http://127.0.0.1:8080"]
       interval: 15s
