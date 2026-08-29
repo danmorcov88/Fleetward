@@ -13,11 +13,22 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
-      # One PR per ecosystem cluster keeps review manageable; these move together anyway.
+      # Groups are matched in order, and a dependency joins the first one that claims it.
+      #
+      # The two named groups exist for major moves, where packages that are released together also
+      # have to be upgraded together. Everything else — every minor and patch, across every module —
+      # collects into one pull request per week, because reviewing them apart buys nothing and
+      # costs a serial CI cycle each: `main` requires branches to be up to date, so twelve open
+      # dependency pull requests are twelve rebases and twelve full check runs.
       opentelemetry:
         patterns: ["go.opentelemetry.io/*"]
+        update-types: ["major"]
       grpc-protobuf:
         patterns: ["google.golang.org/grpc*", "google.golang.org/protobuf*", "github.com/grpc-ecosystem/*"]
+        update-types: ["major"]
+      go-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: npm
     directory: /web
@@ -31,16 +42,27 @@ updates:
       # opened vite 6→8 and @vitejs/plugin-react 4→6 as separate pull requests, and both failed:
       # plugin-react 6 requires a newer Vite, and Vite 8 requires a newer plugin. Neither half is
       # mergeable alone, so an atomic upgrade has to arrive as one pull request.
+      #
+      # They are scoped to majors: a minor or a patch in any of these packages never needs the
+      # atomicity, and it joins web-minor-and-patch below instead.
       vite:
         patterns: ["vite", "@vitejs/*"]
+        update-types: ["major"]
       # Same reasoning: ESLint 10 needs a typescript-eslint that supports it, and the plugins
       # declare peer ranges on the ESLint major.
       eslint:
         patterns: ["eslint", "@eslint/*", "typescript-eslint", "eslint-plugin-*", "globals"]
+        update-types: ["major"]
       tanstack:
         patterns: ["@tanstack/*"]
+        update-types: ["major"]
       react:
         patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+        update-types: ["major"]
+      # Everything else the web app depends on, minor and patch, in one weekly pull request.
+      web-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
     ignore:
       # TypeScript 7 is the rewritten compiler, and the web app does not build under it — the Web
       # and dev-stack jobs both failed on the proposed bump, before any merge conflict.
