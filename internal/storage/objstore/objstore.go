@@ -42,6 +42,33 @@ type PresignedURL struct {
 	ExpiresAt time.Time
 }
 
+// MultipartUpload is an upload in progress, together with the grants a plugin needs to write its
+// parts. It exists because an artifact streamed out of a native tool has no known size, and an S3
+// PUT requires Content-Length — see ADR-0021.
+//
+// An upload left neither completed nor aborted keeps its uploaded parts occupying storage and
+// billing for it, so every caller must reach one of the two terminal calls on every path.
+type MultipartUpload struct {
+	Key      string
+	UploadID string
+	// PartSize is how many bytes every part except the last must contain.
+	PartSize int64
+	// Parts are the presigned PUT grants, in part order. Part number n is Parts[n-1].
+	Parts []PresignedURL
+}
+
+// Capacity is the largest artifact this upload can hold.
+func (m MultipartUpload) Capacity() int64 { return m.PartSize * int64(len(m.Parts)) }
+
+// CompletedPart is one part's receipt, as reported by whoever uploaded it.
+type CompletedPart struct {
+	// PartNumber is 1-based and must match the grant the part was written through.
+	PartNumber int
+	// ETag exactly as the store returned it. It is passed back verbatim: an S3 ETag is quoted, and
+	// stripping the quotes makes CompleteMultipartUpload fail with an unhelpful signature error.
+	ETag string
+}
+
 // ObjectStore is the storage abstraction used by the backup and verification services.
 // Implementations must be safe for concurrent use.
 type ObjectStore interface {
@@ -74,6 +101,20 @@ type ObjectStore interface {
 	// PresignGet issues a time-limited grant to download one object, used when restoring.
 	PresignGet(ctx context.Context, key string, ttl time.Duration) (PresignedURL, error)
 
+	// CreateMultipartUpload begins a multipart upload and presigns partCount part grants. This is
+	// how an artifact of unknown size is written by a plugin that holds no storage credential.
+	//
+	// Callers must eventually call CompleteMultipartUpload or AbortMultipartUpload.
+	CreateMultipartUpload(ctx context.Context, key string, partCount int, ttl time.Duration) (MultipartUpload, error)
+
+	// CompleteMultipartUpload assembles the uploaded parts into one object. Parts may arrive in any
+	// order; implementations sort them by part number.
+	CompleteMultipartUpload(ctx context.Context, key, uploadID string, parts []CompletedPart) (ObjectInfo, error)
+
+	// AbortMultipartUpload discards an incomplete upload and the parts already written. Aborting an
+	// upload that no longer exists is not an error, so it is safe in a deferred cleanup.
+	AbortMultipartUpload(ctx context.Context, key, uploadID string) error
+
 	// HealthCheck reports whether the store is reachable and the bucket accessible.
 	HealthCheck(ctx context.Context) error
 
@@ -90,19 +131,6 @@ func ArtifactKey(tenantID, instanceID, backupID, filename string) string {
 		"/instances/" + instanceID +
 		"/backups/" + backupID +
 		"/" + filename
-}
-
-// SafeURL strips the query string from a presigned URL, leaving something safe to log.
-//
-// A presigned URL's signature is a bearer credential for the object: anyone holding the full URL
-// can read or overwrite an artifact until it expires. It must never reach a log line.
-func SafeURL(rawURL string) string {
-	for i := range len(rawURL) {
-		if rawURL[i] == '?' {
-			return rawURL[:i] + "?[signature redacted]"
-		}
-	}
-	return rawURL
 }
 
 // defaultTransport is shared by store implementations so that connection pooling is not silently

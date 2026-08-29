@@ -459,17 +459,7 @@ func readPassword(cmd *cobra.Command, fromStdin bool) (string, error) {
 }
 
 // parseLabels turns repeated key=value flags into a map.
-func parseLabels(raw []string) (map[string]string, error) {
-	labels := make(map[string]string, len(raw))
-	for _, entry := range raw {
-		key, value, ok := strings.Cut(entry, "=")
-		if !ok || key == "" {
-			return nil, fmt.Errorf("label %q is not in key=value form", entry)
-		}
-		labels[key] = value
-	}
-	return labels, nil
-}
+func parseLabels(raw []string) (map[string]string, error) { return parseKeyValues(raw, "label") }
 
 func printDiscovery(out io.Writer, server *serverInfo, databases []databaseInfo, topo *topology) {
 	if server != nil {

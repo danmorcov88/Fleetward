@@ -7,12 +7,28 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
+	"strconv"
 	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"github.com/danmorcov88/fleetward/internal/config"
+)
+
+const (
+	// maxMultipartParts is the S3 protocol ceiling on parts in one upload.
+	maxMultipartParts = 10000
+	// MinPartSizeBytes is the S3 floor on every part of a multipart upload except the last.
+	//
+	// It is enforced when the upload is completed, not when a part is written, so a part size below
+	// it produces a backup that streams happily for an hour and then fails at the very end. Refusing
+	// the configuration at startup turns that into an immediate, fixable error.
+	MinPartSizeBytes = 5 << 20
+	// artifactContentType is set on every artifact. Backups are opaque bytes whatever the engine
+	// produced them, so a single type keeps core out of the business of knowing dump formats.
+	artifactContentType = "application/octet-stream"
 )
 
 // S3Store is the S3-compatible ObjectStore implementation, backed by minio-go. It serves MinIO in
@@ -51,6 +67,11 @@ func NewS3Store(cfg config.ObjStoreConfig) (*S3Store, error) {
 	partSize := cfg.PartSizeBytes
 	if partSize <= 0 {
 		partSize = 64 << 20
+	}
+	if partSize < MinPartSizeBytes {
+		return nil, fmt.Errorf(
+			"objstore: part size %d is below the %d-byte minimum S3 requires for every part but the last",
+			partSize, MinPartSizeBytes)
 	}
 
 	return &S3Store{
@@ -213,6 +234,89 @@ func (s *S3Store) PresignGet(ctx context.Context, key string, ttl time.Duration)
 		Method:    http.MethodGet,
 		ExpiresAt: time.Now().Add(ttl),
 	}, nil
+}
+
+// CreateMultipartUpload implements ObjectStore.
+func (s *S3Store) CreateMultipartUpload(ctx context.Context, key string, partCount int, ttl time.Duration) (MultipartUpload, error) {
+	if partCount < 1 || partCount > maxMultipartParts {
+		return MultipartUpload{}, fmt.Errorf("objstore: part count %d is outside 1..%d", partCount, maxMultipartParts)
+	}
+	if ttl <= 0 {
+		ttl = s.presignTTL
+	}
+
+	core := minio.Core{Client: s.client}
+	uploadID, err := core.NewMultipartUpload(ctx, s.bucket, key, minio.PutObjectOptions{
+		ContentType: artifactContentType,
+	})
+	if err != nil {
+		return MultipartUpload{}, fmt.Errorf("objstore: begin multipart upload of %q: %w", key, err)
+	}
+
+	upload := MultipartUpload{
+		Key:      key,
+		UploadID: uploadID,
+		PartSize: s.partSize,
+		Parts:    make([]PresignedURL, 0, partCount),
+	}
+	expiresAt := time.Now().Add(ttl)
+
+	for n := 1; n <= partCount; n++ {
+		signed, err := s.client.Presign(ctx, http.MethodPut, s.bucket, key, ttl, url.Values{
+			"uploadId":   []string{uploadID},
+			"partNumber": []string{strconv.Itoa(n)},
+		})
+		if err != nil {
+			// The upload is useless without a full set of grants, and leaving it open would keep
+			// billing for whatever was already written.
+			_ = core.AbortMultipartUpload(context.WithoutCancel(ctx), s.bucket, key, uploadID)
+			return MultipartUpload{}, fmt.Errorf("objstore: presign part %d of %q: %w", n, key, err)
+		}
+		upload.Parts = append(upload.Parts, PresignedURL{
+			URL:       signed.String(),
+			Method:    http.MethodPut,
+			ExpiresAt: expiresAt,
+		})
+	}
+
+	return upload, nil
+}
+
+// CompleteMultipartUpload implements ObjectStore.
+func (s *S3Store) CompleteMultipartUpload(ctx context.Context, key, uploadID string, parts []CompletedPart) (ObjectInfo, error) {
+	if len(parts) == 0 {
+		return ObjectInfo{}, fmt.Errorf("objstore: complete %q: no parts were uploaded", key)
+	}
+
+	complete := make([]minio.CompletePart, 0, len(parts))
+	for _, part := range parts {
+		if part.PartNumber < 1 || part.ETag == "" {
+			return ObjectInfo{}, fmt.Errorf("objstore: complete %q: part %d has no usable receipt", key, part.PartNumber)
+		}
+		complete = append(complete, minio.CompletePart{PartNumber: part.PartNumber, ETag: part.ETag})
+	}
+	// S3 requires ascending part numbers and rejects the whole upload otherwise. Sorting here means
+	// a caller that collected receipts concurrently does not have to know that.
+	slices.SortFunc(complete, func(a, b minio.CompletePart) int { return a.PartNumber - b.PartNumber })
+
+	core := minio.Core{Client: s.client}
+	if _, err := core.CompleteMultipartUpload(ctx, s.bucket, key, uploadID, complete,
+		minio.PutObjectOptions{}); err != nil {
+		return ObjectInfo{}, fmt.Errorf("objstore: complete multipart upload of %q: %w", key, err)
+	}
+
+	// CompleteMultipartUpload's own response carries no size, and the size is what core persists as
+	// the backup's on-disk footprint, so it is read back from the assembled object.
+	return s.Stat(ctx, key)
+}
+
+// AbortMultipartUpload implements ObjectStore.
+func (s *S3Store) AbortMultipartUpload(ctx context.Context, key, uploadID string) error {
+	core := minio.Core{Client: s.client}
+	if err := core.AbortMultipartUpload(ctx, s.bucket, key, uploadID); err != nil && !isNotFound(err) {
+		return fmt.Errorf("objstore: abort multipart upload of %q: %w", key, err)
+	}
+	return nil
 }
 
 // HealthCheck implements ObjectStore.

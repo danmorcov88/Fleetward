@@ -389,12 +389,28 @@ message BackupRequest {
 // never storage credentials (ADR-0007).
 message ArtifactTarget {
   ObjectRef object = 1;
-  // Single-shot upload grant. Used when part_urls is empty.
+  // Single-shot upload grant, usable only when the plugin knows the artifact's exact size before
+  // it starts writing: an S3 PUT requires Content-Length and rejects a chunked body. A plugin that
+  // streams a native tool's stdout does not know the size, and must use part_urls instead
+  // (ADR-0021).
   PresignedURL upload_url = 2;
-  // Ordered part upload grants for multipart uploads of large artifacts.
+  // Ordered part upload grants for a multipart upload. Every part except the last must be exactly
+  // part_size_bytes long; the last may be shorter. The plugin reports each part's ETag back in
+  // BackupResult.parts, and core completes the upload.
   repeated PresignedURL part_urls = 3;
   int64 part_size_bytes = 4;
   ChecksumAlgorithm checksum_algorithm = 5;
+}
+
+// UploadedPart is the receipt for one part of a multipart upload. Core needs the ETag the object
+// store returned for each part in order to complete the upload; the plugin cannot complete it
+// itself, because completing requires a storage credential it must never hold (ADR-0007).
+message UploadedPart {
+  // 1-based index into ArtifactTarget.part_urls.
+  int32 part_number = 1;
+  // ETag exactly as the store returned it, quotes included. Core passes it back verbatim.
+  string etag = 2;
+  int64 size_bytes = 3;
 }
 
 message BackupProgress {
@@ -437,6 +453,9 @@ message BackupResult {
   // Additional artifacts written alongside the main one, e.g. WAL segments.
   repeated ArtifactSource additional_artifacts = 9;
   map<string, string> metadata = 10;
+  // Receipts for a multipart upload, in part order. Empty when the artifact was written through
+  // ArtifactTarget.upload_url.
+  repeated UploadedPart parts = 11;
 }
 
 // SourceManifest records what the source instance contained at backup time.

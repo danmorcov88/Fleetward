@@ -2,46 +2,25 @@ package inventory
 
 import (
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 )
 
 // -----------------------------------------------------------------------------------------------
 // Identifiers
 // -----------------------------------------------------------------------------------------------
 
-// isUUID reports whether s has the canonical 8-4-4-4-12 hexadecimal form.
-//
-// Checking here rather than letting PostgreSQL reject the cast keeps a typo in a URL from becoming
-// a 500: a malformed identifier is the caller's mistake, not the server's.
-func isUUID(s string) bool {
-	const canonicalLength = 36
-	if len(s) != canonicalLength {
-		return false
-	}
-	for i, r := range s {
-		switch i {
-		case 8, 13, 18, 23:
-			if r != '-' {
-				return false
-			}
-		default:
-			isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
-			if !isHex {
-				return false
-			}
-		}
-	}
-	return true
-}
+// isUUID reports whether s has the canonical 8-4-4-4-12 hexadecimal form. The check itself is
+// shared with every other service that reads a row by identifier; only the error wrapping below is
+// this package's.
+func isUUID(s string) bool { return metadb.IsUUID(s) }
 
 // requireUUID validates a mandatory identifier.
 func requireUUID(field, value string) (string, error) {
@@ -196,14 +175,8 @@ func labelsOrEmpty(labels map[string]string) map[string]string {
 
 // isUniqueViolation reports a duplicate key, including the partial unique index that allows at most
 // one default connection per instance.
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
-}
+func isUniqueViolation(err error) bool { return metadb.IsUniqueViolation(err) }
 
 // isForeignKeyViolation reports a reference to a row that does not exist, such as an unknown
 // environment.
-func isForeignKeyViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23503"
-}
+func isForeignKeyViolation(err error) bool { return metadb.IsForeignKeyViolation(err) }

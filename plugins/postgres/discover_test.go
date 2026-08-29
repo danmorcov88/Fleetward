@@ -68,10 +68,12 @@ func TestCapabilitiesDeclareOnlyWhatIsImplemented(t *testing.T) {
 		"supports_schema_discovery": caps.GetSupportsSchemaDiscovery(),
 		"supports_replication":      caps.GetSupportsReplication(),
 		"supports_replication_lag":  caps.GetSupportsReplicationLag(),
+		// Slice A4: pg_dump runs against a live server and produces an artifact with a manifest.
+		"supports_online_backup": caps.GetSupportsOnlineBackup(),
 	}
 	for name, on := range implemented {
 		if !on {
-			t.Errorf("%s should be declared: Discover and HealthCheck implement it", name)
+			t.Errorf("%s should be declared: the RPC behind it is implemented", name)
 		}
 	}
 
@@ -79,7 +81,6 @@ func TestCapabilitiesDeclareOnlyWhatIsImplemented(t *testing.T) {
 		"supports_pitr":                  caps.GetSupportsPitr(),
 		"supports_point_in_time_restore": caps.GetSupportsPointInTimeRestore(),
 		"supports_sandbox_restore":       caps.GetSupportsSandboxRestore(),
-		"supports_online_backup":         caps.GetSupportsOnlineBackup(),
 		"supports_config_read":           caps.GetSupportsConfigRead(),
 		"supports_storage_metrics":       caps.GetSupportsStorageMetrics(),
 	}
@@ -89,8 +90,12 @@ func TestCapabilitiesDeclareOnlyWhatIsImplemented(t *testing.T) {
 		}
 	}
 
-	if len(caps.GetBackupMethods()) != 0 {
-		t.Error("backup methods are declared but Backup is not implemented yet")
+	if len(caps.GetBackupMethods()) != 1 {
+		t.Errorf("declared %d backup methods, want exactly the pg_dump method from slice A4",
+			len(caps.GetBackupMethods()))
+	}
+	if len(caps.GetSupportedVerificationChecks()) != 0 {
+		t.Error("verification checks are declared but VerifyRestore is not implemented yet")
 	}
 	if caps.GetPrincipalModel() != fwv1.PrincipalModel_PRINCIPAL_MODEL_UNSPECIFIED {
 		t.Error("a principal model is declared but ListPrincipals is not implemented yet")

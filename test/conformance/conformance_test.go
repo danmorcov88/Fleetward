@@ -26,6 +26,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -133,6 +134,51 @@ func TestCapabilitiesAreCoherent(t *testing.T) {
 		}
 		if caps.GetEngineDisplayName() == "" {
 			t.Error("engine_display_name is empty; the UI has nothing to show")
+		}
+	})
+}
+
+// TestBackupCapabilityIsUsable asserts that a plugin claiming it can back up has actually published
+// what core needs in order to do so.
+//
+// Core reads this matrix and nothing else when deciding how to back up a production database, so a
+// method with no identifier, no kind, or no declared tooling is a promise core cannot act on. The
+// check runs against every plugin and skips the ones that make no such claim, which is how the
+// suite grows in coverage as capabilities are turned on.
+func TestBackupCapabilityIsUsable(t *testing.T) {
+	h := newHarness(t)
+
+	h.forEachPlugin(t, func(t *testing.T, engineType string, _ fwv1.EnginePluginClient, caps *fwv1.Capabilities) {
+		if !caps.GetSupportsOnlineBackup() && len(caps.GetBackupMethods()) == 0 {
+			t.Skipf("%s declares no backup capability yet", engineType)
+		}
+
+		method := sdk.DefaultBackupMethod(caps)
+		if method == nil {
+			t.Fatal("a backup capability is declared but no default method is offered")
+		}
+		if method.GetDisplayName() == "" {
+			t.Errorf("method %q has no display name; the UI has nothing to show", method.GetId())
+		}
+
+		// A method that orchestrates a native tool must say which one, so core can report a host
+		// missing it as a plugin health problem rather than letting a scheduled backup fail at 3am.
+		declared := append(append([]string{}, caps.GetRequiredTools()...), method.GetRequiredTools()...)
+		if len(declared) == 0 {
+			t.Logf("method %q declares no required tools; that is only correct if it shells out to nothing",
+				method.GetId())
+		}
+		for _, tool := range declared {
+			if strings.TrimSpace(tool) == "" {
+				t.Error("a required tool is declared as an empty string")
+			}
+		}
+
+		// Verification is what the product exists for. A plugin that can back up but not restore
+		// into a sandbox is reported as unverifiable, which is a legitimate intermediate state —
+		// but claiming checks it cannot run would report verification as failing instead.
+		if len(caps.GetSupportedVerificationChecks()) > 0 && !caps.GetSupportsSandboxRestore() {
+			t.Error("verification checks are declared without sandbox restore")
 		}
 	})
 }

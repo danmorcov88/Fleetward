@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -207,10 +208,89 @@ type topology struct {
 	IsStandalone bool   `json:"is_standalone"`
 }
 
+type objectRef struct {
+	Bucket string `json:"bucket"`
+	Key    string `json:"key"`
+}
+
+type checksum struct {
+	Algorithm string `json:"algorithm"`
+	Value     string `json:"value"`
+}
+
+// backupRow mirrors the REST shape of a Backup. Protobuf JSON renders int64 as a string, which is
+// why the byte counts are strings here rather than numbers.
+type backupRow struct {
+	ID               string     `json:"id"`
+	InstanceID       string     `json:"instance_id"`
+	MethodID         string     `json:"method_id"`
+	State            string     `json:"state"`
+	SizeBytes        string     `json:"size_bytes"`
+	Checksum         *checksum  `json:"checksum"`
+	StartedAt        *time.Time `json:"started_at"`
+	CompletedAt      *time.Time `json:"completed_at"`
+	Duration         string     `json:"duration"`
+	ConsistencyPoint *time.Time `json:"consistency_point"`
+	Artifact         *objectRef `json:"artifact"`
+	ErrorMessage     string     `json:"error_message"`
+}
+
+type manifestEntry struct {
+	Database    string `json:"database"`
+	ObjectName  string `json:"object_name"`
+	RecordCount string `json:"record_count"`
+	SizeBytes   string `json:"size_bytes"`
+}
+
+type sourceManifest struct {
+	CapturedAt   *time.Time      `json:"captured_at"`
+	Entries      []manifestEntry `json:"entries"`
+	TotalObjects string          `json:"total_objects"`
+	TotalRecords string          `json:"total_records"`
+	IsSampled    bool            `json:"is_sampled"`
+}
+
+type backupResponse struct {
+	Backup   backupRow       `json:"backup"`
+	Manifest *sourceManifest `json:"manifest"`
+}
+
 // trimEnum strips a protobuf enum's type prefix for display: HEALTH_STATE_UP reads as UP.
 func trimEnum(prefix, value string) string {
 	if value == "" {
 		return "UNKNOWN"
 	}
 	return strings.TrimPrefix(value, prefix)
+}
+
+// parseInt64 reads a protobuf JSON integer, which arrives as a string. An unparseable value reads
+// as zero: a display helper must not fail a command.
+func parseInt64(raw string) int64 {
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+// orZero renders a protobuf JSON integer, defaulting an empty field to "0".
+func orZero(raw string) string {
+	if raw == "" {
+		return "0"
+	}
+	return raw
+}
+
+// humanBytes renders a byte count at the scale an operator reads it in.
+func humanBytes(size int64) string {
+	const unit = 1024
+	if size < unit {
+		return fmt.Sprintf("%d B", size)
+	}
+	div, exp := int64(unit), 0
+	for n := size / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(size)/float64(div), "KMGTPE"[exp])
 }

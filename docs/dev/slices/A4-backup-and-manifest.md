@@ -26,7 +26,8 @@ methods per engine, and the brief explicitly blesses `mysqldump` as method #1 fo
 with the physical method means debugging two hard things at once.
 
 **The plugin uploads through a presigned URL.** It never receives storage credentials. Core presigns
-and passes the grant; this is the rule in ADR-0007 and the reason `ArtifactTarget` exists.
+and passes the grant; this is the rule in ADR-0007 and the reason `ArtifactTarget` exists. In
+practice this is `part_urls`, not `upload_url` — see the finding under Traps.
 
 **Checksum is computed while streaming**, not by re-reading the artifact afterwards. Reading back a
 multi-gigabyte object to hash it doubles the transfer for no benefit.
@@ -41,6 +42,8 @@ unable to distinguish success from a crashed stream. Conformance checks this in 
 
 - `plugins/postgres/backup.go` — the `pg_dump` method: run the tool, stream to the presigned URL,
   build the manifest.
+- `plugins/postgres/upload.go` — the part-by-part uploader (added during implementation; see
+  ADR-0021).
 - `plugins/postgres/manifest.go` — per-table row counts.
 - `plugins/postgres/backup_test.go` — unit tests for argument construction and manifest shaping.
 - `internal/controlplane/backup/service.go` — orchestration: create the row, presign, call the
@@ -52,14 +55,19 @@ unable to distinguish success from a crashed stream. Conformance checks this in 
 - `plugins/postgres/plugin.go` — declare `supports_online_backup`, and the `pg_dump` backup method
   with `required_tools: ["pg_dump"]`.
 - `api/proto/.../controlplane.proto` — nothing. `RunBackup` is already defined.
+- `api/proto/.../plugin.proto` — one additive message, `UploadedPart`, plus
+  `BackupResult.parts`. Required by ADR-0021: core cannot complete a multipart upload without the
+  parts' ETags, and the contract had nowhere to put them.
+- `internal/storage/objstore/` — `CreateMultipartUpload`, `CompleteMultipartUpload`,
+  `AbortMultipartUpload`.
 
 ## Reuse, do not rewrite
 
 | What | Where |
 |---|---|
 | Artifact key convention | `objstore.ArtifactKey(tenant, instance, backup, filename)` |
-| Presigning | `objstore.ObjectStore.PresignPut` |
-| Redacting a URL for logs | `objstore.SafeURL` — a presigned URL is a bearer credential |
+| Presigning | `objstore.ObjectStore` — `CreateMultipartUpload` in practice, see ADR-0021 |
+| Redacting a URL for logs | `sdk.SafeURL` — a presigned URL is a bearer credential. It moved out of `objstore` during implementation so a plugin need not link the storage layer for one string function. |
 | Typed plugin errors | `sdk.ToolNotFound`, `sdk.ToolFailed`, `sdk.ObjectStoreFailed` |
 | Connecting to the source | `plugins/postgres/conn.go` — `connect(ctx, creds)` |
 | Credential resolution | the inventory service from A2 |
@@ -82,6 +90,14 @@ in the code — a manifest whose accuracy is undocumented is a trap for slice A5
 **Stream; do not buffer.** The artifact must not be held in memory or written to a temporary file
 in full. `pg_dump` writes to stdout — pipe it to the HTTP request body.
 
+> **Finding, recorded during implementation: this cannot be done with a single presigned `PUT`.**
+> An S3 `PutObject` requires `Content-Length`, and MinIO answers a chunked body with
+> `411 MissingContentLength`. The size of a `pg_dump` stream is not known until it finishes, so
+> "stream into one presigned PUT" is not achievable. The rule itself stands — nothing is buffered
+> beyond one part — but the mechanism is a multipart upload through `ArtifactTarget.part_urls`,
+> with core completing it from the receipts the plugin returns. See
+> [ADR-0021](../../adr/0021-plugins-upload-artifacts-as-multipart-parts.md).
+
 **A non-zero exit from `pg_dump` still produces output.** A partial artifact uploaded as success is
 a corrupt backup that reports green. Check the exit code before marking the backup complete, and
 delete the object if the tool failed.
@@ -95,7 +111,7 @@ archiving, PITR, compression tuning, incremental backups.
 
 ```bash
 fleetward-cli backup run --instance prod-1
-# streams progress, ends with a backup id
+# reports each state change and ends with the backup's details
 
 mc ls local/fleetward-backups/tenants/.../backups/<id>/     # the artifact is there
 ```

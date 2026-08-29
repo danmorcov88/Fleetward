@@ -4,8 +4,8 @@
 // is written against it (ADR-0012); the other three engines then run that same suite unmodified,
 // which is how contract leaks get found.
 //
-// Slice A1 status: HealthCheck and Discover are implemented against a real instance. Only the two
-// capabilities those RPCs deliver are declared. Capabilities are a promise core relies on when
+// Slice A4 status: HealthCheck, Discover, and Backup are implemented against a real instance. Only
+// the capabilities those RPCs deliver are declared. Capabilities are a promise core relies on when
 // deciding what to do to a production database, so they are turned on in the same change that
 // implements them — never before.
 package postgres
@@ -54,15 +54,23 @@ func (p *Plugin) Capabilities(context.Context) (*fwv1.Capabilities, error) {
 		// health rule and the UI's lag column on this flag.
 		SupportsReplicationLag: true,
 
+		// Delivered by Backup: pg_dump runs against a live server without blocking writers, from an
+		// exported snapshot that the manifest is counted in.
+		SupportsOnlineBackup: true,
+		BackupMethods:        backupMethods(),
+		// Declared at the plugin level as well as on the method, so the manager reports a host
+		// without pg_dump as a plugin health problem rather than letting the first scheduled backup
+		// discover it at 3am.
+		RequiredTools: []string{dumpTool},
+
 		// Not yet implemented, so not yet declared. Each is turned on by the slice that builds it:
-		//   A4  SupportsOnlineBackup, BackupMethods (pg_dump first, pg_basebackup in B)
 		//   A5  SupportsSandboxRestore, SandboxTemplate, SupportedVerificationChecks
-		//   B   SupportsPitr, SupportsPointInTimeRestore
+		//   B   SupportsPitr, SupportsPointInTimeRestore, the pg_basebackup method
 		//   C   PrincipalModel PRINCIPAL_MODEL_USERS_AND_ROLES
 		//   F   SupportsConfigRead, SupportsStorageMetrics, Metrics
 
 		Metadata: map[string]string{
-			"slice": "A1 — health and discovery",
+			"slice": "A4 — backup with a manifest",
 		},
 	}, nil
 }
