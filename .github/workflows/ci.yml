@@ -97,10 +97,11 @@ jobs:
       - name: Test
         run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
-      # The one host tool the integration suite needs. Plugins orchestrate native tooling by design,
-      # so the pg_dump backup test cannot mock it away — and pg_dump refuses to dump a server newer
-      # than itself, which is why the client major is pinned to the test server's. Without this step
-      # the backup test skips, and a skipped merge gate is not a merge gate.
+      # The host tools the integration suite needs. Plugins orchestrate native tooling by design, so
+      # the pg_dump backup test and the pg_restore verification test cannot mock them away — and
+      # pg_dump refuses to dump a server newer than itself, which is why the client major is pinned
+      # to the test server's. Without this step both tests skip, and a skipped merge gate is not a
+      # merge gate.
       - name: Install the PostgreSQL client
         run: |
           sudo apt-get update
@@ -110,8 +111,10 @@ jobs:
       # A tool that talks to databases and has only been tested against mocks has not been tested
       # (ADR-0012). These spin real engines with testcontainers; the runner already has Docker.
       # They live in the same job so the required-check set stays stable.
+      # 30 minutes rather than 20: every verification test stands up its own PostgreSQL and MinIO,
+      # and slice A5 added a second database container per test to restore into.
       - name: Integration tests
-        run: go test -race -tags=integration -timeout 20m ./...
+        run: go test -race -tags=integration -timeout 30m ./...
 
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -1

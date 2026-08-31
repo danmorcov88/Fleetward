@@ -70,6 +70,8 @@ func TestCapabilitiesDeclareOnlyWhatIsImplemented(t *testing.T) {
 		"supports_replication_lag":  caps.GetSupportsReplicationLag(),
 		// Slice A4: pg_dump runs against a live server and produces an artifact with a manifest.
 		"supports_online_backup": caps.GetSupportsOnlineBackup(),
+		// Slice A5: the artifact is restored into a sandbox and compared against that manifest.
+		"supports_sandbox_restore": caps.GetSupportsSandboxRestore(),
 	}
 	for name, on := range implemented {
 		if !on {
@@ -80,7 +82,6 @@ func TestCapabilitiesDeclareOnlyWhatIsImplemented(t *testing.T) {
 	notYet := map[string]bool{
 		"supports_pitr":                  caps.GetSupportsPitr(),
 		"supports_point_in_time_restore": caps.GetSupportsPointInTimeRestore(),
-		"supports_sandbox_restore":       caps.GetSupportsSandboxRestore(),
 		"supports_config_read":           caps.GetSupportsConfigRead(),
 		"supports_storage_metrics":       caps.GetSupportsStorageMetrics(),
 	}
@@ -94,8 +95,28 @@ func TestCapabilitiesDeclareOnlyWhatIsImplemented(t *testing.T) {
 		t.Errorf("declared %d backup methods, want exactly the pg_dump method from slice A4",
 			len(caps.GetBackupMethods()))
 	}
-	if len(caps.GetSupportedVerificationChecks()) != 0 {
-		t.Error("verification checks are declared but VerifyRestore is not implemented yet")
+	// The integrity and queryability checks stay undeclared: amcheck is slice A6's territory and
+	// nothing represents a "representative read" yet. Declaring a check the plugin cannot run would
+	// have core report verification as failing rather than as narrower than it hoped.
+	for _, check := range []fwv1.VerificationCheck{
+		fwv1.VerificationCheck_VERIFICATION_CHECK_CONNECTIVITY,
+		fwv1.VerificationCheck_VERIFICATION_CHECK_SCHEMA_PRESENCE,
+		fwv1.VerificationCheck_VERIFICATION_CHECK_RECORD_COUNTS,
+	} {
+		if !sdk.SupportsCheck(caps, check) {
+			t.Errorf("%s should be declared: VerifyRestore implements it", check)
+		}
+	}
+	for _, check := range []fwv1.VerificationCheck{
+		fwv1.VerificationCheck_VERIFICATION_CHECK_INTEGRITY,
+		fwv1.VerificationCheck_VERIFICATION_CHECK_QUERYABILITY,
+	} {
+		if sdk.SupportsCheck(caps, check) {
+			t.Errorf("%s is declared but not implemented yet", check)
+		}
+	}
+	if caps.GetSandboxTemplate().GetImageRepository() == "" {
+		t.Error("sandbox restore is declared without an image repository to stand one up from")
 	}
 	if caps.GetPrincipalModel() != fwv1.PrincipalModel_PRINCIPAL_MODEL_UNSPECIFIED {
 		t.Error("a principal model is declared but ListPrincipals is not implemented yet")
@@ -109,10 +130,10 @@ func TestUnimplementedRPCsRefuseCleanly(t *testing.T) {
 	p := New()
 	ctx := context.Background()
 
-	if _, err := p.VerifyRestore(ctx, &fwv1.VerifyRestoreRequest{}); err == nil {
-		t.Error("VerifyRestore should be refused")
+	if _, err := p.GetConfig(ctx, &fwv1.GetConfigRequest{}); err == nil {
+		t.Error("GetConfig should be refused")
 	} else if pe := sdk.AsPluginError(err); pe.GetCode() != fwv1.ErrorCode_ERROR_CODE_UNSUPPORTED {
-		t.Errorf("VerifyRestore code = %v, want UNSUPPORTED", pe.GetCode())
+		t.Errorf("GetConfig code = %v, want UNSUPPORTED", pe.GetCode())
 	}
 
 	// PITR is the exception: an engine without it answers with an unavailable window and a reason,

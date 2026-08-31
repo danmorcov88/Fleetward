@@ -210,7 +210,7 @@ sweep at startup removes whatever a control plane killed mid-verification left b
 
 | Engine | Backup method | Status |
 |---|---|---|
-| **PostgreSQL** | `pg_dump` today; `pg_basebackup` + WAL archiving next, `pgbackrest` as a later method | Reference plugin — health, discovery, and backup implemented |
+| **PostgreSQL** | `pg_dump` today; `pg_basebackup` + WAL archiving next, `pgbackrest` as a later method | Reference plugin — health, discovery, backup, sandbox restore, and verification implemented |
 | **MySQL / MariaDB** | `xtrabackup`, with `mysqldump` shipping first | Stage 3 |
 | **MongoDB** | `mongodump`, snapshot-based to follow | Stage 3 |
 | **Redis** | RDB via `BGSAVE` + fetch, AOF expressed in capabilities | Stage 3 |
@@ -345,13 +345,61 @@ consistent to  2026-08-29T13:54:11Z
 manifest       19 objects, 12 records
 ```
 
-The last line is the point. The manifest records what the source actually contained at the moment
-the artifact was taken — counted inside the same exported snapshot the dump reads, so the two can
-never describe different moments. `backup show <id> --manifest` lists every object and its record
-count. Verification, in the next slice, is what turns that record into a proven-restorable backup.
+The `manifest` line is the point. It records what the source actually contained at the moment the
+artifact was taken — counted inside the same exported snapshot the dump reads, so the two can never
+describe different moments. `backup show <id> --manifest` lists every object and its record count.
+Without it, "verification" would mean nothing more than "the restore command exited zero".
 
 `backup run` starts the backup and follows it; the run itself happens in the control plane, so
 `--wait=false` returns immediately and `backup show` picks it up later.
+
+### Prove it can be restored
+
+```bash
+bin/fleetward-cli backup verify --backup 99946af5-d519-44f6-8372-6a7279b9f52b
+```
+
+```
+verification 4b1e0c72-8f3a-4d5e-b6c7-1a2b3c4d5e6f started for backup 99946af5-…
+id        4b1e0c72-8f3a-4d5e-b6c7-1a2b3c4d5e6f
+backup    99946af5-d519-44f6-8372-6a7279b9f52b
+status    VERIFIED
+duration  24.8s
+
+CHECK            RESULT  DETAIL
+connectivity     pass    the restored instance accepts connections and reports version 16.2
+schema_presence  pass    all 19 objects the manifest recorded are present
+record_counts    pass    12 rows across 19 objects match the manifest exactly
+```
+
+Fleetward pulls a container of the engine version **that produced the artifact** — not the version
+the instance runs today, because an instance can be upgraded between a backup and its verification —
+restores into it, counts what arrived with the very same code that counted the source, and destroys
+the container on every path out, including a panic.
+
+Three outcomes are possible, and they are deliberately different answers:
+
+| Status | Meaning |
+|---|---|
+| `VERIFIED` | The restored copy matches the manifest, object for object and row for row |
+| `FAILED` | It does not. This backup is not what it claims to be — the loudest thing Fleetward reports |
+| `INCONCLUSIVE` | The question could not be answered: the sandbox never started, the image could not be pulled, the backup carries no manifest |
+
+That third status exists because reporting an infrastructure problem as data loss trains an operator
+to ignore the one alert that matters most. A backup with no manifest is inconclusive by construction
+and never even reaches a sandbox: comparing zero objects to zero objects would succeed trivially.
+
+When a check fails, the report names the objects rather than the fact:
+
+```
+record_counts discrepancies:
+OBJECT           EXPECTED  FOUND  DETAIL
+public.orders    120       118    the restored copy holds a different number of rows
+```
+
+`backup run --verify` chains the two, and `backup show` then carries the two-part status — the
+backup and its proof are separate facts, and a green backup with a red verification is the case the
+whole product exists to surface.
 
 ---
 
@@ -482,14 +530,16 @@ it cannot quietly rot between releases.
 schema, dev stack, and CI are in place and verified end to end. Work is now cut into slices, each
 independently demoable.
 
-Slices A1 to A4 are done. The PostgreSQL plugin answers `HealthCheck` and `Discover` against a real
+Slices A1 to A5 are done. The PostgreSQL plugin answers `HealthCheck` and `Discover` against a real
 server; the inventory service, REST API, and CLI make that reachable, so a server can be added and
 seen healthy; the control plane provisions a throwaway database container from a plugin's
-`SandboxTemplate` and is proven not to leak one; and `backup run` takes a real `pg_dump`, streams it
-into object storage without buffering it, and records a manifest of what the source contained.
+`SandboxTemplate` and is proven not to leak one; `backup run` takes a real `pg_dump`, streams it
+into object storage without buffering it, and records a manifest of what the source contained; and
+`backup verify` restores that artifact into the sandbox and compares it to the manifest row for row.
 
-Restoring that artifact into the sandbox and verifying it against the manifest is next — which is
-the point of everything above it.
+The loop is closed. What remains in this phase is slice A6: proving it fails loudly, by feeding a
+deliberately corrupted artifact through the same path and watching it come back `FAILED` with the
+discrepancies named.
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -504,8 +554,9 @@ the point of everything above it.
 
 Detail and per-slice checklists: [`docs/dev/STATUS.md`](docs/dev/STATUS.md).
 
-> The PostgreSQL plugin declares exactly three capabilities today — schema discovery, replication,
-> and replication lag — and every other flag is still `false`. A flag is turned on in the same change
+> The PostgreSQL plugin declares five capabilities today — schema discovery, replication,
+> replication lag, online backup, and sandbox restore — plus the three verification checks it
+> actually implements. Every other flag is still `false`. A flag is turned on in the same change
 > that implements the behaviour behind it, never in advance. Core trusts that matrix when deciding
 > what is safe to do to a production database, and a premature flag produces its failure during a
 > recovery.

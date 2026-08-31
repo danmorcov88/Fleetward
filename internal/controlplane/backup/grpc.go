@@ -34,18 +34,15 @@ var _ fwv1.BackupServiceServer = (*GRPCServer)(nil)
 // RunBackup starts a backup and returns its identifiers. It does not wait for the backup to finish;
 // the caller polls GetBackup.
 func (g *GRPCServer) RunBackup(ctx context.Context, req *fwv1.RunBackupRequest) (*fwv1.RunBackupResponse, error) {
-	if req.GetVerifyOnCompletion() {
-		// Accepting the flag and ignoring it would promise a verification that never happens, which
-		// is precisely the failure mode this product exists to prevent.
-		return nil, status.Error(codes.Unimplemented,
-			"verify_on_completion is not implemented yet; automated verification arrives in slice A5")
-	}
-
 	backupID, jobID, err := g.svc.RunBackup(ctx, RunBackupInput{
 		InstanceID: req.GetInstanceId(),
 		MethodID:   req.GetMethodId(),
 		Options:    req.GetOptions(),
 		Databases:  req.GetDatabases(),
+		// A per-request override of the instance's policy. The policy itself — always, sampled, or
+		// manual — belongs to the scheduler in phase B; what this flag does is chain one
+		// verification onto this one backup, which is the product's core loop written out by hand.
+		VerifyOnCompletion: req.GetVerifyOnCompletion(),
 		// Everything reaching this RPC today was asked for by a human; the scheduler in phase B is
 		// what will set this to false.
 		TriggeredManually: true,
@@ -72,16 +69,26 @@ func (g *GRPCServer) ListBackups(context.Context, *fwv1.ListBackupsRequest) (*fw
 		"backup history is not implemented yet; it arrives in phase B with observed backups")
 }
 
-// RunVerification is slice A5.
-func (g *GRPCServer) RunVerification(context.Context, *fwv1.RunVerificationRequest) (*fwv1.RunVerificationResponse, error) {
-	return nil, status.Error(codes.Unimplemented,
-		"backup verification is not implemented yet; it arrives in slice A5")
+// RunVerification restores a backup into a sandbox and smoke-tests it, returning its identifiers.
+// It does not wait for the verification to finish; the caller polls GetVerification.
+func (g *GRPCServer) RunVerification(ctx context.Context, req *fwv1.RunVerificationRequest) (*fwv1.RunVerificationResponse, error) {
+	verificationID, jobID, err := g.svc.RunVerification(ctx, RunVerificationInput{
+		BackupID: req.GetBackupId(),
+		Checks:   req.GetChecks(),
+	})
+	if err != nil {
+		return nil, g.fail(ctx, "run verification", err)
+	}
+	return &fwv1.RunVerificationResponse{VerificationId: verificationID, JobId: jobID}, nil
 }
 
-// GetVerification is slice A5.
-func (g *GRPCServer) GetVerification(context.Context, *fwv1.GetVerificationRequest) (*fwv1.GetVerificationResponse, error) {
-	return nil, status.Error(codes.Unimplemented,
-		"backup verification is not implemented yet; it arrives in slice A5")
+// GetVerification returns one verification and every check it ran.
+func (g *GRPCServer) GetVerification(ctx context.Context, req *fwv1.GetVerificationRequest) (*fwv1.GetVerificationResponse, error) {
+	verification, err := g.svc.GetVerification(ctx, req.GetVerificationId())
+	if err != nil {
+		return nil, g.fail(ctx, "get verification", err)
+	}
+	return &fwv1.GetVerificationResponse{Verification: verification}, nil
 }
 
 // GetPITRWindow is phase B, and depends on WAL archiving that no method produces yet.
@@ -106,6 +113,8 @@ func (g *GRPCServer) fail(ctx context.Context, operation string, err error) erro
 		return status.Error(codes.AlreadyExists, err.Error())
 	case errors.Is(err, ErrUnsupported):
 		return status.Error(codes.Unimplemented, err.Error())
+	case errors.Is(err, ErrNotVerifiable):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, ErrEngineUnavailable), errors.Is(err, inventory.ErrEngineUnavailable):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, ErrPluginFailed), errors.Is(err, inventory.ErrPluginFailed):

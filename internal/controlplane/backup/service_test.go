@@ -2,6 +2,8 @@ package backup
 
 import (
 	"errors"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -175,4 +177,9 @@ func TestArtifactKeyIsTenantScoped(t *testing.T) {
 	if !strings.HasPrefix(key, "tenants/tenant-1/") {
 		t.Error("the key must start with the tenant prefix")
 	}
+}
+
+// discardLogger builds a logger for tests that exercise code paths which log.
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

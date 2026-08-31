@@ -104,6 +104,8 @@ supersedes the old.
 | Scheduler | Internal cron-style scheduler in control plane (`robfig/cron`), jobs persisted in Postgres, at-most-once via lease locking | [0013](docs/adr/0013-internal-scheduler-with-leases.md) |
 | Logging | `log/slog`, JSON in prod, pretty in dev | [0014](docs/adr/0014-slog-structured-logging.md) |
 | Sandbox credentials | Core generates the identity; the plugin's `SandboxTemplate` places it via `{{ .Username }}` / `{{ .Password }}` / `{{ .Database }}` / `{{ .Port }}` | [0020](docs/adr/0020-sandbox-credentials-from-template-placeholders.md) |
+| Artifact transfer | Plugins write artifacts through presigned multipart part grants; core begins and completes the upload, so a partial artifact is never a visible object | [0021](docs/adr/0021-plugins-upload-artifacts-as-multipart-parts.md) |
+| Verification outcomes | `FAILED` is reserved for evidence about the artifact; every other failure is `INCONCLUSIVE` | [0022](docs/adr/0022-failed-and-inconclusive-are-different-answers.md) |
 
 ### Product and scope decisions
 

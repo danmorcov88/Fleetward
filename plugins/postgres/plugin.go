@@ -4,7 +4,8 @@
 // is written against it (ADR-0012); the other three engines then run that same suite unmodified,
 // which is how contract leaks get found.
 //
-// Slice A4 status: HealthCheck, Discover, and Backup are implemented against a real instance. Only
+// Slice A5 status: HealthCheck, Discover, Backup, Restore, and VerifyRestore are implemented
+// against a real instance. Only
 // the capabilities those RPCs deliver are declared. Capabilities are a promise core relies on when
 // deciding what to do to a production database, so they are turned on in the same change that
 // implements them — never before.
@@ -59,18 +60,23 @@ func (p *Plugin) Capabilities(context.Context) (*fwv1.Capabilities, error) {
 		SupportsOnlineBackup: true,
 		BackupMethods:        backupMethods(),
 		// Declared at the plugin level as well as on the method, so the manager reports a host
-		// without pg_dump as a plugin health problem rather than letting the first scheduled backup
-		// discover it at 3am.
-		RequiredTools: []string{dumpTool},
+		// without them as a plugin health problem rather than letting the first scheduled backup
+		// discover it at 3am — or, worse, letting a verification discover it during an incident.
+		RequiredTools: []string{dumpTool, restoreTool, psqlTool},
+
+		// Delivered by Restore and VerifyRestore: an artifact is loaded into a throwaway container
+		// of the version that produced it and compared against the manifest taken with it.
+		SupportsSandboxRestore:      true,
+		SandboxTemplate:             sandboxTemplate(),
+		SupportedVerificationChecks: supportedChecks(),
 
 		// Not yet implemented, so not yet declared. Each is turned on by the slice that builds it:
-		//   A5  SupportsSandboxRestore, SandboxTemplate, SupportedVerificationChecks
 		//   B   SupportsPitr, SupportsPointInTimeRestore, the pg_basebackup method
 		//   C   PrincipalModel PRINCIPAL_MODEL_USERS_AND_ROLES
 		//   F   SupportsConfigRead, SupportsStorageMetrics, Metrics
 
 		Metadata: map[string]string{
-			"slice": "A4 — backup with a manifest",
+			"slice": "A5 — restore into a sandbox and verify",
 		},
 	}, nil
 }

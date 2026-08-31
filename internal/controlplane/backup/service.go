@@ -29,6 +29,7 @@ import (
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
 	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
+	"github.com/danmorcov88/fleetward/internal/controlplane/sandbox"
 	"github.com/danmorcov88/fleetward/internal/plugin/sdk"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 	"github.com/danmorcov88/fleetward/internal/storage/objstore"
@@ -95,8 +96,12 @@ type Service struct {
 	store    objstore.ObjectStore
 	plugins  Router
 	resolver Resolver
-	log      *slog.Logger
-	tenantID string
+	// sandboxes provisions the throwaway instances a verification restores into. It may be nil on a
+	// control plane with no container runtime, which makes verification unavailable rather than
+	// making the whole service unusable — a backup can still be taken and reported.
+	sandboxes sandbox.Provider
+	log       *slog.Logger
+	tenantID  string
 
 	// runCtx outlives the request that started a backup: an HTTP request cannot stay open for the
 	// hours a real backup takes, so RunBackup returns as soon as the rows exist and the work
@@ -108,13 +113,14 @@ type Service struct {
 }
 
 // New builds the service. The tenant is fixed until OIDC lands in phase F, exactly as in inventory.
-func New(pool *pgxpool.Pool, store objstore.ObjectStore, plugins Router, resolver Resolver, log *slog.Logger) *Service {
+func New(pool *pgxpool.Pool, store objstore.ObjectStore, plugins Router, resolver Resolver, sandboxes sandbox.Provider, log *slog.Logger) *Service {
 	runCtx, cancel := context.WithCancel(context.Background())
 	return &Service{
 		pool:      pool,
 		store:     store,
 		plugins:   plugins,
 		resolver:  resolver,
+		sandboxes: sandboxes,
 		log:       log.With(slog.String("component", "backup")),
 		tenantID:  metadb.DefaultTenantID,
 		runCtx:    runCtx,
@@ -122,7 +128,7 @@ func New(pool *pgxpool.Pool, store objstore.ObjectStore, plugins Router, resolve
 	}
 }
 
-// Close cancels every running backup and waits for them to record their outcome.
+// Close cancels every running backup and verification and waits for them to record their outcome.
 //
 // Waiting matters: a run that is killed without writing its row leaves a backup stuck in `running`
 // forever, and slice B4 — which owns leases and restart recovery — is what will make that
@@ -139,6 +145,8 @@ type RunBackupInput struct {
 	MethodID   string
 	Options    map[string]string
 	Databases  []string
+	// VerifyOnCompletion chains a verification onto a successful backup.
+	VerifyOnCompletion bool
 	// TriggeredManually records that a human asked for this run rather than a schedule.
 	TriggeredManually bool
 }
@@ -190,6 +198,7 @@ func (s *Service) RunBackup(ctx context.Context, in RunBackupInput) (backupID, j
 			methodID:   method.GetId(),
 			options:    in.Options,
 			databases:  in.Databases,
+			verify:     in.VerifyOnCompletion,
 		})
 	}()
 
@@ -204,6 +213,7 @@ type runRequest struct {
 	methodID   string
 	options    map[string]string
 	databases  []string
+	verify     bool
 }
 
 // execute performs the run and records its outcome. It never returns an error: there is no caller
@@ -247,6 +257,23 @@ func (s *Service) execute(client fwv1.EnginePluginClient, req runRequest) {
 		slog.Int64("manifest_objects", result.GetManifest().GetTotalObjects()),
 		slog.Int64("manifest_records", result.GetManifest().GetTotalRecords()),
 		slog.Duration("duration", time.Since(started)))
+
+	if !req.verify {
+		return
+	}
+
+	// A verification asked for with the backup starts here rather than in RunBackup, because it can
+	// only begin once the artifact exists. It runs as its own job with its own rows: a backup that
+	// succeeded and a verification that failed are two different facts, and the estate view has to
+	// be able to show both at once.
+	//
+	// Failing to start one is logged rather than allowed to touch the backup's own outcome. The
+	// backup is good; what is missing is the proof, and rewriting a green row to red would be a
+	// lie in the opposite direction.
+	if _, _, err := s.RunVerification(recordCtx, RunVerificationInput{BackupID: req.backupID}); err != nil {
+		log.ErrorContext(recordCtx, "the backup succeeded but its verification could not be started",
+			slog.String("error", err.Error()))
+	}
 }
 
 // transfer mints the upload grant, drives the plugin, and completes the object.
@@ -657,6 +684,14 @@ func (s *Service) GetBackup(ctx context.Context, backupID string) (*fwv1.Backup,
 			manifest = &fwv1.SourceManifest{}
 		}
 	}
+
+	// The verification is attached here rather than fetched separately, because "is there a backup"
+	// and "is it any good" are the same question to whoever is asking.
+	verification, err := s.latestVerification(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	out.Verification = verification
 
 	return out, manifest, nil
 }

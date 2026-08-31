@@ -29,6 +29,7 @@ func newBackupCommand(serverURL *string, timeout *time.Duration) *cobra.Command 
 	cmd.AddCommand(
 		newBackupRunCommand(serverURL, timeout),
 		newBackupShowCommand(serverURL, timeout),
+		newBackupVerifyCommand(serverURL, timeout),
 	)
 	return cmd
 }
@@ -39,6 +40,7 @@ func newBackupRunCommand(serverURL *string, timeout *time.Duration) *cobra.Comma
 		methodID     string
 		databases    []string
 		options      []string
+		verify       bool
 		wait         bool
 		waitTimeout  time.Duration
 	)
@@ -66,6 +68,9 @@ func newBackupRunCommand(serverURL *string, timeout *time.Duration) *cobra.Comma
 			}
 
 			body := map[string]any{"instance_id": inst.ID}
+			if verify {
+				body["verify_on_completion"] = true
+			}
 			if methodID != "" {
 				body["method_id"] = methodID
 			}
@@ -104,6 +109,13 @@ func newBackupRunCommand(serverURL *string, timeout *time.Duration) *cobra.Comma
 			}
 
 			printBackup(out, result)
+			if verify && result.Backup.State == "BACKUP_STATE_SUCCEEDED" {
+				// The verification is a separate job with its own row, so the CLI points at it
+				// rather than following it: a backup and its proof are two facts, and conflating
+				// them is exactly what the two-part status in the UI exists to prevent.
+				fmt.Fprintf(out, "\nverification started; read its outcome with: "+
+					"fleetward-cli backup show %s\n", started.BackupID)
+			}
 			if result.Backup.State != "BACKUP_STATE_SUCCEEDED" {
 				return fmt.Errorf("backup %s", strings.ToLower(trimEnum("BACKUP_STATE_", result.Backup.State)))
 			}
@@ -116,6 +128,8 @@ func newBackupRunCommand(serverURL *string, timeout *time.Duration) *cobra.Comma
 	cmd.Flags().StringSliceVar(&databases, "database", nil,
 		"database to back up; repeatable, empty means the connection's own database")
 	cmd.Flags().StringArrayVar(&options, "option", nil, "method option as key=value; repeatable")
+	cmd.Flags().BoolVar(&verify, "verify", false,
+		"verify the backup as soon as it succeeds; follow it with `backup verify --backup <id>`")
 	cmd.Flags().BoolVar(&wait, "wait", true, "follow the backup until it finishes")
 	cmd.Flags().DurationVar(&waitTimeout, "wait-timeout", 2*time.Hour, "how long to follow a running backup")
 	_ = cmd.MarkFlagRequired("instance")
@@ -220,6 +234,18 @@ func printBackup(out io.Writer, resp *backupResponse) {
 	if b.ErrorMessage != "" {
 		fmt.Fprintf(w, "error\t%s\n", b.ErrorMessage)
 	}
+
+	// Printed even when there is none. "Not verified" is information an operator needs, and an
+	// absent line reads as "fine" rather than as "unproven".
+	verified := "never verified"
+	if b.Verification != nil {
+		verified = trimEnum("VERIFICATION_STATUS_", b.Verification.Status)
+		if verified == "UNSPECIFIED" {
+			verified = "RUNNING"
+		}
+		verified += " (" + b.Verification.ID + ")"
+	}
+	fmt.Fprintf(w, "verification\t%s\n", verified)
 
 	// The manifest summary is printed even without --manifest: it is the evidence that this backup
 	// can be verified at all, and a backup without one can only ever be checked for "did it start".
