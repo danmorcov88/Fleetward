@@ -429,7 +429,11 @@ every engine plugin implements:
    Artifacts move through presigned URLs, so no storage credential ever reaches a plugin.
 3. **Plugins orchestrate native tooling.** They declare what they shell out to, and the manager
    reports a missing binary at startup rather than at 3am.
-4. **Conformance is the merge gate.** A plugin merges only when the shared suite passes.
+4. **Conformance is the merge gate.** A plugin merges only when the shared suite passes. It stands
+   your engine up from your own `SandboxTemplate`, backs it up, restores it, verifies it — and then
+   corrupts the artifact in the bucket and requires you to say so. Four of its end-to-end cases are
+   failures rather than successes, because a verification that has only ever been shown to pass is
+   indistinguishable from one that always passes.
 
 ### Writing your own
 
@@ -478,7 +482,7 @@ fleetward/
 ├── web/                      # React app
 ├── test/{conformance,e2e}/   # the shared conformance suite
 ├── deploy/{docker,dev,helm}/ # container definitions, dev IdP config
-├── docs/{adr,dev}/           # 18 ADRs, developer guides, project status
+├── docs/{adr,dev}/           # 23 ADRs, developer guides, project status
 └── .github/                  # CI, contributing, security policy, templates
 ```
 
@@ -526,26 +530,32 @@ it cannot quietly rot between releases.
 
 ## Project status
 
-**Pre-alpha — foundation complete, building Phase A.** The contract, plugin system, metadata
-schema, dev stack, and CI are in place and verified end to end. Work is now cut into slices, each
-independently demoable.
+**Pre-alpha — Phase A complete, starting Phase B.** The contract, plugin system, metadata schema,
+dev stack, and CI are in place and verified end to end. Work is cut into slices, each independently
+demoable.
 
-Slices A1 to A5 are done. The PostgreSQL plugin answers `HealthCheck` and `Discover` against a real
-server; the inventory service, REST API, and CLI make that reachable, so a server can be added and
-seen healthy; the control plane provisions a throwaway database container from a plugin's
+Phase A is done. The PostgreSQL plugin answers `HealthCheck` and `Discover` against a real server;
+the inventory service, REST API, and CLI make that reachable, so a server can be added and seen
+healthy; the control plane provisions a throwaway database container from a plugin's
 `SandboxTemplate` and is proven not to leak one; `backup run` takes a real `pg_dump`, streams it
 into object storage without buffering it, and records a manifest of what the source contained; and
 `backup verify` restores that artifact into the sandbox and compares it to the manifest row for row.
 
-The loop is closed. What remains in this phase is slice A6: proving it fails loudly, by feeding a
-deliberately corrupted artifact through the same path and watching it come back `FAILED` with the
-discrepancies named.
+**The loop is closed, and it is proven in both directions.** An artifact corrupted where it lives —
+truncated in the bucket, or with one byte flipped mid-stream — comes back `FAILED` rather than
+restoring quietly. A restored copy that is short of what its manifest recorded comes back `FAILED`
+with the object and both counts named. And a sandbox that never answered comes back `INCONCLUSIVE`,
+never `FAILED`, because a system that reports infrastructure trouble as data loss gets muted, and a
+muted alert is the same as no alert.
+
+All of that lives in the shared plugin conformance suite rather than in a PostgreSQL test, so every
+engine added later inherits the proof instead of reinventing it.
 
 | Phase | Scope | Status |
 |---|---|---|
 | **Foundation** | Contract, plugin manager, schema, dev stack, CI | ✅ Complete |
-| **A** | Prove the loop: PostgreSQL backup → sandbox restore → verification | 🔨 In progress |
-| **B** | Compliance console: observed backups, schedule adherence, Estate Overview, alerts | ⬜ |
+| **A** | Prove the loop: PostgreSQL backup → sandbox restore → verification | ✅ Complete |
+| **B** | Compliance console: observed backups, schedule adherence, Estate Overview, alerts | 🔨 Next |
 | **C** | Access compliance: who has access, expiry, non-compliant accounts | ⬜ |
 | **D** | Structural drift: schema snapshots and diffs over time | ⬜ |
 | **E** | Remaining engines: MySQL/MariaDB, MongoDB, Redis, SQL Server, Oracle, ClickHouse | ⬜ |

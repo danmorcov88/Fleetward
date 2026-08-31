@@ -168,6 +168,16 @@ jobs:
       #
       # It gets its own job because it is the slowest thing here and it grows with every engine.
       # Keeping it out of Test Go means a failure names itself in the checks list.
+      #
+      # Since slice A6 the suite drives backup, restore and verification against real engines, so
+      # it needs the same host tooling the integration tests do. Without it every Stage 1 case
+      # skips, and a skipped merge gate is not a merge gate.
+      - name: Install the PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          pg_dump --version
+
       - name: Conformance suite
         run: make conformance
 

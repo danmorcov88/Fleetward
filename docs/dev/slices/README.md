@@ -22,13 +22,13 @@ Lucrăm la Fleetward. Citește în ordine, înainte să scrii cod:
 1. CLAUDE.md                                  — contextul proiectului, regulile care nu se negociază
 2. docs/dev/STATUS.md                         — unde suntem acum
 3. docs/dev/slices/README.md                  — protocolul de sesiune
-4. docs/dev/slices/A6-verification-fails-loudly.md  — slice-ul de executat
+4. docs/dev/slices/<slice>.md                 — slice-ul de executat
 
 Execută slice-ul respectând protocolul: branch nou, teste verzi, STATUS.md actualizat,
 push și pull request. Nu depăși scope fence-ul din brief.
 ```
 
-Replace `A6-verification-fails-loudly.md` with whichever slice `STATUS.md` says is next.
+Replace `<slice>.md` with whichever slice `STATUS.md` says is next.
 
 ---
 
@@ -136,8 +136,8 @@ If you write a new one, follow this shape — it is what makes a cold start poss
 | A3 | [Sandbox provider](A3-sandbox-provider.md) | ✅ |
 | A4 | [Backup with manifest](A4-backup-and-manifest.md) | ✅ |
 | A5 | [Restore and verification](A5-restore-and-verify.md) | ✅ |
-| A6 | [Proving verification fails](A6-verification-fails-loudly.md) | next |
+| A6 | [Proving verification fails](A6-verification-fails-loudly.md) | ✅ |
 
-Phases B through G are described in `CLAUDE.md` §6 and `STATUS.md`. Their briefs are written when
-the phase starts — writing them now would be inventing detail that the preceding phase is likely to
-change, and a confidently wrong brief is worse than none.
+Phase A is complete. Phases B through G are described in `CLAUDE.md` §6 and `STATUS.md`. Their
+briefs are written when the phase starts — writing them now would be inventing detail that the
+preceding phase is likely to change, and a confidently wrong brief is worse than none.

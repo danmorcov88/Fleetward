@@ -188,6 +188,17 @@ func runRestore(ctx context.Context, req *fwv1.RestoreRequest, emit sdk.Emitter[
 		return nil, sdk.InvalidArgument("the restore target has no database to restore into")
 	}
 
+	// The target is confirmed to answer before the restore tool is started, and after the checksum
+	// has been confirmed so that a provably bad artifact is still reported as one.
+	//
+	// Without this, a sandbox that died between becoming ready and being restored into produces a
+	// refused connection on pg_restore's stderr, in exactly the same shape as a genuine data
+	// failure — and core reads a tool failure as evidence about the artifact (ADR-0022). The
+	// product's one differentiating alert would then fire on a container that lost a race.
+	if err := probeRestoreTarget(ctx, creds); err != nil {
+		return nil, err
+	}
+
 	if err := emit(&fwv1.RestoreProgress{
 		RestoreId: req.GetRestoreId(),
 		Phase:     fwv1.JobPhase_JOB_PHASE_RUNNING,
@@ -253,6 +264,20 @@ func restoreTargetCredentials(target *fwv1.RestoreTarget) (*fwv1.Credentials, er
 		return nil, sdk.InvalidArgument("target.credentials.host is required")
 	}
 	return creds, nil
+}
+
+// probeRestoreTarget opens and closes one connection to the instance about to be restored into.
+//
+// It returns whatever connect classified the failure as — ERROR_CODE_CONNECTION_FAILED or
+// ERROR_CODE_AUTHENTICATION_FAILED — never a tool failure, which is the whole point: core treats a
+// tool failure as evidence that the artifact is bad, and a target that does not answer is evidence
+// about nothing but the target.
+func probeRestoreTarget(ctx context.Context, creds *fwv1.Credentials) error {
+	conn, err := connect(ctx, creds)
+	if err != nil {
+		return err
+	}
+	return conn.Close(ctx)
 }
 
 // selectArtifact picks the single artifact this method restores from.
@@ -472,8 +497,15 @@ func runRestoreTool(ctx context.Context, opts restoreOptions) (string, error) {
 	cmd.Stdout = io.Discard
 
 	runErr := cmd.Run()
-	fatal, cosmetic := classifyRestoreDiagnostics(stderr.String())
+	fatal, cosmetic, unreachable := classifyRestoreDiagnostics(stderr.String())
 
+	if len(unreachable) > 0 {
+		// The connection was lost part way through, so everything else on stderr is the wreckage
+		// rather than the cause. Reported as a connection failure and never as a tool failure: the
+		// artifact was never given the chance to be wrong.
+		return "", sdk.ConnectionFailed("the restore target stopped answering: %s",
+			strings.Join(lastN(unreachable, 3), "; ")).WithCause(runErr)
+	}
 	if runErr != nil && len(fatal) == 0 && len(cosmetic) == 0 {
 		// A non-zero exit with nothing on stderr means the tool itself failed to run, not that the
 		// artifact was bad.
@@ -553,8 +585,25 @@ var cosmeticDiagnostics = []string{
 	"unrecognized configuration parameter",
 }
 
-// classifyRestoreDiagnostics splits a tool's stderr into failures that matter and ones that do not.
-func classifyRestoreDiagnostics(stderr string) (fatal, cosmetic []string) {
+// unreachableDiagnostics are the failures that mean the restore never reached a database.
+//
+// They are separated from the fatal ones because of what core does with each: a tool failure is
+// read as evidence that the artifact could not be loaded, and reported as a failed verification
+// (ADR-0022). A sandbox that went away says nothing about the artifact, and reporting it as data
+// loss is how the one alert this product exists to raise gets muted.
+var unreachableDiagnostics = []string{
+	"connection to server",
+	"could not connect to server",
+	"server closed the connection unexpectedly",
+	"connection refused",
+	"no pg_hba.conf entry",
+	"password authentication failed",
+	"terminating connection due to administrator command",
+}
+
+// classifyRestoreDiagnostics splits a tool's stderr into the failures that condemn the artifact,
+// the ones that condemn nothing, and the ones that mean the target was never reached.
+func classifyRestoreDiagnostics(stderr string) (fatal, cosmetic, unreachable []string) {
 	for _, line := range strings.Split(stderr, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -571,17 +620,20 @@ func classifyRestoreDiagnostics(stderr string) (fatal, cosmetic []string) {
 			continue
 		}
 
-		if isCosmeticDiagnostic(lower) {
+		switch {
+		case matchesDiagnostic(lower, unreachableDiagnostics):
+			unreachable = append(unreachable, line)
+		case matchesDiagnostic(lower, cosmeticDiagnostics):
 			cosmetic = append(cosmetic, line)
-			continue
+		default:
+			fatal = append(fatal, line)
 		}
-		fatal = append(fatal, line)
 	}
-	return fatal, cosmetic
+	return fatal, cosmetic, unreachable
 }
 
-func isCosmeticDiagnostic(lowered string) bool {
-	for _, pattern := range cosmeticDiagnostics {
+func matchesDiagnostic(lowered string, patterns []string) bool {
+	for _, pattern := range patterns {
 		if strings.Contains(lowered, pattern) {
 			return true
 		}
