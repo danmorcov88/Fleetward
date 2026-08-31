@@ -467,7 +467,7 @@ func classifyRestoreOutcome(err error) outcome {
 	pe := re.plugin
 	corrupt := sdk.IsArtifactCorrupt(pe)
 
-	if corrupt || pe.GetCode() == fwv1.ErrorCode_ERROR_CODE_TOOL_FAILED {
+	if RestoreFailureStatus(pe) == fwv1.VerificationStatus_VERIFICATION_STATUS_FAILED {
 		detail := "the engine's own tooling could not load the artifact"
 		if corrupt {
 			detail = "the artifact is not the one that was written"
@@ -488,6 +488,24 @@ func classifyRestoreOutcome(err error) outcome {
 	}
 
 	return inconclusiveOutcome("the restore did not complete: %s", pe.GetMessage())
+}
+
+// RestoreFailureStatus is the rule ADR-0022 states, in one place: which restore failures are
+// evidence about the backup, and which are evidence about everything else.
+//
+// FAILED means the artifact is bad — it is not the one that was written, or the engine's own
+// tooling could not load it. Every other failure is INCONCLUSIVE, because none of it says anything
+// about whether the backup is restorable.
+//
+// It is exported so that the plugin conformance suite can assert the outcome a plugin's error
+// actually produces, rather than a proxy for it. A plugin that reports an unreachable sandbox as a
+// tool failure would pass a check written against the proxy and still fire this product's one
+// critical alert on a container that lost a race.
+func RestoreFailureStatus(pe *fwv1.PluginError) fwv1.VerificationStatus {
+	if sdk.IsArtifactCorrupt(pe) || pe.GetCode() == fwv1.ErrorCode_ERROR_CODE_TOOL_FAILED {
+		return fwv1.VerificationStatus_VERIFICATION_STATUS_FAILED
+	}
+	return fwv1.VerificationStatus_VERIFICATION_STATUS_INCONCLUSIVE
 }
 
 // inconclusiveOutcome builds the answer for a verification that could not be reached.

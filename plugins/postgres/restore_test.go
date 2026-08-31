@@ -15,10 +15,11 @@ import (
 // every one of them as a failed verification would fire the critical alert on every healthy restore.
 func TestClassifyRestoreDiagnostics(t *testing.T) {
 	tests := []struct {
-		name         string
-		stderr       string
-		wantFatal    int
-		wantCosmetic int
+		name            string
+		stderr          string
+		wantFatal       int
+		wantCosmetic    int
+		wantUnreachable int
 	}{
 		{
 			name:   "clean run",
@@ -77,16 +78,36 @@ func TestClassifyRestoreDiagnostics(t *testing.T) {
 			name:   "informational output is ignored",
 			stderr: "pg_restore: connecting to database for restore\npg_restore: creating TABLE \"public.customers\"",
 		},
+		{
+			// The sandbox never answered. This is infrastructure trouble, and calling it fatal
+			// would report a perfectly good backup as data loss (ADR-0022).
+			name: "a refused connection is not evidence about the artifact",
+			stderr: "pg_restore: error: connection to server at \"127.0.0.1\", port 32770 failed: " +
+				"Connection refused",
+			wantUnreachable: 1,
+		},
+		{
+			// A sandbox that died mid-restore leaves wreckage on stderr after the real cause. The
+			// first line is what happened; the rest must not promote the run to a data failure.
+			name: "a connection lost mid-restore outranks the wreckage after it",
+			stderr: "pg_restore: error: server closed the connection unexpectedly\n" +
+				"pg_restore: error: could not execute query: ERROR:  relation \"customers\" does not exist",
+			wantFatal:       1,
+			wantUnreachable: 1,
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			fatal, cosmetic := classifyRestoreDiagnostics(tc.stderr)
+			fatal, cosmetic, unreachable := classifyRestoreDiagnostics(tc.stderr)
 			if len(fatal) != tc.wantFatal {
 				t.Errorf("fatal = %d %v, want %d", len(fatal), fatal, tc.wantFatal)
 			}
 			if len(cosmetic) != tc.wantCosmetic {
 				t.Errorf("cosmetic = %d %v, want %d", len(cosmetic), cosmetic, tc.wantCosmetic)
+			}
+			if len(unreachable) != tc.wantUnreachable {
+				t.Errorf("unreachable = %d %v, want %d", len(unreachable), unreachable, tc.wantUnreachable)
 			}
 		})
 	}

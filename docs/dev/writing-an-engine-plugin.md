@@ -225,10 +225,9 @@ expires, so it must not reach a log line either.
 make conformance
 ```
 
-The suite in [`test/conformance`](../../test/conformance) spins your real engine with
-testcontainers and drives the whole contract: discover → metrics → backup → restore-to-sandbox →
-verify → principals. It reads your capability matrix and skips what you do not claim to support,
-so it is useful from your very first commit.
+The suite in [`test/conformance`](../../test/conformance) spins your real engine and drives the
+contract against it. It reads your capability matrix and skips what you do not claim to support, so
+it is useful from your very first commit.
 
 **Conformance passing is the merge gate.** It is also the reason a reviewer can trust a plugin for
 an engine they have never operated: "does it pass conformance?" replaces reading a thousand lines
@@ -237,6 +236,61 @@ of engine-specific code and hoping.
 If the suite needs to change to accommodate your engine, that is a signal worth taking seriously.
 Nine times out of ten it means the contract has leaked an assumption from an earlier engine, and
 the fix belongs in the contract, not in the test.
+
+### What the suite runs
+
+**Stage 0 — every plugin, always.** The binary launches and handshakes, the capability matrix is
+coherent and stable across calls, `GetCapabilities` needs no connection, an unimplemented RPC is
+refused with a typed error rather than a hang, and an engine without PITR answers with an
+unavailable window instead of failing the call.
+
+**Stage 1 — every plugin that declares `supports_sandbox_restore` and a backup method.** The whole
+loop, driven the way the control plane drives it: your engine is stood up from your own
+`SandboxTemplate`, seeded, backed up through your `Backup` into a real S3-compatible store via
+presigned part grants, restored into a second container, and compared against the manifest your
+backup captured.
+
+Four of the Stage 1 cases are failures rather than successes, because a verification that has only
+ever been shown to pass is indistinguishable from one that always passes:
+
+| Case | Your plugin must answer |
+|---|---|
+| A healthy artifact | `VERIFIED`, with every check you declare actually run |
+| A truncated artifact | a failed restore carrying `sdk.ArtifactCorrupt` |
+| An artifact with a byte flipped mid-stream | the same — nothing but a checksum can catch this one |
+| A restore compared against a manifest that no longer describes it | `FAILED`, with a `Discrepancy` naming the object and both counts |
+| A restore target that never answers | anything **except** `sdk.ArtifactCorrupt` or `ERROR_CODE_TOOL_FAILED` |
+| A missing or empty manifest | `INCONCLUSIVE`, never `VERIFIED` |
+
+The artifacts are corrupted in the bucket, not through your code, because that is what bit rot and
+a half-finished upload look like.
+
+The last two rows are where plugins fail this suite. Core reads a tool failure as evidence that the
+artifact could not be loaded, and reports it as a failed verification (ADR-0022) — so if your
+restore tool's "connection refused" reaches core as `ERROR_CODE_TOOL_FAILED`, a sandbox that lost a
+race fires this product's one critical alert. Check the target answers before you start the tool,
+and classify a lost connection in its output as `sdk.ConnectionFailed`.
+
+### Getting your engine into Stage 1
+
+Stage 1 needs one thing the contract deliberately cannot give it: rows in a database. Fleetward
+never writes to a monitored instance, so no RPC could create a table — and a backup of an empty
+database proves nothing, because a comparison over zero objects succeeds trivially.
+
+So register a `Fixture` for your engine in
+[`test/conformance/fixtures_test.go`](../../test/conformance/fixtures_test.go), keyed by your
+engine type. It has two methods: `Seed` puts several objects with different row counts into a fresh
+instance, and `RemoveRows` deletes rows from exactly one of them and reports which — by the name
+your manifest uses for it — and how many. Look at `fixture_postgresql_test.go`; it is under fifty
+lines and it is the only engine-specific code in the suite.
+
+Everything else is shared. Adding an engine means adding a fixture beside your plugin; it never
+means changing an assertion. Until you add one, the Stage 1 cases skip with a message saying so,
+and Stage 0 still runs.
+
+Two host requirements: a container runtime, and whatever native tools you declared in
+`required_tools` on `PATH`. Both missing produce a skip rather than a failure — but a skipped merge
+gate is not a merge gate, so CI installs them.
 
 ---
 
@@ -250,6 +304,8 @@ the fix belongs in the contract, not in the test.
 - [ ] Backup captures a `SourceManifest`
 - [ ] `VerifyRestore` distinguishes `FAILED` from `INCONCLUSIVE`
 - [ ] Errors are `sdk.Error` values with the right codes
+- [ ] A restore target that does not answer is never reported as a tool failure
 - [ ] No credentials in logs, errors, or on disk
+- [ ] A `Fixture` is registered so the suite can exercise Stage 1
 - [ ] Conformance passes
 - [ ] An ADR for any decision a future maintainer might otherwise undo

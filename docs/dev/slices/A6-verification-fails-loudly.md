@@ -97,3 +97,31 @@ docker ps -a --filter "label=fleetward.sandbox"  # empty
 
 **Phase A is complete when this passes.** Update `STATUS.md`, and update the README — the claim it
 makes on the front page is now demonstrably true, which is worth saying plainly.
+
+---
+
+## What the slice found — written down after the fact
+
+Two things the brief could not have known, recorded here because the next engine will meet both.
+
+**The fifth row of the table was not passing, and the design was the reason.** Core reads
+`ERROR_CODE_TOOL_FAILED` as evidence that the artifact could not be loaded, and reports it as a
+failed verification (ADR-0022). But `pg_restore` writes `connection to server at "127.0.0.1", port
+32770 failed: Connection refused` to the same stderr it writes a broken archive to, and the plugin
+classified every non-cosmetic diagnostic as a tool failure. A sandbox that died between becoming
+ready and being restored into therefore produced `FAILED` — the product's one critical alert, fired
+on a container that lost a race. The conformance case reproduces it, and the fix is in two parts:
+the plugin confirms the target answers before it starts the tool, and a lost connection in the
+tool's output is classified as `ERROR_CODE_CONNECTION_FAILED` rather than a tool failure. This is
+the first thing a new engine should be checked for.
+
+**The suite needs an engine-specific fixture, and that is a designed extension point rather than a
+leak.** Fleetward never writes to a monitored instance, so there is no RPC that can create a table
+— and a backup of an empty database proves nothing, because comparing zero objects to zero objects
+succeeds trivially. `test/conformance/fixtures_test.go` defines a two-method `Fixture` interface;
+adding an engine means registering one beside the plugin, never changing an assertion.
+
+The corruption cases turned out to need no manifest tampering at all, which was the point. A
+truncated object and a flipped byte are altered in the bucket; the mismatched-counts case compares
+one real manifest against a second real artifact taken after rows were deleted. Every number in
+every assertion came out of the plugin.

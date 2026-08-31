@@ -106,6 +106,7 @@ supersedes the old.
 | Sandbox credentials | Core generates the identity; the plugin's `SandboxTemplate` places it via `{{ .Username }}` / `{{ .Password }}` / `{{ .Database }}` / `{{ .Port }}` | [0020](docs/adr/0020-sandbox-credentials-from-template-placeholders.md) |
 | Artifact transfer | Plugins write artifacts through presigned multipart part grants; core begins and completes the upload, so a partial artifact is never a visible object | [0021](docs/adr/0021-plugins-upload-artifacts-as-multipart-parts.md) |
 | Verification outcomes | `FAILED` is reserved for evidence about the artifact; every other failure is `INCONCLUSIVE` | [0022](docs/adr/0022-failed-and-inconclusive-are-different-answers.md) |
+| Conformance fixtures | The shared suite carries one per-engine `Fixture` for seeding, and nothing else engine-specific | [0023](docs/adr/0023-conformance-fixtures-seed-what-the-contract-cannot.md) |
 
 ### Product and scope decisions
 
@@ -210,10 +211,13 @@ fleetward/
    - MySQL/MariaDB → `xtrabackup`; `mysqldump` is an acceptable method #1 for MVP simplicity.
    - MongoDB → `mongodump`. Document the path to snapshot-based backups.
    - Redis → RDB snapshot via `BGSAVE` + fetch, with AOF awareness expressed in capabilities.
-4. **Conformance is the merge gate.** `test/conformance` spins the real engine via
-   `testcontainers-go` and asserts the full contract per plugin: discover → metrics → backup →
-   restore-to-sandbox → verify → principals. A plugin merges only when conformance passes. This
-   suite is what will later make community-contributed plugins trustworthy.
+4. **Conformance is the merge gate.** `test/conformance` spins the real engine and asserts the
+   contract per plugin: today capabilities and health for every plugin, plus backup →
+   restore-to-sandbox → verify for any plugin declaring `supports_sandbox_restore`. Four of those
+   end-to-end cases are deliberate failures — a corrupted artifact, a stale manifest, an
+   unreachable target — because a verification that has only ever been shown to pass is
+   indistinguishable from one that always passes. A plugin merges only when conformance passes.
+   This suite is what will later make community-contributed plugins trustworthy.
 
 ---
 

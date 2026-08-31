@@ -108,7 +108,9 @@ test-integration: ## Run testcontainers-based integration tests (requires Docker
 
 .PHONY: conformance
 conformance: build-plugins ## Run the plugin conformance suite against every plugin
-	go test -race -tags=conformance -timeout 30m ./test/conformance/...
+	# 60 minutes rather than 30: since slice A6 the suite restores real artifacts into real
+	# containers, so each case pays for an image pull, an engine's first boot, and a full restore.
+	go test -race -tags=conformance -timeout 60m ./test/conformance/...
 
 .PHONY: cover
 cover: ## Run tests with coverage and open the report
