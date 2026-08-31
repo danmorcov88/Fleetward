@@ -116,6 +116,32 @@ func ToolFailed(tool string, format string, args ...any) *Error {
 	return NewError(fwv1.ErrorCode_ERROR_CODE_TOOL_FAILED, format, args...).WithDetail("tool", tool)
 }
 
+// DetailArtifact is the PluginError detail key a plugin sets when it can say something definitive
+// about the artifact itself, rather than about the machinery around it.
+//
+// The distinction matters more here than anywhere else in the contract. "The artifact is not the
+// bytes we wrote" is data loss and must reach an operator as a failed verification; "the download
+// timed out" is an infrastructure problem and must not, because an alert that fires on flaky
+// networks is an alert nobody reads. The two would otherwise be indistinguishable, since both are
+// discovered while fetching an object.
+const DetailArtifact = "artifact"
+
+// ArtifactStateCorrupt is the DetailArtifact value meaning the artifact does not match what was
+// recorded when it was written.
+const ArtifactStateCorrupt = "corrupt"
+
+// ArtifactCorrupt reports that an artifact failed the integrity check made against the checksum
+// stored with it. It is deliberately not retryable: the same bytes will fail the same way.
+func ArtifactCorrupt(format string, args ...any) *Error {
+	return NewError(fwv1.ErrorCode_ERROR_CODE_INVALID_ARGUMENT, format, args...).
+		WithDetail(DetailArtifact, ArtifactStateCorrupt)
+}
+
+// IsArtifactCorrupt reports whether a plugin blamed the artifact itself.
+func IsArtifactCorrupt(pe *fwv1.PluginError) bool {
+	return pe.GetDetails()[DetailArtifact] == ArtifactStateCorrupt
+}
+
 // ObjectStoreFailed reports a failure transferring an artifact.
 func ObjectStoreFailed(format string, args ...any) *Error {
 	return NewError(fwv1.ErrorCode_ERROR_CODE_OBJECT_STORE_FAILED, format, args...).Retry()

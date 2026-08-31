@@ -233,6 +233,9 @@ type backupRow struct {
 	ConsistencyPoint *time.Time `json:"consistency_point"`
 	Artifact         *objectRef `json:"artifact"`
 	ErrorMessage     string     `json:"error_message"`
+	// Verification is the second half of the two-part status: a backup that succeeded and a
+	// verification that failed is the loudest thing this product can report.
+	Verification *verification `json:"verification"`
 }
 
 type manifestEntry struct {
@@ -248,6 +251,39 @@ type sourceManifest struct {
 	TotalObjects string          `json:"total_objects"`
 	TotalRecords string          `json:"total_records"`
 	IsSampled    bool            `json:"is_sampled"`
+}
+
+type discrepancy struct {
+	Database   string `json:"database"`
+	ObjectName string `json:"object_name"`
+	Expected   string `json:"expected"`
+	Actual     string `json:"actual"`
+	Detail     string `json:"detail"`
+}
+
+type checkResult struct {
+	Check         string        `json:"check"`
+	Passed        bool          `json:"passed"`
+	Severity      string        `json:"severity"`
+	Message       string        `json:"message"`
+	Discrepancies []discrepancy `json:"discrepancies"`
+	Duration      string        `json:"duration"`
+}
+
+type verification struct {
+	ID           string        `json:"id"`
+	BackupID     string        `json:"backup_id"`
+	Status       string        `json:"status"`
+	Checks       []checkResult `json:"checks"`
+	StartedAt    *time.Time    `json:"started_at"`
+	CompletedAt  *time.Time    `json:"completed_at"`
+	Duration     string        `json:"duration"`
+	Report       string        `json:"report"`
+	ErrorMessage string        `json:"error_message"`
+}
+
+type verificationResponse struct {
+	Verification verification `json:"verification"`
 }
 
 type backupResponse struct {

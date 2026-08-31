@@ -53,11 +53,12 @@ const (
 
 // harness is one test's isolated world.
 type harness struct {
-	svc      *Service
-	pool     *pgxpool.Pool
-	store    objstore.ObjectStore
-	plugin   *stubEngine
-	instance string
+	svc       *Service
+	pool      *pgxpool.Pool
+	store     objstore.ObjectStore
+	plugin    *stubEngine
+	sandboxes *stubSandboxes
+	instance  string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -72,11 +73,18 @@ func newHarness(t *testing.T) *harness {
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	instanceID := seedInstance(t, ctx, pool)
+	// The container runtime is stubbed while the metadata store and the object store are real. What
+	// is under test here is core's own orchestration and bookkeeping; that a Docker container really
+	// starts and is really destroyed is proven by internal/controlplane/sandbox's own integration
+	// tests, and duplicating it would only make this suite slower and flakier.
+	sandboxes := &stubSandboxes{}
 
-	svc := New(pool, store, &stubRouter{client: plugin}, &stubResolver{instanceID: instanceID}, log)
+	svc := New(pool, store, &stubRouter{client: plugin}, &stubResolver{instanceID: instanceID}, sandboxes, log)
 	t.Cleanup(func() { _ = svc.Close() })
 
-	return &harness{svc: svc, pool: pool, store: store, plugin: plugin, instance: instanceID}
+	return &harness{
+		svc: svc, pool: pool, store: store, plugin: plugin, sandboxes: sandboxes, instance: instanceID,
+	}
 }
 
 func startMetaDB(t *testing.T, ctx context.Context) *pgxpool.Pool {
@@ -442,6 +450,17 @@ func (r *stubRouter) Client(engineType string) (fwv1.EnginePluginClient, *fwv1.C
 		BackupMethods: []*fwv1.BackupMethod{{
 			Id: "dump", Kind: fwv1.BackupKind_BACKUP_KIND_LOGICAL, IsDefault: true,
 		}},
+		SupportsSandboxRestore: true,
+		SandboxTemplate: &fwv1.SandboxTemplate{
+			ImageRepository: "testengine",
+			DefaultTag:      "1",
+			TagTemplate:     "{{ .Major }}",
+			ContainerPort:   5432,
+		},
+		SupportedVerificationChecks: []fwv1.VerificationCheck{
+			fwv1.VerificationCheck_VERIFICATION_CHECK_CONNECTIVITY,
+			fwv1.VerificationCheck_VERIFICATION_CHECK_RECORD_COUNTS,
+		},
 	}, nil
 }
 
@@ -460,8 +479,15 @@ type stubEngine struct {
 	// block, when non-nil, holds the run open until it is closed.
 	block chan struct{}
 
-	mu     sync.Mutex
-	target *fwv1.ArtifactTarget
+	// The verification half, exercised by verify_integration_test.go.
+	restoreError *fwv1.PluginError
+	verifyResult *fwv1.VerifyRestoreResult
+	verifyErr    error
+
+	mu      sync.Mutex
+	target  *fwv1.ArtifactTarget
+	restore *fwv1.RestoreRequest
+	verify  *fwv1.VerifyRestoreRequest
 }
 
 func (s *stubEngine) lastTarget() *fwv1.ArtifactTarget {

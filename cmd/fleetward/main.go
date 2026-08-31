@@ -209,7 +209,7 @@ func run() error {
 	// before the HTTP server stops accepting would abandon a running backup; closing it after gives
 	// each run the chance to record its outcome, which is the difference between a failed backup
 	// and a row stuck in `running` with nothing to explain it.
-	backupSvc := backup.New(db.Pool(), store, plugins, inventorySvc, log)
+	backupSvc := backup.New(db.Pool(), store, plugins, inventorySvc, sandboxes, log)
 	defer func() { _ = backupSvc.Close() }()
 
 	if err := fwv1.RegisterBackupServiceHandlerServer(ctx, gateway,
