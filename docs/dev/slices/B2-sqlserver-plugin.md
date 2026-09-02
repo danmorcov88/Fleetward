@@ -433,9 +433,12 @@ load-bearing for conformance passing at all.
 
 ## Reuse, do not rewrite
 
-- **`plugins/postgres/upload.go`** — the multipart part-grant writer. It takes an `io.Reader`, so an
-  open file works unchanged. Consider lifting it into `internal/plugin/sdk` rather than copying it:
-  a second copy of the ADR-0021 protocol is a second place for it to drift.
+- **`internal/plugin/sdk/artifact.go`** — the multipart part-grant writer and the
+  download-and-confirm-the-checksum half, lifted out of the PostgreSQL plugin by this slice rather
+  than copied into the new one. It takes an `io.Reader` and an `io.Writer`, so a file works where a
+  pipe used to. A second copy of the ADR-0021 protocol would have been a second place for it to
+  drift, and a second copy of the ADR-0022 checksum would have been a second place to get the one
+  check this product cannot be wrong about wrong.
 - **`plugins/postgres/restore.go`** — the download-and-hash-before-touching-anything shape, the
   `sdk.ArtifactCorrupt` decision, and the reachability probe that runs before the restore.
 - **`plugins/postgres/verify.go`** — check-by-check result assembly and `Discrepancy` reporting.

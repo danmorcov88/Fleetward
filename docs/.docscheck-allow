@@ -28,3 +28,5 @@ plugins/sqlserver/manifest.go   docs/dev/slices/B2-sqlserver-plugin.md  # the sl
 plugins/sqlserver/restore.go    docs/dev/slices/B2-sqlserver-plugin.md  # the slice's Files table, listing what B2 will create
 plugins/sqlserver/verify.go     docs/dev/slices/B2-sqlserver-plugin.md  # the slice's Files table, listing what B2 will create
 cmd/plugins/sqlserver/main.go   docs/dev/slices/B2-sqlserver-plugin.md  # the slice's Files table, listing what B2 will create
+
+plugins/postgres/upload.go  docs/dev/slices/A4-backup-and-manifest.md  # written by A4 and correct then; slice B2 lifted the upload protocol into internal/plugin/sdk so a second engine could not drift from it, and a brief is left as written

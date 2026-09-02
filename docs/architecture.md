@@ -83,7 +83,7 @@ lookup table of engines. Even the sandbox's credentials keep the rule: core gene
 username, password, and database name, and the plugin's template says where they belong by writing
 `{{ .Password }}` where its engine expects one ([ADR-0020](adr/0020-sandbox-credentials-from-template-placeholders.md)).
 
-Architecture decisions are recorded in [`docs/adr/`](adr/) — <!-- adr-count -->25<!-- /adr-count -->
+Architecture decisions are recorded in [`docs/adr/`](adr/) — <!-- adr-count -->26<!-- /adr-count -->
 of them, each with context, consequences, and the alternatives that were rejected. The metadata
 schema those decisions produced is drawn in [`dev/data-model.md`](dev/data-model.md), and every
 setting the control plane reads is listed in [`ops/configuration.md`](ops/configuration.md). Both

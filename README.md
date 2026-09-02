@@ -65,7 +65,7 @@ make dev
 ```
 
 That brings up the full stack — control plane, PostgreSQL, VictoriaMetrics, MinIO, Dex, and the web
-UI.
+UI, plus a SQL Server instance for Fleetward to watch.
 
 | Service | URL | Credentials |
 |---|---|---|
@@ -372,13 +372,15 @@ it cannot quietly rot between releases.
 
 **Pre-alpha.** Phase A is complete: the verification loop is closed and proven on PostgreSQL, in
 both directions — a corrupted artifact returns `FAILED`, and a sandbox that never answered returns
-`INCONCLUSIVE`. Phase B turns that proven loop into something installable, and its first slice has
-landed: backups and their verifications now run on a schedule, without anyone asking.
+`INCONCLUSIVE`. Phase B turns that proven loop into something installable. Backups and their
+verifications now run on a schedule, without anyone asking; and SQL Server passes the same
+conformance suite as PostgreSQL, unmodified, which is the first evidence rather than assertion that
+adding an engine does not mean modifying core.
 
 Not yet built, stated plainly because a reference document should not imply otherwise: there is no
 authentication, so every API route is open to anyone who can reach the port; artifacts are never
 expired, so they accumulate; nothing is delivered anywhere, so a failed verification is visible only
-by polling; and only PostgreSQL is a real plugin.
+by polling; and five of the eight engines are still binaries that only handshake.
 
 The full list, and which slice owns each item, is in [docs/dev/STATUS.md](docs/dev/STATUS.md).
 

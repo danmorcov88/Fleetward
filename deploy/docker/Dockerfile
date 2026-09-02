@@ -23,6 +23,7 @@ RUN LDFLAGS="-s -w \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/fleetward ./cmd/fleetward && \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/fleetward-cli ./cmd/fleetward-cli && \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/plugins/fleetward-plugin-postgresql ./cmd/plugins/postgres && \
+    go build -trimpath -ldflags "${LDFLAGS}" -o /out/plugins/fleetward-plugin-sqlserver  ./cmd/plugins/sqlserver && \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/plugins/fleetward-plugin-mysql      ./cmd/plugins/mysql && \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/plugins/fleetward-plugin-mongodb    ./cmd/plugins/mongodb && \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/plugins/fleetward-plugin-redis      ./cmd/plugins/redis

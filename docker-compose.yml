@@ -37,6 +37,37 @@ services:
       start_period: 10s
 
   # ---------------------------------------------------------------------------------------------
+  # A monitored instance, so the quickstart has a second engine to point Fleetward at.
+  #
+  # It is here to be watched rather than to be depended on: nothing else in the stack talks to it,
+  # and `docker compose up` without it is a complete Fleetward. It carries the shared-directory
+  # volume because BACKUP DATABASE writes a file on the server's own filesystem, which the control
+  # plane then reads from the same volume (ADR-0026).
+  # ---------------------------------------------------------------------------------------------
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      # Development credentials, and they still have to satisfy the engine's complexity policy —
+      # the container exits rather than starts on a password carrying fewer than three of the four
+      # character classes.
+      MSSQL_SA_PASSWORD: Fleetward-dev-1
+      MSSQL_DB: fleetward_demo
+    ports:
+      - "${FLEETWARD_SQLSERVER_PORT:-1433}:1433"
+    volumes:
+      - sandbox-share:/var/opt/mssql/fleetward
+    healthcheck:
+      # Connecting to the database rather than to master on purpose: the image creates it in a
+      # setup pass that runs after the server is already listening.
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S 127.0.0.1 -U sa -P \"$$MSSQL_SA_PASSWORD\" -d fleetward_demo -Q 'SELECT 1'"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------------------------
   # Metrics store (ADR-0006)
   # ---------------------------------------------------------------------------------------------
   victoriametrics:
@@ -137,6 +168,13 @@ services:
       # this stack's network instead lets the control plane address them by container name.
       FLEETWARD_SANDBOX_NETWORK: fleetward_default
 
+      # An engine that writes its backup to its own filesystem hands it over through a directory
+      # both sides can see (ADR-0026). The control plane is itself a container here, so a bind
+      # mount would be resolved by the daemon against the host rather than against this container:
+      # a named volume, mounted into both, is the only arrangement that works.
+      FLEETWARD_SANDBOX_SHARED_DIR_VOLUME: fleetward_sandbox-share
+      FLEETWARD_SANDBOX_SHARED_DIR_LOCAL: /app/share
+
       # Authentication is off in the default dev stack so the quickstart needs no login round trip.
       # Set to "true" to exercise the full OIDC flow against Dex; the control plane refuses to start
       # in production with it disabled.
@@ -161,6 +199,9 @@ services:
       # development convenience with real privilege attached — a production deployment should use a
       # scoped socket proxy or the Kubernetes SandboxProvider instead.
       - /var/run/docker.sock:/var/run/docker.sock
+      # The other half of the shared directory above: the control plane writes an artifact here and
+      # a sandbox reads it from the same volume, mounted at whatever path its plugin declares.
+      - sandbox-share:/app/share
     group_add:
       # The image runs unprivileged (see deploy/docker/Dockerfile), and the Docker socket grants
       # access by group. Which group differs by platform: inside a Docker Desktop VM the socket is
@@ -198,5 +239,6 @@ services:
 
 volumes:
   postgres-data:
+  sandbox-share:
   vm-data:
   minio-data:

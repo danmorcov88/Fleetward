@@ -24,7 +24,7 @@ EXE := $(shell go env GOEXE)
 
 # Plugin source directory to engine type. The binary must be named fleetward-plugin-<engine type>,
 # because that is how the plugin manager routes an instance to a plugin.
-PLUGINS := postgres:postgresql mysql:mysql mongodb:mongodb redis:redis
+PLUGINS := postgres:postgresql sqlserver:sqlserver mysql:mysql mongodb:mongodb redis:redis
 
 GO_PACKAGES := ./...
 

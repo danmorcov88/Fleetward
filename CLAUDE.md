@@ -110,6 +110,7 @@ supersedes the old.
 | Artifact transfer | Plugins write artifacts through presigned multipart part grants; core begins and completes the upload, so a partial artifact is never a visible object | [0021](docs/adr/0021-plugins-upload-artifacts-as-multipart-parts.md) |
 | Verification outcomes | `FAILED` is reserved for evidence about the artifact; every other failure is `INCONCLUSIVE` | [0022](docs/adr/0022-failed-and-inconclusive-are-different-answers.md) |
 | Conformance fixtures | The shared suite carries one per-engine `Fixture` for seeding, and nothing else engine-specific | [0023](docs/adr/0023-conformance-fixtures-seed-what-the-contract-cannot.md) |
+| File-based artifacts | An engine that writes its backup to its own filesystem hands it over through a directory the plugin can also see; no credential ever reaches the engine | [0026](docs/adr/0026-a-shared-directory-carries-a-file-based-artifact.md) |
 
 ### Product and scope decisions
 
@@ -152,7 +153,7 @@ fleetward/
   cmd/
     fleetward/                       # control-plane server main
     fleetward-cli/                   # CLI (cobra)
-    plugins/{postgres,mysql,mongodb,redis}/   # thin mains only
+    plugins/{postgres,sqlserver,mysql,mongodb,redis}/   # thin mains only
 
   internal/
     config/                          # shared by the server and the CLI
@@ -164,7 +165,7 @@ fleetward/
     telemetry/
     version/
 
-  plugins/{postgres,mysql,mongodb,redis}/     # engine plugin implementations
+  plugins/{postgres,sqlserver,mysql,mongodb,redis}/   # engine plugin implementations
   web/                                        # React app
   test/{conformance,e2e}/
   deploy/
