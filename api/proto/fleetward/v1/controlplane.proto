@@ -316,6 +316,11 @@ message ConnectionSpec {
   string database = 3;
   TLSSettings tls = 4;
   map<string, string> options = 5;
+  // Where this instance's backup files are written, and where this control plane sees the same
+  // directory. Required only by an engine whose backup tooling produces a file on the database
+  // server rather than a stream, which the plugin declares on the method (ADR-0026). Fleetward
+  // refuses to back up such an instance without it, rather than discovering the gap at 02:00.
+  SharedDirectory shared_directory = 6;
 }
 
 message CreateInstanceResponse {

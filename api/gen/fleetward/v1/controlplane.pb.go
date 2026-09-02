@@ -1663,14 +1663,19 @@ func (x *CreateInstanceRequest) GetLabels() map[string]string {
 // ConnectionSpec carries credentials inbound only. No read API ever returns them: the secret is
 // write-only from the API's perspective (ADR-0009).
 type ConnectionSpec struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Username      string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
-	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
-	Database      string                 `protobuf:"bytes,3,opt,name=database,proto3" json:"database,omitempty"`
-	Tls           *TLSSettings           `protobuf:"bytes,4,opt,name=tls,proto3" json:"tls,omitempty"`
-	Options       map[string]string      `protobuf:"bytes,5,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Username string                 `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
+	Password string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	Database string                 `protobuf:"bytes,3,opt,name=database,proto3" json:"database,omitempty"`
+	Tls      *TLSSettings           `protobuf:"bytes,4,opt,name=tls,proto3" json:"tls,omitempty"`
+	Options  map[string]string      `protobuf:"bytes,5,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Where this instance's backup files are written, and where this control plane sees the same
+	// directory. Required only by an engine whose backup tooling produces a file on the database
+	// server rather than a stream, which the plugin declares on the method (ADR-0026). Fleetward
+	// refuses to back up such an instance without it, rather than discovering the gap at 02:00.
+	SharedDirectory *SharedDirectory `protobuf:"bytes,6,opt,name=shared_directory,json=sharedDirectory,proto3" json:"shared_directory,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ConnectionSpec) Reset() {
@@ -1734,6 +1739,13 @@ func (x *ConnectionSpec) GetTls() *TLSSettings {
 func (x *ConnectionSpec) GetOptions() map[string]string {
 	if x != nil {
 		return x.Options
+	}
+	return nil
+}
+
+func (x *ConnectionSpec) GetSharedDirectory() *SharedDirectory {
+	if x != nil {
+		return x.SharedDirectory
 	}
 	return nil
 }
@@ -4221,13 +4233,14 @@ const file_fleetward_v1_controlplane_proto_rawDesc = "" +
 	"\x06labels\x18\a \x03(\v2/.fleetward.v1.CreateInstanceRequest.LabelsEntryR\x06labels\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x92\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xdc\x02\n" +
 	"\x0eConnectionSpec\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x1a\n" +
 	"\bdatabase\x18\x03 \x01(\tR\bdatabase\x12+\n" +
 	"\x03tls\x18\x04 \x01(\v2\x19.fleetward.v1.TLSSettingsR\x03tls\x12C\n" +
-	"\aoptions\x18\x05 \x03(\v2).fleetward.v1.ConnectionSpec.OptionsEntryR\aoptions\x1a:\n" +
+	"\aoptions\x18\x05 \x03(\v2).fleetward.v1.ConnectionSpec.OptionsEntryR\aoptions\x12H\n" +
+	"\x10shared_directory\x18\x06 \x01(\v2\x1d.fleetward.v1.SharedDirectoryR\x0fsharedDirectory\x1a:\n" +
 	"\fOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"L\n" +
@@ -4605,16 +4618,17 @@ var file_fleetward_v1_controlplane_proto_goTypes = []any{
 	(*DatabaseInfo)(nil),                      // 76: fleetward.v1.DatabaseInfo
 	(*Topology)(nil),                          // 77: fleetward.v1.Topology
 	(*TLSSettings)(nil),                       // 78: fleetward.v1.TLSSettings
-	(*HealthStatus)(nil),                      // 79: fleetward.v1.HealthStatus
-	(*Principal)(nil),                         // 80: fleetward.v1.Principal
-	(PrincipalModel)(0),                       // 81: fleetward.v1.PrincipalModel
-	(*Checksum)(nil),                          // 82: fleetward.v1.Checksum
-	(*ObjectRef)(nil),                         // 83: fleetward.v1.ObjectRef
-	(*CheckResult)(nil),                       // 84: fleetward.v1.CheckResult
-	(*TimeRange)(nil),                         // 85: fleetward.v1.TimeRange
-	(*SourceManifest)(nil),                    // 86: fleetward.v1.SourceManifest
-	(VerificationCheck)(0),                    // 87: fleetward.v1.VerificationCheck
-	(*PITRWindow)(nil),                        // 88: fleetward.v1.PITRWindow
+	(*SharedDirectory)(nil),                   // 79: fleetward.v1.SharedDirectory
+	(*HealthStatus)(nil),                      // 80: fleetward.v1.HealthStatus
+	(*Principal)(nil),                         // 81: fleetward.v1.Principal
+	(PrincipalModel)(0),                       // 82: fleetward.v1.PrincipalModel
+	(*Checksum)(nil),                          // 83: fleetward.v1.Checksum
+	(*ObjectRef)(nil),                         // 84: fleetward.v1.ObjectRef
+	(*CheckResult)(nil),                       // 85: fleetward.v1.CheckResult
+	(*TimeRange)(nil),                         // 86: fleetward.v1.TimeRange
+	(*SourceManifest)(nil),                    // 87: fleetward.v1.SourceManifest
+	(VerificationCheck)(0),                    // 88: fleetward.v1.VerificationCheck
+	(*PITRWindow)(nil),                        // 89: fleetward.v1.PITRWindow
 }
 var file_fleetward_v1_controlplane_proto_depIdxs = []int32{
 	0,   // 0: fleetward.v1.GetHealthResponse.status:type_name -> fleetward.v1.ServiceHealth
@@ -4646,113 +4660,114 @@ var file_fleetward_v1_controlplane_proto_depIdxs = []int32{
 	65,  // 26: fleetward.v1.CreateInstanceRequest.labels:type_name -> fleetward.v1.CreateInstanceRequest.LabelsEntry
 	78,  // 27: fleetward.v1.ConnectionSpec.tls:type_name -> fleetward.v1.TLSSettings
 	66,  // 28: fleetward.v1.ConnectionSpec.options:type_name -> fleetward.v1.ConnectionSpec.OptionsEntry
-	15,  // 29: fleetward.v1.CreateInstanceResponse.instance:type_name -> fleetward.v1.Instance
-	26,  // 30: fleetward.v1.TestConnectionRequest.connection:type_name -> fleetward.v1.ConnectionSpec
-	79,  // 31: fleetward.v1.TestConnectionResponse.health:type_name -> fleetward.v1.HealthStatus
-	75,  // 32: fleetward.v1.DiscoverInstanceResponse.server:type_name -> fleetward.v1.ServerInfo
-	76,  // 33: fleetward.v1.DiscoverInstanceResponse.databases:type_name -> fleetward.v1.DatabaseInfo
-	77,  // 34: fleetward.v1.DiscoverInstanceResponse.topology:type_name -> fleetward.v1.Topology
-	80,  // 35: fleetward.v1.ListPrincipalsForInstanceResponse.principals:type_name -> fleetward.v1.Principal
-	81,  // 36: fleetward.v1.ListPrincipalsForInstanceResponse.model:type_name -> fleetward.v1.PrincipalModel
-	2,   // 37: fleetward.v1.Backup.state:type_name -> fleetward.v1.BackupState
-	82,  // 38: fleetward.v1.Backup.checksum:type_name -> fleetward.v1.Checksum
-	72,  // 39: fleetward.v1.Backup.started_at:type_name -> google.protobuf.Timestamp
-	72,  // 40: fleetward.v1.Backup.completed_at:type_name -> google.protobuf.Timestamp
-	70,  // 41: fleetward.v1.Backup.duration:type_name -> google.protobuf.Duration
-	72,  // 42: fleetward.v1.Backup.consistency_point:type_name -> google.protobuf.Timestamp
-	72,  // 43: fleetward.v1.Backup.expires_at:type_name -> google.protobuf.Timestamp
-	83,  // 44: fleetward.v1.Backup.artifact:type_name -> fleetward.v1.ObjectRef
-	37,  // 45: fleetward.v1.Backup.verification:type_name -> fleetward.v1.Verification
-	74,  // 46: fleetward.v1.Verification.status:type_name -> fleetward.v1.VerificationStatus
-	84,  // 47: fleetward.v1.Verification.checks:type_name -> fleetward.v1.CheckResult
-	72,  // 48: fleetward.v1.Verification.started_at:type_name -> google.protobuf.Timestamp
-	72,  // 49: fleetward.v1.Verification.completed_at:type_name -> google.protobuf.Timestamp
-	70,  // 50: fleetward.v1.Verification.duration:type_name -> google.protobuf.Duration
-	85,  // 51: fleetward.v1.ListBackupsRequest.within:type_name -> fleetward.v1.TimeRange
-	2,   // 52: fleetward.v1.ListBackupsRequest.state:type_name -> fleetward.v1.BackupState
-	36,  // 53: fleetward.v1.ListBackupsResponse.backups:type_name -> fleetward.v1.Backup
-	36,  // 54: fleetward.v1.GetBackupResponse.backup:type_name -> fleetward.v1.Backup
-	86,  // 55: fleetward.v1.GetBackupResponse.manifest:type_name -> fleetward.v1.SourceManifest
-	67,  // 56: fleetward.v1.RunBackupRequest.options:type_name -> fleetward.v1.RunBackupRequest.OptionsEntry
-	87,  // 57: fleetward.v1.RunVerificationRequest.checks:type_name -> fleetward.v1.VerificationCheck
-	37,  // 58: fleetward.v1.GetVerificationResponse.verification:type_name -> fleetward.v1.Verification
-	88,  // 59: fleetward.v1.GetPITRWindowResponse.window:type_name -> fleetward.v1.PITRWindow
-	4,   // 60: fleetward.v1.Schedule.kind:type_name -> fleetward.v1.JobKind
-	68,  // 61: fleetward.v1.Schedule.options:type_name -> fleetward.v1.Schedule.OptionsEntry
-	3,   // 62: fleetward.v1.Schedule.verify_policy:type_name -> fleetward.v1.VerifyPolicy
-	72,  // 63: fleetward.v1.Schedule.next_run_at:type_name -> google.protobuf.Timestamp
-	72,  // 64: fleetward.v1.Schedule.last_run_at:type_name -> google.protobuf.Timestamp
-	72,  // 65: fleetward.v1.Schedule.created_at:type_name -> google.protobuf.Timestamp
-	4,   // 66: fleetward.v1.Job.kind:type_name -> fleetward.v1.JobKind
-	5,   // 67: fleetward.v1.Job.state:type_name -> fleetward.v1.JobState
-	72,  // 68: fleetward.v1.Job.scheduled_for:type_name -> google.protobuf.Timestamp
-	72,  // 69: fleetward.v1.Job.lease_expires_at:type_name -> google.protobuf.Timestamp
-	72,  // 70: fleetward.v1.Job.heartbeat_at:type_name -> google.protobuf.Timestamp
-	72,  // 71: fleetward.v1.Job.started_at:type_name -> google.protobuf.Timestamp
-	72,  // 72: fleetward.v1.Job.finished_at:type_name -> google.protobuf.Timestamp
-	72,  // 73: fleetward.v1.Job.created_at:type_name -> google.protobuf.Timestamp
-	50,  // 74: fleetward.v1.ListSchedulesResponse.schedules:type_name -> fleetward.v1.Schedule
-	50,  // 75: fleetward.v1.GetScheduleResponse.schedule:type_name -> fleetward.v1.Schedule
-	4,   // 76: fleetward.v1.CreateScheduleRequest.kind:type_name -> fleetward.v1.JobKind
-	69,  // 77: fleetward.v1.CreateScheduleRequest.options:type_name -> fleetward.v1.CreateScheduleRequest.OptionsEntry
-	3,   // 78: fleetward.v1.CreateScheduleRequest.verify_policy:type_name -> fleetward.v1.VerifyPolicy
-	50,  // 79: fleetward.v1.CreateScheduleResponse.schedule:type_name -> fleetward.v1.Schedule
-	50,  // 80: fleetward.v1.SetScheduleEnabledResponse.schedule:type_name -> fleetward.v1.Schedule
-	5,   // 81: fleetward.v1.ListJobsRequest.state:type_name -> fleetward.v1.JobState
-	51,  // 82: fleetward.v1.ListJobsResponse.jobs:type_name -> fleetward.v1.Job
-	6,   // 83: fleetward.v1.SystemService.GetHealth:input_type -> fleetward.v1.GetHealthRequest
-	9,   // 84: fleetward.v1.SystemService.GetVersion:input_type -> fleetward.v1.GetVersionRequest
-	11,  // 85: fleetward.v1.SystemService.ListPlugins:input_type -> fleetward.v1.ListPluginsRequest
-	17,  // 86: fleetward.v1.InventoryService.ListEnvironments:input_type -> fleetward.v1.ListEnvironmentsRequest
-	19,  // 87: fleetward.v1.InventoryService.CreateEnvironment:input_type -> fleetward.v1.CreateEnvironmentRequest
-	21,  // 88: fleetward.v1.InventoryService.ListInstances:input_type -> fleetward.v1.ListInstancesRequest
-	23,  // 89: fleetward.v1.InventoryService.GetInstance:input_type -> fleetward.v1.GetInstanceRequest
-	25,  // 90: fleetward.v1.InventoryService.CreateInstance:input_type -> fleetward.v1.CreateInstanceRequest
-	28,  // 91: fleetward.v1.InventoryService.DeleteInstance:input_type -> fleetward.v1.DeleteInstanceRequest
-	30,  // 92: fleetward.v1.InventoryService.TestConnection:input_type -> fleetward.v1.TestConnectionRequest
-	32,  // 93: fleetward.v1.InventoryService.DiscoverInstance:input_type -> fleetward.v1.DiscoverInstanceRequest
-	34,  // 94: fleetward.v1.InventoryService.ListPrincipalsForInstance:input_type -> fleetward.v1.ListPrincipalsForInstanceRequest
-	52,  // 95: fleetward.v1.ScheduleService.ListSchedules:input_type -> fleetward.v1.ListSchedulesRequest
-	54,  // 96: fleetward.v1.ScheduleService.GetSchedule:input_type -> fleetward.v1.GetScheduleRequest
-	56,  // 97: fleetward.v1.ScheduleService.CreateSchedule:input_type -> fleetward.v1.CreateScheduleRequest
-	58,  // 98: fleetward.v1.ScheduleService.SetScheduleEnabled:input_type -> fleetward.v1.SetScheduleEnabledRequest
-	60,  // 99: fleetward.v1.ScheduleService.DeleteSchedule:input_type -> fleetward.v1.DeleteScheduleRequest
-	62,  // 100: fleetward.v1.ScheduleService.ListJobs:input_type -> fleetward.v1.ListJobsRequest
-	38,  // 101: fleetward.v1.BackupService.ListBackups:input_type -> fleetward.v1.ListBackupsRequest
-	40,  // 102: fleetward.v1.BackupService.GetBackup:input_type -> fleetward.v1.GetBackupRequest
-	42,  // 103: fleetward.v1.BackupService.RunBackup:input_type -> fleetward.v1.RunBackupRequest
-	44,  // 104: fleetward.v1.BackupService.RunVerification:input_type -> fleetward.v1.RunVerificationRequest
-	46,  // 105: fleetward.v1.BackupService.GetVerification:input_type -> fleetward.v1.GetVerificationRequest
-	48,  // 106: fleetward.v1.BackupService.GetPITRWindow:input_type -> fleetward.v1.GetPITRWindowRequest
-	7,   // 107: fleetward.v1.SystemService.GetHealth:output_type -> fleetward.v1.GetHealthResponse
-	10,  // 108: fleetward.v1.SystemService.GetVersion:output_type -> fleetward.v1.GetVersionResponse
-	12,  // 109: fleetward.v1.SystemService.ListPlugins:output_type -> fleetward.v1.ListPluginsResponse
-	18,  // 110: fleetward.v1.InventoryService.ListEnvironments:output_type -> fleetward.v1.ListEnvironmentsResponse
-	20,  // 111: fleetward.v1.InventoryService.CreateEnvironment:output_type -> fleetward.v1.CreateEnvironmentResponse
-	22,  // 112: fleetward.v1.InventoryService.ListInstances:output_type -> fleetward.v1.ListInstancesResponse
-	24,  // 113: fleetward.v1.InventoryService.GetInstance:output_type -> fleetward.v1.GetInstanceResponse
-	27,  // 114: fleetward.v1.InventoryService.CreateInstance:output_type -> fleetward.v1.CreateInstanceResponse
-	29,  // 115: fleetward.v1.InventoryService.DeleteInstance:output_type -> fleetward.v1.DeleteInstanceResponse
-	31,  // 116: fleetward.v1.InventoryService.TestConnection:output_type -> fleetward.v1.TestConnectionResponse
-	33,  // 117: fleetward.v1.InventoryService.DiscoverInstance:output_type -> fleetward.v1.DiscoverInstanceResponse
-	35,  // 118: fleetward.v1.InventoryService.ListPrincipalsForInstance:output_type -> fleetward.v1.ListPrincipalsForInstanceResponse
-	53,  // 119: fleetward.v1.ScheduleService.ListSchedules:output_type -> fleetward.v1.ListSchedulesResponse
-	55,  // 120: fleetward.v1.ScheduleService.GetSchedule:output_type -> fleetward.v1.GetScheduleResponse
-	57,  // 121: fleetward.v1.ScheduleService.CreateSchedule:output_type -> fleetward.v1.CreateScheduleResponse
-	59,  // 122: fleetward.v1.ScheduleService.SetScheduleEnabled:output_type -> fleetward.v1.SetScheduleEnabledResponse
-	61,  // 123: fleetward.v1.ScheduleService.DeleteSchedule:output_type -> fleetward.v1.DeleteScheduleResponse
-	63,  // 124: fleetward.v1.ScheduleService.ListJobs:output_type -> fleetward.v1.ListJobsResponse
-	39,  // 125: fleetward.v1.BackupService.ListBackups:output_type -> fleetward.v1.ListBackupsResponse
-	41,  // 126: fleetward.v1.BackupService.GetBackup:output_type -> fleetward.v1.GetBackupResponse
-	43,  // 127: fleetward.v1.BackupService.RunBackup:output_type -> fleetward.v1.RunBackupResponse
-	45,  // 128: fleetward.v1.BackupService.RunVerification:output_type -> fleetward.v1.RunVerificationResponse
-	47,  // 129: fleetward.v1.BackupService.GetVerification:output_type -> fleetward.v1.GetVerificationResponse
-	49,  // 130: fleetward.v1.BackupService.GetPITRWindow:output_type -> fleetward.v1.GetPITRWindowResponse
-	107, // [107:131] is the sub-list for method output_type
-	83,  // [83:107] is the sub-list for method input_type
-	83,  // [83:83] is the sub-list for extension type_name
-	83,  // [83:83] is the sub-list for extension extendee
-	0,   // [0:83] is the sub-list for field type_name
+	79,  // 29: fleetward.v1.ConnectionSpec.shared_directory:type_name -> fleetward.v1.SharedDirectory
+	15,  // 30: fleetward.v1.CreateInstanceResponse.instance:type_name -> fleetward.v1.Instance
+	26,  // 31: fleetward.v1.TestConnectionRequest.connection:type_name -> fleetward.v1.ConnectionSpec
+	80,  // 32: fleetward.v1.TestConnectionResponse.health:type_name -> fleetward.v1.HealthStatus
+	75,  // 33: fleetward.v1.DiscoverInstanceResponse.server:type_name -> fleetward.v1.ServerInfo
+	76,  // 34: fleetward.v1.DiscoverInstanceResponse.databases:type_name -> fleetward.v1.DatabaseInfo
+	77,  // 35: fleetward.v1.DiscoverInstanceResponse.topology:type_name -> fleetward.v1.Topology
+	81,  // 36: fleetward.v1.ListPrincipalsForInstanceResponse.principals:type_name -> fleetward.v1.Principal
+	82,  // 37: fleetward.v1.ListPrincipalsForInstanceResponse.model:type_name -> fleetward.v1.PrincipalModel
+	2,   // 38: fleetward.v1.Backup.state:type_name -> fleetward.v1.BackupState
+	83,  // 39: fleetward.v1.Backup.checksum:type_name -> fleetward.v1.Checksum
+	72,  // 40: fleetward.v1.Backup.started_at:type_name -> google.protobuf.Timestamp
+	72,  // 41: fleetward.v1.Backup.completed_at:type_name -> google.protobuf.Timestamp
+	70,  // 42: fleetward.v1.Backup.duration:type_name -> google.protobuf.Duration
+	72,  // 43: fleetward.v1.Backup.consistency_point:type_name -> google.protobuf.Timestamp
+	72,  // 44: fleetward.v1.Backup.expires_at:type_name -> google.protobuf.Timestamp
+	84,  // 45: fleetward.v1.Backup.artifact:type_name -> fleetward.v1.ObjectRef
+	37,  // 46: fleetward.v1.Backup.verification:type_name -> fleetward.v1.Verification
+	74,  // 47: fleetward.v1.Verification.status:type_name -> fleetward.v1.VerificationStatus
+	85,  // 48: fleetward.v1.Verification.checks:type_name -> fleetward.v1.CheckResult
+	72,  // 49: fleetward.v1.Verification.started_at:type_name -> google.protobuf.Timestamp
+	72,  // 50: fleetward.v1.Verification.completed_at:type_name -> google.protobuf.Timestamp
+	70,  // 51: fleetward.v1.Verification.duration:type_name -> google.protobuf.Duration
+	86,  // 52: fleetward.v1.ListBackupsRequest.within:type_name -> fleetward.v1.TimeRange
+	2,   // 53: fleetward.v1.ListBackupsRequest.state:type_name -> fleetward.v1.BackupState
+	36,  // 54: fleetward.v1.ListBackupsResponse.backups:type_name -> fleetward.v1.Backup
+	36,  // 55: fleetward.v1.GetBackupResponse.backup:type_name -> fleetward.v1.Backup
+	87,  // 56: fleetward.v1.GetBackupResponse.manifest:type_name -> fleetward.v1.SourceManifest
+	67,  // 57: fleetward.v1.RunBackupRequest.options:type_name -> fleetward.v1.RunBackupRequest.OptionsEntry
+	88,  // 58: fleetward.v1.RunVerificationRequest.checks:type_name -> fleetward.v1.VerificationCheck
+	37,  // 59: fleetward.v1.GetVerificationResponse.verification:type_name -> fleetward.v1.Verification
+	89,  // 60: fleetward.v1.GetPITRWindowResponse.window:type_name -> fleetward.v1.PITRWindow
+	4,   // 61: fleetward.v1.Schedule.kind:type_name -> fleetward.v1.JobKind
+	68,  // 62: fleetward.v1.Schedule.options:type_name -> fleetward.v1.Schedule.OptionsEntry
+	3,   // 63: fleetward.v1.Schedule.verify_policy:type_name -> fleetward.v1.VerifyPolicy
+	72,  // 64: fleetward.v1.Schedule.next_run_at:type_name -> google.protobuf.Timestamp
+	72,  // 65: fleetward.v1.Schedule.last_run_at:type_name -> google.protobuf.Timestamp
+	72,  // 66: fleetward.v1.Schedule.created_at:type_name -> google.protobuf.Timestamp
+	4,   // 67: fleetward.v1.Job.kind:type_name -> fleetward.v1.JobKind
+	5,   // 68: fleetward.v1.Job.state:type_name -> fleetward.v1.JobState
+	72,  // 69: fleetward.v1.Job.scheduled_for:type_name -> google.protobuf.Timestamp
+	72,  // 70: fleetward.v1.Job.lease_expires_at:type_name -> google.protobuf.Timestamp
+	72,  // 71: fleetward.v1.Job.heartbeat_at:type_name -> google.protobuf.Timestamp
+	72,  // 72: fleetward.v1.Job.started_at:type_name -> google.protobuf.Timestamp
+	72,  // 73: fleetward.v1.Job.finished_at:type_name -> google.protobuf.Timestamp
+	72,  // 74: fleetward.v1.Job.created_at:type_name -> google.protobuf.Timestamp
+	50,  // 75: fleetward.v1.ListSchedulesResponse.schedules:type_name -> fleetward.v1.Schedule
+	50,  // 76: fleetward.v1.GetScheduleResponse.schedule:type_name -> fleetward.v1.Schedule
+	4,   // 77: fleetward.v1.CreateScheduleRequest.kind:type_name -> fleetward.v1.JobKind
+	69,  // 78: fleetward.v1.CreateScheduleRequest.options:type_name -> fleetward.v1.CreateScheduleRequest.OptionsEntry
+	3,   // 79: fleetward.v1.CreateScheduleRequest.verify_policy:type_name -> fleetward.v1.VerifyPolicy
+	50,  // 80: fleetward.v1.CreateScheduleResponse.schedule:type_name -> fleetward.v1.Schedule
+	50,  // 81: fleetward.v1.SetScheduleEnabledResponse.schedule:type_name -> fleetward.v1.Schedule
+	5,   // 82: fleetward.v1.ListJobsRequest.state:type_name -> fleetward.v1.JobState
+	51,  // 83: fleetward.v1.ListJobsResponse.jobs:type_name -> fleetward.v1.Job
+	6,   // 84: fleetward.v1.SystemService.GetHealth:input_type -> fleetward.v1.GetHealthRequest
+	9,   // 85: fleetward.v1.SystemService.GetVersion:input_type -> fleetward.v1.GetVersionRequest
+	11,  // 86: fleetward.v1.SystemService.ListPlugins:input_type -> fleetward.v1.ListPluginsRequest
+	17,  // 87: fleetward.v1.InventoryService.ListEnvironments:input_type -> fleetward.v1.ListEnvironmentsRequest
+	19,  // 88: fleetward.v1.InventoryService.CreateEnvironment:input_type -> fleetward.v1.CreateEnvironmentRequest
+	21,  // 89: fleetward.v1.InventoryService.ListInstances:input_type -> fleetward.v1.ListInstancesRequest
+	23,  // 90: fleetward.v1.InventoryService.GetInstance:input_type -> fleetward.v1.GetInstanceRequest
+	25,  // 91: fleetward.v1.InventoryService.CreateInstance:input_type -> fleetward.v1.CreateInstanceRequest
+	28,  // 92: fleetward.v1.InventoryService.DeleteInstance:input_type -> fleetward.v1.DeleteInstanceRequest
+	30,  // 93: fleetward.v1.InventoryService.TestConnection:input_type -> fleetward.v1.TestConnectionRequest
+	32,  // 94: fleetward.v1.InventoryService.DiscoverInstance:input_type -> fleetward.v1.DiscoverInstanceRequest
+	34,  // 95: fleetward.v1.InventoryService.ListPrincipalsForInstance:input_type -> fleetward.v1.ListPrincipalsForInstanceRequest
+	52,  // 96: fleetward.v1.ScheduleService.ListSchedules:input_type -> fleetward.v1.ListSchedulesRequest
+	54,  // 97: fleetward.v1.ScheduleService.GetSchedule:input_type -> fleetward.v1.GetScheduleRequest
+	56,  // 98: fleetward.v1.ScheduleService.CreateSchedule:input_type -> fleetward.v1.CreateScheduleRequest
+	58,  // 99: fleetward.v1.ScheduleService.SetScheduleEnabled:input_type -> fleetward.v1.SetScheduleEnabledRequest
+	60,  // 100: fleetward.v1.ScheduleService.DeleteSchedule:input_type -> fleetward.v1.DeleteScheduleRequest
+	62,  // 101: fleetward.v1.ScheduleService.ListJobs:input_type -> fleetward.v1.ListJobsRequest
+	38,  // 102: fleetward.v1.BackupService.ListBackups:input_type -> fleetward.v1.ListBackupsRequest
+	40,  // 103: fleetward.v1.BackupService.GetBackup:input_type -> fleetward.v1.GetBackupRequest
+	42,  // 104: fleetward.v1.BackupService.RunBackup:input_type -> fleetward.v1.RunBackupRequest
+	44,  // 105: fleetward.v1.BackupService.RunVerification:input_type -> fleetward.v1.RunVerificationRequest
+	46,  // 106: fleetward.v1.BackupService.GetVerification:input_type -> fleetward.v1.GetVerificationRequest
+	48,  // 107: fleetward.v1.BackupService.GetPITRWindow:input_type -> fleetward.v1.GetPITRWindowRequest
+	7,   // 108: fleetward.v1.SystemService.GetHealth:output_type -> fleetward.v1.GetHealthResponse
+	10,  // 109: fleetward.v1.SystemService.GetVersion:output_type -> fleetward.v1.GetVersionResponse
+	12,  // 110: fleetward.v1.SystemService.ListPlugins:output_type -> fleetward.v1.ListPluginsResponse
+	18,  // 111: fleetward.v1.InventoryService.ListEnvironments:output_type -> fleetward.v1.ListEnvironmentsResponse
+	20,  // 112: fleetward.v1.InventoryService.CreateEnvironment:output_type -> fleetward.v1.CreateEnvironmentResponse
+	22,  // 113: fleetward.v1.InventoryService.ListInstances:output_type -> fleetward.v1.ListInstancesResponse
+	24,  // 114: fleetward.v1.InventoryService.GetInstance:output_type -> fleetward.v1.GetInstanceResponse
+	27,  // 115: fleetward.v1.InventoryService.CreateInstance:output_type -> fleetward.v1.CreateInstanceResponse
+	29,  // 116: fleetward.v1.InventoryService.DeleteInstance:output_type -> fleetward.v1.DeleteInstanceResponse
+	31,  // 117: fleetward.v1.InventoryService.TestConnection:output_type -> fleetward.v1.TestConnectionResponse
+	33,  // 118: fleetward.v1.InventoryService.DiscoverInstance:output_type -> fleetward.v1.DiscoverInstanceResponse
+	35,  // 119: fleetward.v1.InventoryService.ListPrincipalsForInstance:output_type -> fleetward.v1.ListPrincipalsForInstanceResponse
+	53,  // 120: fleetward.v1.ScheduleService.ListSchedules:output_type -> fleetward.v1.ListSchedulesResponse
+	55,  // 121: fleetward.v1.ScheduleService.GetSchedule:output_type -> fleetward.v1.GetScheduleResponse
+	57,  // 122: fleetward.v1.ScheduleService.CreateSchedule:output_type -> fleetward.v1.CreateScheduleResponse
+	59,  // 123: fleetward.v1.ScheduleService.SetScheduleEnabled:output_type -> fleetward.v1.SetScheduleEnabledResponse
+	61,  // 124: fleetward.v1.ScheduleService.DeleteSchedule:output_type -> fleetward.v1.DeleteScheduleResponse
+	63,  // 125: fleetward.v1.ScheduleService.ListJobs:output_type -> fleetward.v1.ListJobsResponse
+	39,  // 126: fleetward.v1.BackupService.ListBackups:output_type -> fleetward.v1.ListBackupsResponse
+	41,  // 127: fleetward.v1.BackupService.GetBackup:output_type -> fleetward.v1.GetBackupResponse
+	43,  // 128: fleetward.v1.BackupService.RunBackup:output_type -> fleetward.v1.RunBackupResponse
+	45,  // 129: fleetward.v1.BackupService.RunVerification:output_type -> fleetward.v1.RunVerificationResponse
+	47,  // 130: fleetward.v1.BackupService.GetVerification:output_type -> fleetward.v1.GetVerificationResponse
+	49,  // 131: fleetward.v1.BackupService.GetPITRWindow:output_type -> fleetward.v1.GetPITRWindowResponse
+	108, // [108:132] is the sub-list for method output_type
+	84,  // [84:108] is the sub-list for method input_type
+	84,  // [84:84] is the sub-list for extension type_name
+	84,  // [84:84] is the sub-list for extension extendee
+	0,   // [0:84] is the sub-list for field type_name
 }
 
 func init() { file_fleetward_v1_controlplane_proto_init() }

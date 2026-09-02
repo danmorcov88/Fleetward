@@ -772,6 +772,13 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/MethodOption'
+                requiresSharedDirectory:
+                    type: boolean
+                    description: |-
+                        This method's tooling writes the artifact to the database server's own filesystem rather than
+                         to a stream, so it needs a directory the engine and the plugin can both reach (ADR-0026). Core
+                         refuses to schedule this method against an instance that has none, naming what is missing,
+                         rather than discovering it at 02:00.
         BackupSummary:
             type: object
             properties:
@@ -943,6 +950,14 @@ components:
                     type: object
                     additionalProperties:
                         type: string
+                sharedDirectory:
+                    allOf:
+                        - $ref: '#/components/schemas/SharedDirectory'
+                    description: |-
+                        Where this instance's backup files are written, and where this control plane sees the same
+                         directory. Required only by an engine whose backup tooling produces a file on the database
+                         server rather than a stream, which the plugin declares on the method (ADR-0026). Fleetward
+                         refuses to back up such an instance without it, rather than discovering the gap at 02:00.
             description: |-
                 ConnectionSpec carries credentials inbound only. No read API ever returns them: the secret is
                  write-only from the API's perspective (ADR-0009).
@@ -1366,6 +1381,13 @@ components:
                 checksum:
                     type: string
                     description: Optional per-object content checksum, when the engine can produce one cheaply.
+                countMayHaveDrifted:
+                    type: boolean
+                    description: |-
+                        The count could not be pinned to the artifact's own consistency point, because the object was
+                         written to while the backup ran. A later mismatch is then drift rather than data loss, and is
+                         reported as INCONCLUSIVE rather than FAILED (ADR-0022). The default — false — means exact, so
+                         a manifest from a plugin that counts inside the snapshot it dumps keeps its meaning.
         MethodOption:
             type: object
             properties:
@@ -1490,6 +1512,26 @@ components:
                     pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
                     type: string
                     description: Smallest resolvable recovery interval.
+        PasswordPolicy:
+            type: object
+            properties:
+                minLength:
+                    type: integer
+                    format: int32
+                minCharacterClasses:
+                    type: integer
+                    description: Minimum number of distinct classes — uppercase, lowercase, digit, symbol — that must appear.
+                    format: int32
+                symbolAlphabet:
+                    type: string
+                    description: Symbols this engine accepts, if its own set is narrower than core's. Empty keeps core's.
+            description: |-
+                PasswordPolicy is what an engine will accept as a generated sandbox password.
+
+                 Core generates the sandbox identity and the plugin's template places it (ADR-0020). Some images
+                 also validate it: mcr.microsoft.com/mssql/server exits rather than start when the password it is
+                 handed carries fewer than three of the four character classes. Declaring the rule lets core
+                 satisfy it by construction; leaving it empty keeps core's default generator unchanged.
         PluginError:
             type: object
             properties:
@@ -1663,6 +1705,25 @@ components:
                 minDiskBytes:
                     type: string
                     description: Minimum tmpfs/volume size hint in bytes for the sandbox data directory.
+                sharedDirectory:
+                    type: string
+                    description: |-
+                        Path inside the container at which core mounts a directory the plugin can also read and write,
+                         for engines that hand their artifact over as a file (ADR-0026). Core reports both names for it
+                         in the sandbox's Credentials.shared_directory. Empty for engines that stream.
+                fixedUsername:
+                    type: string
+                    description: |-
+                        The administrative account this image always creates and cannot be told to rename, e.g. "sa".
+                         Core renders {{ .Username }} to it instead of generating a name, and still generates the
+                         password. Empty keeps the generated username, which is the behaviour ADR-0020 describes.
+                passwordPolicy:
+                    allOf:
+                        - $ref: '#/components/schemas/PasswordPolicy'
+                    description: |-
+                        Complexity the image enforces on the password it is given. An image that refuses to start on a
+                         weak password fails in the worst possible way — rarely, and at provisioning time — so the
+                         policy is declared rather than discovered.
             description: |-
                 SandboxTemplate tells core how to stand up a throwaway instance of this engine for verification.
                  Keeping it here — rather than in a core lookup table — is what allows a new engine to arrive as a
@@ -1756,6 +1817,25 @@ components:
             properties:
                 schedule:
                     $ref: '#/components/schemas/Schedule'
+        SharedDirectory:
+            type: object
+            properties:
+                enginePath:
+                    type: string
+                    description: |-
+                        The path as the engine sees it. Used verbatim in statements sent to the engine, so it must be
+                         spelled the way that engine's platform spells a path.
+                localPath:
+                    type: string
+                    description: The same directory as the process running the plugin sees it.
+            description: |-
+                SharedDirectory is one directory under the two names its two users know it by.
+
+                 An engine that answers BACKUP with a file rather than a stream writes it somewhere the plugin has
+                 no access to. The way out is a directory both sides can see — a mount, a share, or simply the
+                 local disk when the plugin runs on the database host — which the two of them almost never call by
+                 the same name. The plugin puts engine_path into the statements it sends and opens local_path
+                 itself; the bytes are the same bytes.
         SourceManifest:
             type: object
             properties:

@@ -279,9 +279,12 @@ type Credentials struct {
 	Database string       `protobuf:"bytes,5,opt,name=database,proto3" json:"database,omitempty"`
 	Tls      *TLSSettings `protobuf:"bytes,6,opt,name=tls,proto3" json:"tls,omitempty"`
 	// Engine-specific connection options (for example "sslmode", "authSource", "replicaSet").
-	Options       map[string]string `protobuf:"bytes,7,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Options map[string]string `protobuf:"bytes,7,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Directory the engine and the plugin can both reach, for engines whose backup tooling writes a
+	// file on the database server rather than to a stream (ADR-0026). Empty for engines that stream.
+	SharedDirectory *SharedDirectory `protobuf:"bytes,8,opt,name=shared_directory,json=sharedDirectory,proto3" json:"shared_directory,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Credentials) Reset() {
@@ -363,6 +366,75 @@ func (x *Credentials) GetOptions() map[string]string {
 	return nil
 }
 
+func (x *Credentials) GetSharedDirectory() *SharedDirectory {
+	if x != nil {
+		return x.SharedDirectory
+	}
+	return nil
+}
+
+// SharedDirectory is one directory under the two names its two users know it by.
+//
+// An engine that answers BACKUP with a file rather than a stream writes it somewhere the plugin has
+// no access to. The way out is a directory both sides can see — a mount, a share, or simply the
+// local disk when the plugin runs on the database host — which the two of them almost never call by
+// the same name. The plugin puts engine_path into the statements it sends and opens local_path
+// itself; the bytes are the same bytes.
+type SharedDirectory struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The path as the engine sees it. Used verbatim in statements sent to the engine, so it must be
+	// spelled the way that engine's platform spells a path.
+	EnginePath string `protobuf:"bytes,1,opt,name=engine_path,json=enginePath,proto3" json:"engine_path,omitempty"`
+	// The same directory as the process running the plugin sees it.
+	LocalPath     string `protobuf:"bytes,2,opt,name=local_path,json=localPath,proto3" json:"local_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SharedDirectory) Reset() {
+	*x = SharedDirectory{}
+	mi := &file_fleetward_v1_common_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SharedDirectory) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SharedDirectory) ProtoMessage() {}
+
+func (x *SharedDirectory) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_common_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SharedDirectory.ProtoReflect.Descriptor instead.
+func (*SharedDirectory) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SharedDirectory) GetEnginePath() string {
+	if x != nil {
+		return x.EnginePath
+	}
+	return ""
+}
+
+func (x *SharedDirectory) GetLocalPath() string {
+	if x != nil {
+		return x.LocalPath
+	}
+	return ""
+}
+
 type TLSSettings struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Enabled bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
@@ -378,7 +450,7 @@ type TLSSettings struct {
 
 func (x *TLSSettings) Reset() {
 	*x = TLSSettings{}
-	mi := &file_fleetward_v1_common_proto_msgTypes[2]
+	mi := &file_fleetward_v1_common_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -390,7 +462,7 @@ func (x *TLSSettings) String() string {
 func (*TLSSettings) ProtoMessage() {}
 
 func (x *TLSSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_common_proto_msgTypes[2]
+	mi := &file_fleetward_v1_common_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -403,7 +475,7 @@ func (x *TLSSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TLSSettings.ProtoReflect.Descriptor instead.
 func (*TLSSettings) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{2}
+	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *TLSSettings) GetEnabled() bool {
@@ -461,7 +533,7 @@ type ObjectRef struct {
 
 func (x *ObjectRef) Reset() {
 	*x = ObjectRef{}
-	mi := &file_fleetward_v1_common_proto_msgTypes[3]
+	mi := &file_fleetward_v1_common_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -473,7 +545,7 @@ func (x *ObjectRef) String() string {
 func (*ObjectRef) ProtoMessage() {}
 
 func (x *ObjectRef) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_common_proto_msgTypes[3]
+	mi := &file_fleetward_v1_common_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -486,7 +558,7 @@ func (x *ObjectRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ObjectRef.ProtoReflect.Descriptor instead.
 func (*ObjectRef) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{3}
+	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ObjectRef) GetBucket() string {
@@ -517,7 +589,7 @@ type PresignedURL struct {
 
 func (x *PresignedURL) Reset() {
 	*x = PresignedURL{}
-	mi := &file_fleetward_v1_common_proto_msgTypes[4]
+	mi := &file_fleetward_v1_common_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -529,7 +601,7 @@ func (x *PresignedURL) String() string {
 func (*PresignedURL) ProtoMessage() {}
 
 func (x *PresignedURL) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_common_proto_msgTypes[4]
+	mi := &file_fleetward_v1_common_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -542,7 +614,7 @@ func (x *PresignedURL) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresignedURL.ProtoReflect.Descriptor instead.
 func (*PresignedURL) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{4}
+	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *PresignedURL) GetUrl() string {
@@ -584,7 +656,7 @@ type Checksum struct {
 
 func (x *Checksum) Reset() {
 	*x = Checksum{}
-	mi := &file_fleetward_v1_common_proto_msgTypes[5]
+	mi := &file_fleetward_v1_common_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -596,7 +668,7 @@ func (x *Checksum) String() string {
 func (*Checksum) ProtoMessage() {}
 
 func (x *Checksum) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_common_proto_msgTypes[5]
+	mi := &file_fleetward_v1_common_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -609,7 +681,7 @@ func (x *Checksum) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Checksum.ProtoReflect.Descriptor instead.
 func (*Checksum) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{5}
+	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Checksum) GetAlgorithm() ChecksumAlgorithm {
@@ -643,7 +715,7 @@ type PluginError struct {
 
 func (x *PluginError) Reset() {
 	*x = PluginError{}
-	mi := &file_fleetward_v1_common_proto_msgTypes[6]
+	mi := &file_fleetward_v1_common_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -655,7 +727,7 @@ func (x *PluginError) String() string {
 func (*PluginError) ProtoMessage() {}
 
 func (x *PluginError) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_common_proto_msgTypes[6]
+	mi := &file_fleetward_v1_common_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -668,7 +740,7 @@ func (x *PluginError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PluginError.ProtoReflect.Descriptor instead.
 func (*PluginError) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{6}
+	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PluginError) GetCode() ErrorCode {
@@ -709,7 +781,7 @@ type TimeRange struct {
 
 func (x *TimeRange) Reset() {
 	*x = TimeRange{}
-	mi := &file_fleetward_v1_common_proto_msgTypes[7]
+	mi := &file_fleetward_v1_common_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -721,7 +793,7 @@ func (x *TimeRange) String() string {
 func (*TimeRange) ProtoMessage() {}
 
 func (x *TimeRange) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetward_v1_common_proto_msgTypes[7]
+	mi := &file_fleetward_v1_common_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -734,7 +806,7 @@ func (x *TimeRange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TimeRange.ProtoReflect.Descriptor instead.
 func (*TimeRange) Descriptor() ([]byte, []int) {
-	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{7}
+	return file_fleetward_v1_common_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *TimeRange) GetStart() *timestamppb.Timestamp {
@@ -760,7 +832,7 @@ const file_fleetward_v1_common_proto_rawDesc = "" +
 	"\rconnection_id\x18\x01 \x01(\tR\fconnectionId\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x1f\n" +
 	"\vinstance_id\x18\x03 \x01(\tR\n" +
-	"instanceId\"\xb4\x02\n" +
+	"instanceId\"\xfe\x02\n" +
 	"\vCredentials\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\x05R\x04port\x12\x1a\n" +
@@ -768,10 +840,16 @@ const file_fleetward_v1_common_proto_rawDesc = "" +
 	"\bpassword\x18\x04 \x01(\tR\bpassword\x12\x1a\n" +
 	"\bdatabase\x18\x05 \x01(\tR\bdatabase\x12+\n" +
 	"\x03tls\x18\x06 \x01(\v2\x19.fleetward.v1.TLSSettingsR\x03tls\x12@\n" +
-	"\aoptions\x18\a \x03(\v2&.fleetward.v1.Credentials.OptionsEntryR\aoptions\x1a:\n" +
+	"\aoptions\x18\a \x03(\v2&.fleetward.v1.Credentials.OptionsEntryR\aoptions\x12H\n" +
+	"\x10shared_directory\x18\b \x01(\v2\x1d.fleetward.v1.SharedDirectoryR\x0fsharedDirectory\x1a:\n" +
 	"\fOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xdf\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Q\n" +
+	"\x0fSharedDirectory\x12\x1f\n" +
+	"\vengine_path\x18\x01 \x01(\tR\n" +
+	"enginePath\x12\x1d\n" +
+	"\n" +
+	"local_path\x18\x02 \x01(\tR\tlocalPath\"\xdf\x01\n" +
 	"\vTLSSettings\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x120\n" +
 	"\x14insecure_skip_verify\x18\x02 \x01(\bR\x12insecureSkipVerify\x12\x15\n" +
@@ -845,39 +923,41 @@ func file_fleetward_v1_common_proto_rawDescGZIP() []byte {
 }
 
 var file_fleetward_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_fleetward_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_fleetward_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_fleetward_v1_common_proto_goTypes = []any{
 	(ChecksumAlgorithm)(0),        // 0: fleetward.v1.ChecksumAlgorithm
 	(Severity)(0),                 // 1: fleetward.v1.Severity
 	(ErrorCode)(0),                // 2: fleetward.v1.ErrorCode
 	(*ConnectionRef)(nil),         // 3: fleetward.v1.ConnectionRef
 	(*Credentials)(nil),           // 4: fleetward.v1.Credentials
-	(*TLSSettings)(nil),           // 5: fleetward.v1.TLSSettings
-	(*ObjectRef)(nil),             // 6: fleetward.v1.ObjectRef
-	(*PresignedURL)(nil),          // 7: fleetward.v1.PresignedURL
-	(*Checksum)(nil),              // 8: fleetward.v1.Checksum
-	(*PluginError)(nil),           // 9: fleetward.v1.PluginError
-	(*TimeRange)(nil),             // 10: fleetward.v1.TimeRange
-	nil,                           // 11: fleetward.v1.Credentials.OptionsEntry
-	nil,                           // 12: fleetward.v1.PresignedURL.HeadersEntry
-	nil,                           // 13: fleetward.v1.PluginError.DetailsEntry
-	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
+	(*SharedDirectory)(nil),       // 5: fleetward.v1.SharedDirectory
+	(*TLSSettings)(nil),           // 6: fleetward.v1.TLSSettings
+	(*ObjectRef)(nil),             // 7: fleetward.v1.ObjectRef
+	(*PresignedURL)(nil),          // 8: fleetward.v1.PresignedURL
+	(*Checksum)(nil),              // 9: fleetward.v1.Checksum
+	(*PluginError)(nil),           // 10: fleetward.v1.PluginError
+	(*TimeRange)(nil),             // 11: fleetward.v1.TimeRange
+	nil,                           // 12: fleetward.v1.Credentials.OptionsEntry
+	nil,                           // 13: fleetward.v1.PresignedURL.HeadersEntry
+	nil,                           // 14: fleetward.v1.PluginError.DetailsEntry
+	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
 }
 var file_fleetward_v1_common_proto_depIdxs = []int32{
-	5,  // 0: fleetward.v1.Credentials.tls:type_name -> fleetward.v1.TLSSettings
-	11, // 1: fleetward.v1.Credentials.options:type_name -> fleetward.v1.Credentials.OptionsEntry
-	12, // 2: fleetward.v1.PresignedURL.headers:type_name -> fleetward.v1.PresignedURL.HeadersEntry
-	14, // 3: fleetward.v1.PresignedURL.expires_at:type_name -> google.protobuf.Timestamp
-	0,  // 4: fleetward.v1.Checksum.algorithm:type_name -> fleetward.v1.ChecksumAlgorithm
-	2,  // 5: fleetward.v1.PluginError.code:type_name -> fleetward.v1.ErrorCode
-	13, // 6: fleetward.v1.PluginError.details:type_name -> fleetward.v1.PluginError.DetailsEntry
-	14, // 7: fleetward.v1.TimeRange.start:type_name -> google.protobuf.Timestamp
-	14, // 8: fleetward.v1.TimeRange.end:type_name -> google.protobuf.Timestamp
-	9,  // [9:9] is the sub-list for method output_type
-	9,  // [9:9] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	6,  // 0: fleetward.v1.Credentials.tls:type_name -> fleetward.v1.TLSSettings
+	12, // 1: fleetward.v1.Credentials.options:type_name -> fleetward.v1.Credentials.OptionsEntry
+	5,  // 2: fleetward.v1.Credentials.shared_directory:type_name -> fleetward.v1.SharedDirectory
+	13, // 3: fleetward.v1.PresignedURL.headers:type_name -> fleetward.v1.PresignedURL.HeadersEntry
+	15, // 4: fleetward.v1.PresignedURL.expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 5: fleetward.v1.Checksum.algorithm:type_name -> fleetward.v1.ChecksumAlgorithm
+	2,  // 6: fleetward.v1.PluginError.code:type_name -> fleetward.v1.ErrorCode
+	14, // 7: fleetward.v1.PluginError.details:type_name -> fleetward.v1.PluginError.DetailsEntry
+	15, // 8: fleetward.v1.TimeRange.start:type_name -> google.protobuf.Timestamp
+	15, // 9: fleetward.v1.TimeRange.end:type_name -> google.protobuf.Timestamp
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_fleetward_v1_common_proto_init() }
@@ -891,7 +971,7 @@ func file_fleetward_v1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetward_v1_common_proto_rawDesc), len(file_fleetward_v1_common_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   11,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
