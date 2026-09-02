@@ -22,7 +22,7 @@ following particularly severe and are especially interested in reports about the
 - Any path that exposes stored credentials — through an API, logs, error messages, metrics, or the
   UI.
 - Authorization bypass: performing an action your role and scope should not permit, or reading data
-  belonging to another tenant.
+  belonging to another tenant. (Not yet applicable — see the limits below.)
 - Anything that allows a restore to be triggered against an unintended target.
 - Sandbox escape during backup verification.
 - Injection into the native tooling plugins invoke (`pg_basebackup`, `mysqldump`, `mongodump`, …).
@@ -39,9 +39,21 @@ than left for you to discover:
 - **The dev stack is not production configuration.** `docker-compose.yml` ships development
   credentials for Postgres, MinIO, and Dex, and runs without TLS. It is for local evaluation only.
   Never expose it to a network you do not fully control.
-- **Authorization is enforced server-side**, on every route. The UI hides actions a user cannot
-  perform, but that is a convenience, never a control. If you find an endpoint that relies on the
-  UI to restrict access, that is a vulnerability — please report it.
+- **There is no authentication or authorization yet.** Every route under `/api/v1/` is open to
+  anyone who can reach the port, including the routes that add an instance and trigger a backup.
+  `FLEETWARD_AUTH_*` is parsed and validated but nothing consumes it, and the tenant is a fixed
+  constant, so setting `FLEETWARD_ENV=production` demands `AUTH_ENABLED=true` while enforcing
+  nothing. **Do not expose Fleetward to any network you do not fully control.** Server-side
+  enforcement — a principal per request, role and scope checked at every method, and an audit
+  record per mutation — is the next security slice on the [roadmap](../docs/dev/STATUS.md); when it
+  lands, an endpoint that relies on the UI to restrict access becomes a vulnerability worth
+  reporting.
+- **The control plane needs the Docker socket, and that is root-equivalent on the host.** Backup
+  verification provisions a throwaway container of the matching engine, so `docker-compose.yml`
+  mounts `/var/run/docker.sock` into the control plane. Anything able to reach the control plane's
+  process can therefore reach the host's container runtime. Run it on a dedicated host, behind a
+  socket proxy restricted to the endpoints it uses, or point `FLEETWARD_SANDBOX_DOCKER_HOST` at a
+  separate sandbox host.
 
 ## Supported versions
 
