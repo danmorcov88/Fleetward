@@ -47,6 +47,59 @@ change to this area.
 passes. All of them were checked in a worktree created with `core.autocrlf=false`, because a Windows
 checkout with the default makes every file in the tree look unformatted.
 
+### And the walk, which found something no test did
+
+`docker compose up --build` on the same machine, against the stack's own SQL Server. An instance
+added, a database seeded with 250 customers and 1,000 orders, a schedule created — and then nobody
+typed anything:
+
+```
+ID        KIND    STATE      TRIGGER   ATTEMPTS  STARTED (UTC)        FINISHED (UTC)
+6b4080d5  verify  succeeded  schedule  1         2026-09-02 12:14:18  2026-09-02 12:14:33
+2e9fc10c  backup  succeeded  schedule  1         2026-09-02 12:14:08  2026-09-02 12:14:08
+9bcdcf38  verify  succeeded  schedule  1         2026-09-02 12:13:18  2026-09-02 12:13:33
+c0a8ead5  backup  succeeded  schedule  1         2026-09-02 12:13:08  2026-09-02 12:13:09
+```
+
+Each backup is 524 KiB over 2 objects and 1,250 records, taken in 274 ms, and each verification
+restored it into a fresh `mcr.microsoft.com/mssql/server:2022-latest` container and destroyed it:
+
+```
+verified
+SQL Server 16.0.4265.3, verified in 344ms
+ok   connectivity: fleetward_demo is online on SQL Server 16.0.4265.3
+ok   record_counts: all 2 objects match the manifest exactly
+ok   schema_presence: all 2 objects are present
+ok   integrity: DBCC CHECKDB found no physical inconsistencies
+ok   queryability: 2 objects were read back successfully
+```
+
+Then the negative case, injected the way bit rot arrives rather than through any code path under
+test — one byte flipped inside the stored object, in the bucket, with the length unchanged:
+
+```
+status    FAILED
+duration  16.105s
+error     the artifact does not match its checksum: 536576 bytes hash to 18d9cf13…,
+          but 7afc6e42… was recorded when it was written
+```
+
+"The bytes are not the bytes we wrote", not "the data does not match" — the distinction ADR-0022
+exists to preserve, arriving before a single statement was applied to the sandbox.
+
+Afterwards `docker ps -a --filter label=fleetward.sandbox` is empty and so is the shared directory.
+
+**And the thing the walk found that nothing else could.** The first attempt failed five times in a
+row, once a minute, with `create the backup file in the shared directory`. A fresh Docker named
+volume is created owned by root and mode 0755, and the control plane runs unprivileged as uid 10001
+— so it could not create the file it then had to upload. The conformance suite never sees this,
+because there core runs on the host and makes its own temporary directory.
+
+The fix is one line in the image: `/app/share` exists in it, owned by `fleetward`, so an empty volume
+mounted there inherits that ownership. 0755 is enough for both sides, and the reason it is enough is
+the same trick the artifact itself depends on — the plugin creates the file, and the engine only ever
+needs to traverse the directory and open something that already exists.
+
 ## What the contract was missing
 
 Four fields, all additive, and the interesting thing is that all four are *declarations a plugin
@@ -210,3 +263,12 @@ published. The acceptance test is the `grep`, and it returns nothing.
   its own version or a newer one, so the newest exercised tag is safe until a 2025 instance arrives.
 - `RESTORE` relocates data and log files and refuses anything else. A database with FILESTREAM or a
   full-text container is answered with a typed `UNSUPPORTED` rather than a wrong guess.
+- **A `verify` job whose verification returned `FAILED` still reads `succeeded` in `job list`.** The
+  job did run to completion; the verdict is on the verification row, and the failure text does reach
+  the ERROR column. It is pre-existing and shared with PostgreSQL rather than anything this slice
+  introduced, and it is exactly the distinction the Estate Overview has to render properly. **B4.**
+- **Two integration tests fail on this development machine and neither is a regression.** Both were
+  reproduced on `origin/main` at f0c604f before being blamed on anything, and both are written down
+  in `STATUS.md`: `sandbox.TestSandboxLifecycle` reaches the PostgreSQL this machine has installed on
+  `::1:5432` when its sandbox refuses TLS, and `plugins/postgres`'s
+  `TestDiscoverOnUnreachableInstanceFails` gets an answer from a network that should not have one.
