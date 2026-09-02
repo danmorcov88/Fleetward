@@ -156,9 +156,9 @@ func (s *Service) RunVerificationSync(ctx context.Context, jobID string, in RunV
 		return err
 	}
 
+	// job_id is not named here: the scheduler put it on the context, and telemetry promotes it.
 	s.log.InfoContext(ctx, "scheduled verification started",
 		slog.String("verification_id", verificationID),
-		slog.String("job_id", jobID),
 		slog.String("backup_id", target.backupID),
 		slog.String("instance_id", target.instanceID),
 		slog.String("engine_type", conn.EngineType),

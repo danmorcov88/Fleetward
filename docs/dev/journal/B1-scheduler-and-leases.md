@@ -40,9 +40,26 @@ real `postgres:16-alpine` per test, with the real schema. Nine cases, and the on
 
 The daylight-saving behaviour is measured rather than assumed. `TestNextRunAcrossDaylightSaving`
 pins four cases against Europe/Bucharest's real 2026 transitions, and the results are what
-[`../../ops/scheduling.md`](../ops/scheduling.md) now tells operators: at the spring forward an hour
-that does not exist is skipped and the run lands the following day; at the fall back the repeated
-hour fires once, on its first occurrence.
+[`../../ops/scheduling.md`](../../ops/scheduling.md) now tells operators: at the spring forward an
+hour that does not exist is skipped and the run lands the following day; at the fall back the
+repeated hour fires once, on its first occurrence.
+
+`go test -tags=conformance ./test/conformance/...` passes, and on this machine that means less than
+it does in CI: every end-to-end case skips, because `pg_dump`, `pg_restore` and `psql` are not on
+the Windows host's PATH and the suite refuses to pretend otherwise. Only the capability and health
+subset ran locally. CI installs the PostgreSQL client and runs the whole thing, and the suite is
+unchanged by this slice in any case — the scheduler is not part of the plugin contract.
+
+`golangci-lint run`, `buf lint`, `buf format --diff --exit-code`, `buf breaking --against main`, and
+`go run ./tools/docscheck` are all clean. They were checked in a worktree created with
+`core.autocrlf=false`: a Windows checkout with the default `autocrlf=true` makes `gofmt` and `buf
+format` report every file in the tree as unformatted, which is a line-ending artefact and not a
+finding. That is now written into `STATUS.md` so the next session does not spend an hour on it.
+
+One pre-existing failure, unrelated and reproduced on `main` at f0c604f before this branch was
+touched: `plugins/postgres`'s `TestDiscoverOnUnreachableInstanceFails` dials 192.0.2.1 and expects
+`CONNECTION_FAILED`, but this network answers with something pgx reads as
+`AUTHENTICATION_FAILED`. It is an environment artefact of the host, not a regression.
 
 ## Decisions worth carrying forward
 

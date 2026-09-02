@@ -138,7 +138,7 @@ func (s *Service) CreateSchedule(ctx context.Context, in CreateScheduleInput) (*
 		options = map[string]string{}
 	}
 
-	row, err := s.pool.Query(ctx, `
+	rows, err := s.pool.Query(ctx, `
 		INSERT INTO schedules (tenant_id, instance_id, kind, cron_expression, timezone,
 		                       method_id, options, verify_policy, verify_sample_percent,
 		                       retention_days, next_run_at)
@@ -146,27 +146,30 @@ func (s *Service) CreateSchedule(ctx context.Context, in CreateScheduleInput) (*
 		RETURNING `+scheduleColumns,
 		s.tenantID, instanceID, kind, in.CronExpression, timezone,
 		in.MethodID, options, policy, pct, retention, next)
-	if err != nil {
-		return nil, fmt.Errorf("scheduler: create schedule: %w", err)
-	}
-	defer row.Close()
-
-	schedules, err := scanSchedules(row)
-	if err != nil {
-		if metadb.IsForeignKeyViolation(err) {
-			return nil, fmt.Errorf("%w: instance %s", ErrNotFound, instanceID)
+	// pgx may surface a constraint violation either here or on the first read, depending on when
+	// the round trip completes, so both are checked. Scheduling against an instance that does not
+	// exist is the caller's mistake and reads as 404, not as an internal error.
+	if err == nil {
+		defer rows.Close()
+		var schedules []*fwv1.Schedule
+		schedules, err = scanSchedules(rows)
+		if err == nil {
+			if len(schedules) == 0 {
+				return nil, fmt.Errorf("scheduler: create schedule: the insert returned no row")
+			}
+			s.log.InfoContext(ctx, "schedule created",
+				slog.String("schedule_id", schedules[0].GetId()),
+				slog.String("instance_id", instanceID),
+				slog.String("cron_expression", in.CronExpression),
+				slog.String("timezone", timezone),
+				slog.Time("next_run_at", next))
+			return schedules[0], nil
 		}
-		return nil, err
 	}
-
-	s.log.InfoContext(ctx, "schedule created",
-		slog.String("schedule_id", schedules[0].GetId()),
-		slog.String("instance_id", instanceID),
-		slog.String("cron_expression", in.CronExpression),
-		slog.String("timezone", timezone),
-		slog.Time("next_run_at", next))
-
-	return schedules[0], nil
+	if metadb.IsForeignKeyViolation(err) {
+		return nil, fmt.Errorf("%w: instance %s", ErrNotFound, instanceID)
+	}
+	return nil, fmt.Errorf("scheduler: create schedule: %w", err)
 }
 
 // ListSchedules returns the tenant's schedules, optionally for one instance.

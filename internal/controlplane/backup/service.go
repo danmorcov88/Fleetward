@@ -260,9 +260,9 @@ func (s *Service) RunBackupSync(ctx context.Context, in RunBackupInput) (backupI
 		return "", err
 	}
 
+	// job_id is not named here: the scheduler put it on the context, and telemetry promotes it.
 	s.log.InfoContext(ctx, "scheduled backup started",
 		slog.String("backup_id", backupID),
-		slog.String("job_id", in.JobID),
 		slog.String("instance_id", p.conn.InstanceID),
 		slog.String("engine_type", p.conn.EngineType),
 		slog.String("method_id", p.method.GetId()))

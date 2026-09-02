@@ -131,12 +131,14 @@ func (s *Scheduler) materialize(ctx context.Context) (int, error) {
 // do the work, and give the lease back. What makes it correct is that the heartbeat can cancel the
 // work — see heartbeat.
 func (s *Scheduler) run(parent context.Context, job *claimedJob) {
+	// job_id rides on the context rather than on the logger: telemetry's handler promotes it onto
+	// every record written with a *Context method, including the ones the backup service writes
+	// further down the call. Attaching it here as well would print it twice on every line.
+	parent = telemetry.WithJobID(parent, job.ID)
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
-	ctx = telemetry.WithJobID(ctx, job.ID)
 	log := s.log.With(
-		slog.String("job_id", job.ID),
 		slog.String("instance_id", job.InstanceID),
 		slog.String("kind", job.Kind))
 
@@ -181,10 +183,17 @@ func (s *Scheduler) run(parent context.Context, job *claimedJob) {
 	}
 
 	log.InfoContext(ctx, "scheduled job finished", slog.Duration("duration", time.Since(started)))
+
 	// The backup and verification services write the job's terminal state themselves, in the same
 	// transaction as the row that explains it. All that is left is to stop holding the lease.
-	if err := release(parent, s.pool, job.ID, s.owner); err != nil {
-		log.ErrorContext(parent, "could not release the lease", slog.String("error", err.Error()))
+	//
+	// Detached from the runner's context, like every other write on the way out: a job that
+	// finished during shutdown should still let go of its lease rather than leave a terminal row
+	// wearing a dead process's name.
+	releaseCtx, cancelRelease := context.WithTimeout(context.WithoutCancel(parent), 30*time.Second)
+	defer cancelRelease()
+	if err := release(releaseCtx, s.pool, job.ID, s.owner); err != nil {
+		log.ErrorContext(releaseCtx, "could not release the lease", slog.String("error", err.Error()))
 	}
 }
 
@@ -297,8 +306,14 @@ func (s *Scheduler) enqueueVerify(ctx context.Context, job *claimedJob, backupID
 		scheduleID = job.ScheduleID
 	}
 
+	// Detached and bounded: the backup succeeded, and losing its verification because the process
+	// was asked to stop a moment later would leave an unproven artifact with nothing queued to
+	// prove it.
+	enqueueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+
 	var verifyJobID string
-	err = s.pool.QueryRow(context.WithoutCancel(ctx), `
+	err = s.pool.QueryRow(enqueueCtx, `
 		INSERT INTO jobs (tenant_id, schedule_id, instance_id, kind, state, payload, scheduled_for)
 		VALUES ($1, $2, $3, 'verify', 'pending', $4, now())
 		RETURNING id`,

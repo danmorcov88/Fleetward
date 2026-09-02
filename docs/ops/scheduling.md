@@ -61,9 +61,10 @@ nothing happens. Both behaviours are pinned by tests against real transitions.
 | An hour that **occurs twice** on the fall-back day — 03:30 where 04:00 becomes 03:00 | The run happens **once**, on the first occurrence. The repeat does not fire a second one, because `next_run_at` has already advanced past it. |
 | Any hour outside the transition | Unaffected. |
 
-If a schedule must never be skipped, put it at an hour your zone does not move — anything outside
-roughly 01:00–04:00 local is safe in every zone Fleetward has been tested against. Or use `UTC`,
-which has no transitions at all.
+If a schedule must never be skipped, either set its timezone to `UTC`, which has no transitions at
+all, or check when your own zone moves and pick an hour away from it. Transition times differ by
+country — most of Europe moves at 03:00 or 04:00 local, Chile at midnight — so there is no hour that
+is safe everywhere.
 
 > The time-zone database is compiled into the `fleetward` binary rather than read from the operating
 > system, so `Europe/Bucharest` resolves identically on a developer's laptop and inside the
