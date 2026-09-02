@@ -1,0 +1,18 @@
+# Paths the documentation may name even though they do not exist.
+#
+# Format:  <repository-relative path>   <the one file allowed to name it>   # why
+#
+# Two rules, both deliberate:
+#
+#   A reason is mandatory. An allowance without one is a silenced error, and six months later
+#   nobody can tell "deliberately mentioned" from "quietly wrong".
+#
+#   An allowance is scoped to one file. What makes a mention honest is the sentence around it —
+#   "planned, gated on the Kubernetes sandbox provider" — and that sentence lives in one document.
+#   A global allowance would extend it to every other file, which is how the same claim reappears
+#   somewhere it is not qualified.
+#
+# docscheck refuses to load a malformed entry, and reports an entry nothing uses any more.
+
+deploy/helm        CLAUDE.md                  # named in §3 as explicitly planned and gated on the Kubernetes sandbox provider; the rule above it says a directory is added by the slice that fills it
+docs/slice-briefs  docs/dev/slices/README.md  # a git branch-name example (docs/<topic>), not a path — it collides with the docs/ directory by coincidence
