@@ -107,3 +107,11 @@ Listed so that no session has to re-derive them, and so that no document has to 
 - `mcr.microsoft.com/mssql/server:2022-latest` is 625 MB and becomes ready in about nine seconds
   warm. A full conformance run takes a little under three minutes on this machine with the image
   already pulled.
+- **Two integration tests fail on this machine for reasons that are the machine's.** Both were
+  reproduced on `origin/main` at f0c604f before being blamed on anything.
+  `sandbox.TestSandboxLifecycle` connects to its sandbox as `localhost`, which resolves to both
+  `127.0.0.1` and `::1`; the sandbox refuses TLS on its mapped port, and the fallback attempt reaches
+  the PostgreSQL this machine has installed on `::1:5432` and fails authentication against it.
+  `plugins/postgres`'s `TestDiscoverOnUnreachableInstanceFails` dials 192.0.2.1 expecting
+  `CONNECTION_FAILED` and gets something pgx reads as `AUTHENTICATION_FAILED` on this network.
+  Neither reproduces in CI.
