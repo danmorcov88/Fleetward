@@ -48,7 +48,7 @@ that sentence; anything that is not has been moved behind it.
 | Slice | Content | What it unblocks |
 |---|---|---|
 | B1 | Scheduler: cron over `schedules`, job claim by lease, heartbeat, recovery after a crash | Nothing runs automatically today. Without this there is nothing to install. |
-| B2 | SQL Server plugin, passing the conformance suite unmodified | The architecture's central claim, currently untested |
+| B2 | SQL Server plugin, passing the conformance suite unmodified | The architecture's central claim, until then untested |
 | B3 | Observed backups: `ListBackupHistory`, `backups.origin`, PostgreSQL and SQL Server | Reporting on backups taken by existing cron and scripts, changing nothing |
 | B4 | Estate Overview screen + an API client generated from the OpenAPI document | Fifty servers at a glance; the CLI is a poor surface for that |
 | B5 | Retention and expiry | Untracked artifact growth on a company bucket |
@@ -72,8 +72,8 @@ that sentence; anything that is not has been moved behind it.
 ### Why SQL Server is the second engine, and why it is second
 
 The claim that adding an engine never means modifying core appears in `CLAUDE.md`, in the README, in
-[ADR-0003](adr/0003-hashicorp-go-plugin.md), and in the design of the whole conformance suite. It
-has never been tested. Until a second engine passes the suite unmodified it is a design intention,
+[ADR-0003](adr/0003-hashicorp-go-plugin.md), and in the design of the whole conformance suite. Until
+B2 it had never been tested; until a second engine passed the suite unmodified it was a design intention,
 not a result.
 
 Doing it now is also the cheapest it will ever be. `buf breaking` is enforced, there is no tag, no
@@ -83,20 +83,21 @@ publishes the contract as a public interface, it costs a deprecation cycle.
 SQL Server specifically, rather than the easier MySQL, because it asks the contract a question
 PostgreSQL never did. `pg_dump` writes to stdout, which the plugin streams into presigned part
 grants. `BACKUP DATABASE … TO DISK` writes a file on the *database server's* filesystem, where the
-plugin has no access. Resolving that — a share both sides can see, `BACKUP TO URL` against an
-S3-compatible endpoint, or a co-located plugin — is a genuine architectural decision, and the second
-option puts [ADR-0007](adr/0007-s3-object-storage-for-artifacts.md)'s rule that plugins never
-receive storage credentials under real pressure. That decision is worth making while it is free.
+plugin has no access. That was a genuine architectural decision and it was made deliberately, as
+[ADR-0026](adr/0026-a-shared-directory-carries-a-file-based-artifact.md): a directory the engine and
+the plugin can both see, chosen over `BACKUP TO URL` — which would have put
+[ADR-0007](adr/0007-s3-object-storage-for-artifacts.md)'s rule that plugins never receive storage
+credentials under real pressure — and over a co-located plugin, which is the same design with both
+paths equal and is what a future agent will use.
 
-There is a second, smaller thing already visible: the `mcr.microsoft.com/mssql/server` image refuses
-to start unless `MSSQL_SA_PASSWORD` satisfies a complexity policy, while core generates the sandbox
-password itself ([ADR-0020](adr/0020-sandbox-credentials-from-template-placeholders.md)) and
-`SandboxTemplate` has no field in which a plugin could declare such a policy. That is exactly the
-kind of gap the capability matrix exists to surface.
+The smaller thing that was already visible turned out to be real too: the
+`mcr.microsoft.com/mssql/server` image refuses to start unless `MSSQL_SA_PASSWORD` satisfies a
+complexity policy, and core's generated password misses it about once in eight hundred. The
+capability matrix surfaced it, as intended, and it is now a declared `password_policy` rather than a
+special case in core.
 
-It costs two or three sessions rather than one, and probably an ADR in the middle. The scope fence
-in the brief is what keeps it bounded: one backup method, one transport chosen deliberately and
-written down, no `xp_cmdshell`.
+The bill was four additive contract fields and one session. What kept it bounded was the scope fence
+in the brief: one backup method, one transport, no `xp_cmdshell`.
 
 **B2 before B3** for a reason beyond ordering. SQL Server records every backup taken on an instance
 in `msdb.dbo.backupset` — by far the richest observable backup history of any engine, and what a DBA
