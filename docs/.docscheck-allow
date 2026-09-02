@@ -16,3 +16,15 @@
 
 deploy/helm        CLAUDE.md                  # named in §3 as explicitly planned and gated on the Kubernetes sandbox provider; the rule above it says a directory is added by the slice that fills it
 docs/slice-briefs  docs/dev/slices/README.md  # a git branch-name example (docs/<topic>), not a path — it collides with the docs/ directory by coincidence
+
+# Slice B2 writes these. The allowances are scoped to the brief and become stale the moment the
+# files exist, which is how they get removed: docscheck reports an allowance nothing uses any more.
+plugins/sqlserver/plugin.go     docs/dev/slices/B2-sqlserver-plugin.md  # the slice's Files table, listing what B2 will create
+plugins/sqlserver/conn.go       docs/dev/slices/B2-sqlserver-plugin.md  # the slice's Files table, listing what B2 will create
+plugins/sqlserver/health.go     docs/dev/slices/B2-sqlserver-plugin.md  # the slice's Files table, listing what B2 will create
+plugins/sqlserver/discover.go   docs/dev/slices/B2-sqlserver-plugin.md  # the slice's Files table, listing what B2 will create
+plugins/sqlserver/backup.go     docs/dev/slices/B2-sqlserver-plugin.md  # the slice's Files table, listing what B2 will create
+plugins/sqlserver/manifest.go   docs/dev/slices/B2-sqlserver-plugin.md  # the slice's Files table, listing what B2 will create
+plugins/sqlserver/restore.go    docs/dev/slices/B2-sqlserver-plugin.md  # the slice's Files table, listing what B2 will create
+plugins/sqlserver/verify.go     docs/dev/slices/B2-sqlserver-plugin.md  # the slice's Files table, listing what B2 will create
+cmd/plugins/sqlserver/main.go   docs/dev/slices/B2-sqlserver-plugin.md  # the slice's Files table, listing what B2 will create
