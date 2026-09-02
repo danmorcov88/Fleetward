@@ -53,9 +53,10 @@ See [ADR-0015](docs/adr/0015-observed-and-managed-backups.md).
 
 ### Engines
 
-**Target engines:** PostgreSQL, MySQL/MariaDB, MongoDB, Redis, SQL Server, Oracle, ClickHouse.
-All of these exist in the user's real estate, so the "nine-engine-ready" architecture is a
-requirement rather than a thought experiment. **Informix is out of scope.**
+**Target engines:** PostgreSQL, SQL Server, Oracle, MySQL/MariaDB, MongoDB, ClickHouse, Cassandra,
+Redis — eight, all of which exist in the user's real estate, so a multi-engine architecture is a
+requirement rather than a thought experiment. **Informix is out of scope.** The list, the order, and
+what each one does today live in [`docs/engines.md`](docs/engines.md); do not restate it here.
 
 Adding an engine must never require modifying core. This constraint is the single most important
 architectural test: if a change would require core to know an engine's name, the change is wrong.
@@ -77,7 +78,8 @@ last and gated on conditions recorded in
 ### Meta-constraints
 
 - **License:** Apache 2.0. Public GitHub monorepo.
-- **Dev machine:** macOS (Apple Silicon). Everything must run locally via Docker. CI runs on Linux.
+- **Dev machine:** Windows (amd64) as of 2026-09-02; macOS (Apple Silicon) before that. Everything
+  must run locally via Docker. CI runs on Linux, plus the unit suite on Windows.
 - **Language:** all code, comments, and docs in English.
 
 ---
@@ -93,7 +95,7 @@ supersedes the old.
 | Plugin architecture | `hashicorp/go-plugin` — each engine plugin is a separate binary, gRPC over local socket, launched and supervised by the plugin manager | [0003](docs/adr/0003-hashicorp-go-plugin.md) |
 | API definitions | Protobuf via `buf`; internal gRPC; external REST via `grpc-gateway` + generated OpenAPI v3 | [0004](docs/adr/0004-protobuf-buf-grpc-gateway.md) |
 | API serving | grpc-gateway handlers registered in-process; **no gRPC listener** until something needs one | [0019](docs/adr/0019-rest-api-without-a-grpc-listener.md) |
-| Metadata DB | PostgreSQL 16 (`pgx/v5`, `sqlc` for queries, `golang-migrate` for migrations) | [0005](docs/adr/0005-postgres-metadata-store.md) |
+| Metadata DB | PostgreSQL 16 (`pgx/v5` with hand-written SQL, `golang-migrate` for migrations) | [0005](docs/adr/0005-postgres-metadata-store.md) |
 | Metrics store | VictoriaMetrics single-node; ingest via Prometheus `remote_write`; query via its Prometheus-compatible HTTP API | [0006](docs/adr/0006-victoriametrics-for-metrics.md) |
 | Backup artifacts | S3-compatible object storage (MinIO in dev) via `minio-go`, behind our own `ObjectStore` interface | [0007](docs/adr/0007-s3-object-storage-for-artifacts.md) |
 | AuthN / AuthZ | OIDC (Dex in dev compose); RBAC roles `viewer < operator < dba < admin`; scope = environment → instance; `tenant_id` on every metadata table from day one | [0008](docs/adr/0008-oidc-rbac-multitenancy.md) |
@@ -153,7 +155,7 @@ fleetward/
 
   internal/
     config/                          # shared by the server and the CLI
-    controlplane/{api,inventory,scheduler,backup,alerting,rbac,auth}/
+    controlplane/{api,inventory,backup,sandbox}/
     plugin/{manager,sdk}/            # sdk = harness plugin authors implement against
     storage/{metadb,tsdb,objstore,secrets}/
       metadb/migrations/             # golang-migrate SQL, go:embed-ed into the binary
@@ -167,12 +169,17 @@ fleetward/
   deploy/
     docker/                          # Dockerfile, Dockerfile.web
     dev/dex/                         # development IdP configuration
-    helm/                            # placeholder until a later phase
-  docs/{adr/,dev/}
+  docs/
+    adr/                             # architecture decision records
+    dev/{slices,journal}/            # briefs for work ahead, journal for work delivered
 ```
 
 **Rules:**
 
+- **This tree is what exists, not what is planned.** A directory is added by the slice that fills
+  it: `controlplane/scheduler/` in B1, `controlplane/{auth,rbac}/` in B6, `deploy/helm/` once the
+  Kubernetes sandbox provider exists. Listing a directory before it has contents is how this tree
+  came to describe four packages that were never written.
 - `cmd/plugins/<engine>/` holds only a thin `main` that wires the implementation from
   `plugins/<engine>/`. Keep logic out of `main`.
 - The repository root holds only files their tooling requires to be there. Anything with a
@@ -244,98 +251,32 @@ This is the product. Correctness here outranks everything else.
 
 ## 6. Roadmap
 
-Work is cut into **slices**, not stages. Each slice is independently demoable and ends with
-`docs/dev/STATUS.md` updated. This matters more than speed: development is sporadic, so a session
-must be able to start without reconstructing context, and finish leaving the tree green.
+**The roadmap lives in [`docs/roadmap.md`](docs/roadmap.md), and only there.** It used to be
+duplicated here, in `docs/dev/STATUS.md`, in `README.md`, and in `docs/dev/slices/README.md`, and
+the four copies had already drifted apart from one another.
 
-Phases are ordered by when they start paying the user back, not by architectural tidiness.
+What stays here is the shape, because a session needs it before it needs the detail:
 
-### Phase A — Prove the loop (PostgreSQL)
+- Work is cut into **slices**, not stages. Each slice is independently demoable, carries its own
+  operational surface, and ends with `docs/dev/STATUS.md` rewritten and a journal entry added.
+- Slices are ordered by when they start paying back, not by architectural tidiness.
+- **There is no "production readiness" phase.** Production readiness is a property each slice
+  either has or does not ([ADR-0024](docs/adr/0024-production-readiness-is-a-slice-property.md)).
+  A capability ships with its enforcement and its limits, in the same slice.
+- **Documentation describes what is; briefs describe what will be.** The two never mix in one file.
+  Forward-looking behaviour in a reference document is marked `> Planned.` or it is not written.
 
-The thinnest path through the entire product, using the simplest possible backup method.
+Current position: [`docs/dev/STATUS.md`](docs/dev/STATUS.md).
 
-| Slice | Content |
-|---|---|
-| A1 | PG plugin: real `HealthCheck` + `Discover`, testcontainers integration tests |
-| A2 | `inventory` service, credential storage, CLI `instance add\|list\|health` |
-| A3 | `SandboxProvider` (Docker) with teardown guaranteed on every path including panic |
-| A4 | Backup via `pg_dump` + `SourceManifest` (per-table row counts) + presigned upload |
-| A5 | `Restore` into sandbox + `VerifyRestore` (connectivity, record counts) |
-| A6 | Deliberately corrupted artifact → `FAILED`; conformance suite grows to cover the path |
+---
 
-`pg_dump` before `pg_basebackup` deliberately: a logical dump yields exact row counts trivially and
-restores into any empty database, while a physical backup restores a whole cluster and needs a
-version-exact image plus recovery configuration. Both will exist — the contract already supports
-several methods per engine. Starting with the physical one means debugging two hard things at once.
+## 7. Acceptance criteria for the first release
 
-*Exit:* acceptance criterion §7.3, proven for one engine.
+The definition of done for `v0.1.0`, unchanged since the original brief — where it was called
+"Phase 1", a name the roadmap no longer uses. The numbering is load-bearing: ADR-0008 and the
+journal cite these as §7.3 and §7.5, so criteria are never renumbered.
 
-### Phase B — The compliance console
-
-This is where Fleetward starts solving the user's actual problem.
-
-| Slice | Content |
-|---|---|
-| B1 | ADR-0015; `ListBackupHistory` RPC; `backups.origin` (`managed` / `observed`) |
-| B2 | PG implementation: read existing backup evidence (`pg_stat_archiver`, configured directory) |
-| B3 | Expectation model: declared schedule vs observed runs → adherence |
-| B4 | Scheduler: lease, heartbeat, and what happens to a job when the control plane restarts |
-| B5 | **Estate Overview** — the first real screen; virtualized grid, two-part backup status |
-| B6 | Alerts: backup missing, backup failed, verification failed. Webhook + SMTP notifiers |
-
-*Exit:* one screen answers "which of my fifty servers need attention right now".
-
-### Phase C — Access compliance
-
-The contract already carries most of what this needs: `Principal` has `password_expires_at`,
-`last_login_at`, `is_superuser`, `can_login`, and `privileges`. Only `created_at` is missing.
-
-| Slice | Content |
-|---|---|
-| C1 | `ListPrincipals` for PostgreSQL; add `created_at` to `Principal` |
-| C2 | ADR-0017; policy engine: no expiry, expired, unexpected superuser, dormant account |
-| C3 | Generated remediation SQL (read-only — a human runs it) + UI screen |
-
-### Phase D — Structural drift
-
-| Slice | Content |
-|---|---|
-| D1 | ADR-0016; `GetSchemaSnapshot` RPC returning a normalized structural fingerprint |
-| D2 | Snapshot storage, diffing, timeline |
-| D3 | Alert on unexplained change + UI screen |
-
-### Phase E — The remaining engines
-
-Each runs the same conformance suite, unmodified, in the order the user's estate needs them:
-MySQL/MariaDB → MongoDB → Redis → SQL Server → Oracle → ClickHouse.
-
-This is where the architecture is genuinely tested. If an engine requires changing the suite, that
-is a contract leak, and the fix belongs in the contract rather than in the test.
-
-### Phase F — Production readiness
-
-RBAC/OIDC enforced on every route, full audit log, metric collection, backup retention and expiry,
-signed release artifacts with SBOM.
-
-### Phase G — Query editor
-
-Last, deliberately. ADR-0018 records what must be true before it ships: server-side RBAC, an audit
-record per execution, a read/write distinction, and typed confirmation against production. A tool
-holding credentials for fifty production servers *and* executing arbitrary SQL has a materially
-larger blast radius than a monitoring tool.
-
-### Demoted from the original plan
-
-**Performance metric collection.** The original brief placed it at Stage 2. The user never named
-monitoring as a pain — that need is already met by existing tooling. VictoriaMetrics stays wired
-and health-checked, but the collection loop moves to Phase F. Simple up/down health stays early,
-because Estate Overview depends on it.
-
-**Current position: see `docs/dev/STATUS.md`.**
-
-## 7. Phase 1 acceptance criteria
-
-All must hold before Phase 1 is done:
+All must hold:
 
 1. `docker compose up` → UI at `localhost:3000`, login via Dex, all services healthy.
 2. A new user adds one instance of **each** of the 4 engines and sees all four healthy on Estate
@@ -372,8 +313,8 @@ All must hold before Phase 1 is done:
 
 ## 9. "Grandios, dar disciplinat"
 
-The ambition lives in the **contract and architecture**: a 9-engine-ready plugin system,
-verification-first backups, multi-tenant RBAC from day one.
+The ambition lives in the **contract and architecture**: a plugin system that carries no engine
+knowledge in core, verification-first backups, multi-tenant RBAC designed in from day one.
 
 The discipline lives in the **scope** (§1 non-goals) and in every stage exiting demoable.
 
