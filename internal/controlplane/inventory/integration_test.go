@@ -937,6 +937,10 @@ func (s *stubEngine) ListPrincipals(context.Context, *fwv1.ListPrincipalsRequest
 	return nil, errNotInThisSlice
 }
 
+func (s *stubEngine) ListBackupHistory(context.Context, *fwv1.ListBackupHistoryRequest, ...grpc.CallOption) (*fwv1.ListBackupHistoryResponse, error) {
+	return nil, errNotInThisSlice
+}
+
 var errNotInThisSlice = errors.New("not implemented in slice A2")
 
 var _ fwv1.EnginePluginClient = (*stubEngine)(nil)
