@@ -614,9 +614,11 @@ func (s *Service) createRows(ctx context.Context, instanceID, methodID string, i
 
 	jobID = in.JobID
 	if jobID == "" {
+		// attempts starts at 1 because this job is created already running: nothing will claim it,
+		// so the insert is the only place its one start can be counted.
 		err = tx.QueryRow(ctx, `
-			INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at)
-			VALUES ($1, $2, 'backup', 'running', now())
+			INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at, attempts)
+			VALUES ($1, $2, 'backup', 'running', now(), 1)
 			RETURNING id`,
 			s.tenantID, instanceID).Scan(&jobID)
 		if metadb.IsUniqueViolation(err) {
@@ -719,9 +721,12 @@ func (s *Service) recordFailure(ctx context.Context, req runRequest, cause error
 		return fmt.Errorf("backup: record failure: %w", err)
 	}
 
+	// attempts is not touched here. It counts starts, and this job was already counted — by the
+	// scheduler's claim, or by the insert below on the manual path. Incrementing on the way out as
+	// well made a scheduled run report two attempts and look like a retry that never happened.
 	if _, err := tx.Exec(ctx, `
 		UPDATE jobs
-		SET state = 'failed', error_message = $1, finished_at = now(), attempts = attempts + 1, updated_at = now()
+		SET state = 'failed', error_message = $1, finished_at = now(), updated_at = now()
 		WHERE id = $2 AND tenant_id = $3`, message, req.jobID, s.tenantID); err != nil {
 		return fmt.Errorf("backup: fail job: %w", err)
 	}

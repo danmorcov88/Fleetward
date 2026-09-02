@@ -236,6 +236,16 @@ func (h *harness) jobRow(t *testing.T, jobID string) (state, owner, errorMessage
 	return state, owner, errorMessage
 }
 
+func (h *harness) attempts(t *testing.T, jobID string) int32 {
+	t.Helper()
+	var n int32
+	if err := h.pool.QueryRow(context.Background(),
+		`SELECT attempts FROM jobs WHERE id = $1`, jobID).Scan(&n); err != nil {
+		t.Fatalf("read attempts for job %s: %v", jobID, err)
+	}
+	return n
+}
+
 func (h *harness) scheduler(runner Runner, cfg config.SchedulerConfig) *Scheduler {
 	return New(h.pool, runner, cfg, h.log)
 }
@@ -272,6 +282,13 @@ func TestClaimTakesAJobExactlyOnce(t *testing.T) {
 	state, owner, _ := h.jobRow(t, jobID)
 	if state != "running" || owner != ownerA {
 		t.Fatalf("job is %s owned by %q; want running owned by %q", state, owner, ownerA)
+	}
+
+	// attempts counts starts, and the claim is the start. It is what `job list` shows, so a job run
+	// once that reports two looks to an operator like a retry that never happened — which is
+	// exactly what it did report until the closing UPDATEs stopped incrementing it too.
+	if n := h.attempts(t, jobID); n != 1 {
+		t.Fatalf("attempts = %d after one claim; want 1", n)
 	}
 }
 
@@ -423,6 +440,10 @@ func TestReapClosesAbandonedWork(t *testing.T) {
 	}
 	if !strings.Contains(backupError, "stopped reporting") {
 		t.Fatalf("the orphaned backup says %q", backupError)
+	}
+
+	if n := h.attempts(t, jobID); n != 1 {
+		t.Fatalf("attempts = %d on a job that was started once and then reaped; want 1", n)
 	}
 
 	// The decision that separates this design from "make it claimable again": nothing re-runs it.

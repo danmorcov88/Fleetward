@@ -61,6 +61,79 @@ touched: `plugins/postgres`'s `TestDiscoverOnUnreachableInstanceFails` dials 192
 `CONNECTION_FAILED`, but this network answers with something pgx reads as
 `AUTHENTICATION_FAILED`. It is an environment artefact of the host, not a regression.
 
+And the walk the brief asked for, against `docker compose up --build` on the same machine: an
+instance pointed at the stack's own PostgreSQL 16.14, then
+
+```
+fleetward-cli schedule create --instance prod-1 --cron "* * * * *" \
+    --timezone Europe/Bucharest --verify always
+  → next run 2026-09-02 10:31:00
+```
+
+10:31 UTC is 13:31 in Bucharest, which is the arithmetic the timezone column exists to do. Nobody
+typed anything after that:
+
+```
+ID       KIND    STATE      TRIGGER   ATTEMPTS  STARTED (UTC)        FINISHED (UTC)
+82bdf45  verify  succeeded  schedule  1         2026-09-02 10:37:13  2026-09-02 10:37:17
+d3716b7  backup  succeeded  schedule  1         2026-09-02 10:37:03  2026-09-02 10:37:03
+8b162e7  backup  succeeded  schedule  1         2026-09-02 10:36:02  2026-09-02 10:36:02
+```
+
+Each backup was a 68,770-byte `pg_dump` covering 19 objects and 13 records, taken in about 190 ms,
+and each verification restored it into a `postgres:16` sandbox and destroyed the container.
+`/readyz` reports a `scheduler` component alongside the rest. This is the only place on this machine
+where the scheduler drives a *real* backup, which is why it was worth doing: the integration tests
+use a stub runner, and the conformance suite's end-to-end cases skip here for want of `pg_dump`.
+
+### And then the control plane was killed mid-verification
+
+The half of this slice that has no screen, walked for real rather than only in a test.
+
+At **10:38:16** the container was `SIGKILL`ed while a `verify` job held a lease due to expire at
+10:40:13. It came back at 10:38:34, and three things happened, in this order:
+
+1. **The startup sweep removed the sandbox the dead process had left**, one `postgres:16` container
+   created at 10:38:13 — `removed verification sandboxes left behind by a previous process count=1`.
+2. **Backups kept running on schedule**, at 10:39:04 and 10:40:04. The stuck job did not block the
+   instance, because `idx_jobs_one_active_per_instance_kind` is per kind and what was stuck was a
+   verification.
+3. At **10:40:14**, one lease TTL after the dead process's last heartbeat, the reaper closed the
+   books:
+
+```
+WARN  closed jobs whose runner stopped reporting  count=1
+
+1afd5ef0  verify  failed  schedule  1  2026-09-02 10:38:13  2026-09-02 10:40:14
+          the runner holding this job's lease stopped reporting; the job was closed rather
+          than re-run, and the next scheduled run will proceed normally
+```
+
+The `verifications` row it orphaned became **`inconclusive`**, not `failed`. That is
+[ADR-0022](../../adr/0022-failed-and-inconclusive-are-different-answers.md) holding under a real
+crash rather than under a test: a control plane that was killed is evidence about the control plane,
+and `FAILED` is the one alert this product cannot afford to cry wolf on.
+
+`attempts` reads `1`. The job was started once, and the row says so.
+
+## Two things the compose walk found that the tests did not
+
+Both were invisible to a test suite and obvious within a minute of watching real output.
+
+**Every scheduler line printed `job_id` twice.** The identifier was attached to the context — which
+`internal/telemetry` promotes onto every record — *and* named again on the logger. The brief said to
+use one mechanism and the implementation used both. Now only the context carries it, which also
+means the backup service's own lines inherit it without knowing the scheduler exists.
+
+**`attempts` counted every run twice.** `jobs.attempts` means "how many times has this been
+started", and the closing `UPDATE`s in `recordFailure` and `recordVerification` incremented it on
+the way *out*. That was correct when a job could only be created already-running, because then the
+close was the only counter. With a scheduler the claim counts the start too, so a verification that
+ran once reported `2` — which on `job list` reads as a retry that never happened, in a column an
+operator would act on. The count now belongs to whichever event actually starts the job: the claim
+for scheduled work, the insert for work a human triggered directly. Two integration assertions pin
+it.
+
 ## Decisions worth carrying forward
 
 **An expired lease fails its job; it is never claimed twice.** This reverses a clause of

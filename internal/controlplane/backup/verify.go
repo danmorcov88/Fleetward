@@ -605,8 +605,8 @@ func (s *Service) createVerificationRows(ctx context.Context, target verificatio
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	err = tx.QueryRow(ctx, `
-		INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at)
-		VALUES ($1, $2, 'verify', 'running', now())
+		INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at, attempts)
+		VALUES ($1, $2, 'verify', 'running', now(), 1)
 		RETURNING id`,
 		s.tenantID, target.instanceID).Scan(&jobID)
 	if metadb.IsUniqueViolation(err) {
@@ -686,9 +686,11 @@ func (s *Service) recordVerification(ctx context.Context, req verifyRequest, res
 	if result.status == fwv1.VerificationStatus_VERIFICATION_STATUS_INCONCLUSIVE {
 		jobState = "failed"
 	}
+	// attempts is left alone for the same reason it is in recordFailure: it counts starts, and this
+	// job was counted when it was claimed or when it was inserted already running.
 	if _, err := tx.Exec(ctx, `
 		UPDATE jobs
-		SET state = $1, error_message = $2, finished_at = now(), attempts = attempts + 1, updated_at = now()
+		SET state = $1, error_message = $2, finished_at = now(), updated_at = now()
 		WHERE id = $3 AND tenant_id = $4`,
 		jobState, result.errMsg, req.jobID, s.tenantID); err != nil {
 		return fmt.Errorf("verify: finish job: %w", err)
