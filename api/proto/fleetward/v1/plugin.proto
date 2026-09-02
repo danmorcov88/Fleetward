@@ -151,6 +151,11 @@ message BackupMethod {
   bool requires_downtime = 10;
   repeated string required_tools = 11;
   repeated MethodOption options = 12;
+  // This method's tooling writes the artifact to the database server's own filesystem rather than
+  // to a stream, so it needs a directory the engine and the plugin can both reach (ADR-0026). Core
+  // refuses to schedule this method against an instance that has none, naming what is missing,
+  // rather than discovering it at 02:00.
+  bool requires_shared_directory = 13;
 }
 
 enum BackupKind {
@@ -204,6 +209,32 @@ message SandboxTemplate {
   repeated string command = 8;
   // Minimum tmpfs/volume size hint in bytes for the sandbox data directory.
   int64 min_disk_bytes = 9;
+  // Path inside the container at which core mounts a directory the plugin can also read and write,
+  // for engines that hand their artifact over as a file (ADR-0026). Core reports both names for it
+  // in the sandbox's Credentials.shared_directory. Empty for engines that stream.
+  string shared_directory = 10;
+  // The administrative account this image always creates and cannot be told to rename, e.g. "sa".
+  // Core renders {{ .Username }} to it instead of generating a name, and still generates the
+  // password. Empty keeps the generated username, which is the behaviour ADR-0020 describes.
+  string fixed_username = 11;
+  // Complexity the image enforces on the password it is given. An image that refuses to start on a
+  // weak password fails in the worst possible way — rarely, and at provisioning time — so the
+  // policy is declared rather than discovered.
+  PasswordPolicy password_policy = 12;
+}
+
+// PasswordPolicy is what an engine will accept as a generated sandbox password.
+//
+// Core generates the sandbox identity and the plugin's template places it (ADR-0020). Some images
+// also validate it: mcr.microsoft.com/mssql/server exits rather than start when the password it is
+// handed carries fewer than three of the four character classes. Declaring the rule lets core
+// satisfy it by construction; leaving it empty keeps core's default generator unchanged.
+message PasswordPolicy {
+  int32 min_length = 1;
+  // Minimum number of distinct classes — uppercase, lowercase, digit, symbol — that must appear.
+  int32 min_character_classes = 2;
+  // Symbols this engine accepts, if its own set is narrower than core's. Empty keeps core's.
+  string symbol_alphabet = 3;
 }
 
 message MetricDescriptor {
@@ -477,6 +508,11 @@ message ManifestEntry {
   int64 size_bytes = 4;
   // Optional per-object content checksum, when the engine can produce one cheaply.
   string checksum = 5;
+  // The count could not be pinned to the artifact's own consistency point, because the object was
+  // written to while the backup ran. A later mismatch is then drift rather than data loss, and is
+  // reported as INCONCLUSIVE rather than FAILED (ADR-0022). The default — false — means exact, so
+  // a manifest from a plugin that counts inside the snapshot it dumps keeps its meaning.
+  bool count_may_have_drifted = 6;
 }
 
 // -----------------------------------------------------------------------------------------------

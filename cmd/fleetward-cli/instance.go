@@ -54,6 +54,8 @@ func newInstanceAddCommand(serverURL *string, timeout *time.Duration) *cobra.Com
 		tlsEnabled      bool
 		tlsSkipVerify   bool
 		labels          []string
+		shareEnginePath string
+		shareLocalPath  string
 	)
 
 	cmd := &cobra.Command{
@@ -94,6 +96,21 @@ func newInstanceAddCommand(serverURL *string, timeout *time.Duration) *cobra.Com
 				connection["tls"] = map[string]any{
 					"enabled":              true,
 					"insecure_skip_verify": tlsSkipVerify,
+				}
+			}
+			// Only an engine whose backup tooling writes a file rather than a stream needs one, and
+			// its plugin declares that on the method (ADR-0026). Both halves or neither: half of it
+			// names a directory only one side can reach, which is the failure it exists to prevent.
+			if (shareEnginePath == "") != (shareLocalPath == "") {
+				return errors.New(
+					"--backup-dir and --backup-dir-local must be given together: the first is where " +
+						"the database server writes its backup files, the second is where Fleetward " +
+						"reaches that same directory")
+			}
+			if shareEnginePath != "" {
+				connection["shared_directory"] = map[string]any{
+					"engine_path": shareEnginePath,
+					"local_path":  shareLocalPath,
 				}
 			}
 
@@ -137,6 +154,10 @@ func newInstanceAddCommand(serverURL *string, timeout *time.Duration) *cobra.Com
 	cmd.Flags().BoolVar(&tlsSkipVerify, "tls-insecure-skip-verify", false,
 		"skip certificate verification; development only")
 	cmd.Flags().StringArrayVar(&labels, "label", nil, "label as key=value; repeatable")
+	cmd.Flags().StringVar(&shareEnginePath, "backup-dir", "",
+		"directory the database server writes its backup files to; required by engines that back up to a file")
+	cmd.Flags().StringVar(&shareLocalPath, "backup-dir-local", "",
+		"the same directory as Fleetward sees it, when it is mounted under a different path")
 
 	for _, required := range []string{"environment", "engine", "host", "port", "username"} {
 		_ = cmd.MarkFlagRequired(required)

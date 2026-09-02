@@ -182,6 +182,35 @@ To support sandbox verification, declare a `SandboxTemplate`: image repository, 
 environment, port, readiness command. Core provisions containers from what you declare, which is
 precisely why it does not need a lookup table of engines.
 
+Four fields exist for images that will not simply take what core generates. Each of them was added
+by an engine that needed it, and each is a declaration rather than an exception:
+
+| Field | Declare it when |
+|---|---|
+| `fixed_username` | The image creates one administrative account and cannot be told to rename it. Core uses that name and still generates the password. |
+| `password_policy` | The image validates the password it is handed. Core then satisfies the policy by construction, rather than generating one the image will reject at startup — which is a failure that arrives rarely and at the worst moment. |
+| `shared_directory` | Your engine reads and writes backup files on its own filesystem. Core mounts a directory there that your plugin can also reach, and reports both of its names in the sandbox's credentials. |
+| `min_disk_bytes` | The image needs more room than a default container gets. |
+
+### If your engine hands over a file rather than a stream
+
+`BACKUP DATABASE … TO DISK`, RMAN, and `nodetool snapshot` all write a file on the database server
+rather than to stdout, where your plugin has no access to it. The contract's answer is a directory
+both of them can see (ADR-0026):
+
+- declare `requires_shared_directory` on the method, so core refuses to schedule against an instance
+  that has none and says what is missing;
+- read `Credentials.shared_directory`, which carries `engine_path` — the path to put in the
+  statements you send — and `local_path`, the same directory as your own process sees it;
+- **create the artifact file yourself before asking the engine to write it.** Several engines create
+  their backup file owned by their own user and unreadable by anyone else, and ignore the umask.
+  Opening an existing file preserves that file's owner and mode, so a file you created stays yours;
+- delete it on every path out, including failure. An artifact left on a share is a full copy of a
+  database that nothing will come back for.
+
+The restore path is the same protocol in reverse: write the artifact into `local_path`, hash it in
+full before you touch the target, then restore from `engine_path`.
+
 ---
 
 ## 8. Errors

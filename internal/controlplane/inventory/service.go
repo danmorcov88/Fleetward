@@ -731,13 +731,14 @@ func (s *Service) resolveTarget(ctx context.Context, req *fwv1.TestConnectionReq
 		engineType: engineType,
 		ref:        &fwv1.ConnectionRef{TenantId: s.tenantID, InstanceId: instanceID},
 		credentials: &fwv1.Credentials{
-			Host:     host,
-			Port:     port,
-			Username: spec.GetUsername(),
-			Password: spec.GetPassword(),
-			Database: spec.GetDatabase(),
-			Tls:      spec.GetTls(),
-			Options:  spec.GetOptions(),
+			Host:            host,
+			Port:            port,
+			Username:        spec.GetUsername(),
+			Password:        spec.GetPassword(),
+			Database:        spec.GetDatabase(),
+			Tls:             spec.GetTls(),
+			Options:         spec.GetOptions(),
+			SharedDirectory: spec.GetSharedDirectory(),
 		},
 	}, nil
 }
@@ -799,13 +800,14 @@ func (s *Service) resolveStored(ctx context.Context, instanceID string) (*target
 			InstanceId:   id,
 		},
 		credentials: &fwv1.Credentials{
-			Host:     host,
-			Port:     port,
-			Username: username,
-			Password: payload.Password,
-			Database: database,
-			Tls:      opts.tlsSettings(tlsEnabled, payload),
-			Options:  opts.Engine,
+			Host:            host,
+			Port:            port,
+			Username:        username,
+			Password:        payload.Password,
+			Database:        database,
+			Tls:             opts.tlsSettings(tlsEnabled, payload),
+			Options:         opts.Engine,
+			SharedDirectory: opts.sharedDirectory(),
 		},
 	}, nil
 }

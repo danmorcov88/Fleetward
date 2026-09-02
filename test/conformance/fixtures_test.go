@@ -36,4 +36,5 @@ type Fixture interface {
 // what its binary is named after.
 var fixtures = map[string]Fixture{
 	"postgresql": postgresFixture{},
+	"sqlserver":  sqlserverFixture{},
 }

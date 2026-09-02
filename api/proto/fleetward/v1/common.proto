@@ -26,6 +26,24 @@ message Credentials {
   TLSSettings tls = 6;
   // Engine-specific connection options (for example "sslmode", "authSource", "replicaSet").
   map<string, string> options = 7;
+  // Directory the engine and the plugin can both reach, for engines whose backup tooling writes a
+  // file on the database server rather than to a stream (ADR-0026). Empty for engines that stream.
+  SharedDirectory shared_directory = 8;
+}
+
+// SharedDirectory is one directory under the two names its two users know it by.
+//
+// An engine that answers BACKUP with a file rather than a stream writes it somewhere the plugin has
+// no access to. The way out is a directory both sides can see — a mount, a share, or simply the
+// local disk when the plugin runs on the database host — which the two of them almost never call by
+// the same name. The plugin puts engine_path into the statements it sends and opens local_path
+// itself; the bytes are the same bytes.
+message SharedDirectory {
+  // The path as the engine sees it. Used verbatim in statements sent to the engine, so it must be
+  // spelled the way that engine's platform spells a path.
+  string engine_path = 1;
+  // The same directory as the process running the plugin sees it.
+  string local_path = 2;
 }
 
 message TLSSettings {

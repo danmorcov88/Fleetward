@@ -23,6 +23,7 @@ RUN LDFLAGS="-s -w \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/fleetward ./cmd/fleetward && \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/fleetward-cli ./cmd/fleetward-cli && \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/plugins/fleetward-plugin-postgresql ./cmd/plugins/postgres && \
+    go build -trimpath -ldflags "${LDFLAGS}" -o /out/plugins/fleetward-plugin-sqlserver  ./cmd/plugins/sqlserver && \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/plugins/fleetward-plugin-mysql      ./cmd/plugins/mysql && \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/plugins/fleetward-plugin-mongodb    ./cmd/plugins/mongodb && \
     go build -trimpath -ldflags "${LDFLAGS}" -o /out/plugins/fleetward-plugin-redis      ./cmd/plugins/redis
@@ -48,6 +49,16 @@ RUN groupadd --system --gid 10001 fleetward \
     && useradd --system --uid 10001 --gid fleetward --home-dir /app --shell /usr/sbin/nologin fleetward
 
 WORKDIR /app
+
+# The directory an engine that hands its artifact over as a file shares with this container
+# (ADR-0026). It exists in the image so that an empty volume mounted here inherits its ownership:
+# Docker gives a fresh named volume the mountpoint's owner and mode, and the default — root, 0755 —
+# would leave the control plane unable to create the very file it has to upload.
+#
+# 0755 is enough for both sides. The plugin owns the directory and creates the artifact in it; the
+# engine only ever needs to traverse the directory and open a file the plugin already created, which
+# is what keeps that file readable by the process that has to upload it.
+RUN mkdir -p /app/share && chown fleetward:fleetward /app/share && chmod 0755 /app/share
 
 COPY --from=build /out/fleetward     /usr/local/bin/fleetward
 COPY --from=build /out/fleetward-cli /usr/local/bin/fleetward-cli

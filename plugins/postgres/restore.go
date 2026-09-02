@@ -2,12 +2,9 @@ package postgres
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,11 +31,6 @@ const (
 	// RestoreRequest.options.
 	metadataFormat   = "format"
 	metadataDatabase = "database"
-
-	// downloadTimeout bounds fetching one artifact. Generous, because a large artifact crosses a
-	// link the plugin does not control; bounded, because a stalled transfer must not hold a
-	// sandbox open indefinitely.
-	downloadTimeout = 30 * time.Minute
 
 	// defaultRestoreTimeout bounds a run when the request carries no timeout of its own.
 	defaultRestoreTimeout = 2 * time.Hour
@@ -137,7 +129,7 @@ func runRestore(ctx context.Context, req *fwv1.RestoreRequest, emit sdk.Emitter[
 	if err != nil {
 		return nil, err
 	}
-	artifact, err := selectArtifact(req.GetArtifacts())
+	artifact, err := sdk.SelectSingleArtifact(req.GetArtifacts(), MethodPgDump)
 	if err != nil {
 		return nil, err
 	}
@@ -280,51 +272,12 @@ func probeRestoreTarget(ctx context.Context, creds *fwv1.Credentials) error {
 	return conn.Close(ctx)
 }
 
-// selectArtifact picks the single artifact this method restores from.
-//
-// A logical dump is one self-contained file: there is no incremental chain to apply and no log to
-// replay. Accepting several and quietly using the first would restore less than was asked for,
-// which is the failure this product exists to detect rather than commit.
-func selectArtifact(artifacts []*fwv1.ArtifactSource) (*fwv1.ArtifactSource, error) {
-	var bases []*fwv1.ArtifactSource
-	for _, a := range artifacts {
-		switch a.GetRole() {
-		case fwv1.ArtifactRole_ARTIFACT_ROLE_UNSPECIFIED, fwv1.ArtifactRole_ARTIFACT_ROLE_BASE:
-			bases = append(bases, a)
-		default:
-			return nil, sdk.InvalidArgument(
-				"the %s method restores from a single base artifact; %s was supplied",
-				MethodPgDump, a.GetRole())
-		}
-	}
-
-	switch len(bases) {
-	case 0:
-		return nil, sdk.InvalidArgument("no artifact to restore from")
-	case 1:
-		if bases[0].GetDownloadUrl().GetUrl() == "" {
-			return nil, sdk.InvalidArgument("the artifact carries no download grant")
-		}
-		return bases[0], nil
-	default:
-		return nil, sdk.InvalidArgument(
-			"the %s method restores from a single artifact; %d were supplied", MethodPgDump, len(bases))
-	}
-}
-
 // downloadArtifact fetches the artifact to a private temporary file and confirms its checksum.
 //
 // The returned cleanup removes the file and is safe to call even when the download failed, which is
 // why it is returned alongside the error rather than only on success: an artifact is a full copy of
 // a database, and one left in a temporary directory outlives the verification that needed it.
 func downloadArtifact(ctx context.Context, artifact *fwv1.ArtifactSource, onProgress func(int64) error) (path string, size int64, cleanup func(), err error) {
-	grant := artifact.GetDownloadUrl()
-
-	method := grant.GetMethod()
-	if method == "" {
-		method = http.MethodGet
-	}
-
 	dir, err := os.MkdirTemp("", "fleetward-restore-")
 	if err != nil {
 		return "", 0, nil, sdk.Internal("create a temporary directory for the artifact").WithCause(err)
@@ -345,109 +298,16 @@ func downloadArtifact(ctx context.Context, artifact *fwv1.ArtifactSource, onProg
 		}
 	}()
 
-	req, err := http.NewRequestWithContext(ctx, method, grant.GetUrl(), nil)
+	size, err = sdk.FetchArtifact(ctx, artifact, file, onProgress)
 	if err != nil {
-		// The URL is a bearer credential for the artifact; only its redacted form may be named.
-		return "", 0, cleanup, sdk.ObjectStoreFailed("build the download request for %s",
-			sdk.SafeURL(grant.GetUrl())).WithCause(err)
-	}
-	for key, value := range grant.GetHeaders() {
-		req.Header.Set(key, value)
-	}
-
-	client := &http.Client{Timeout: downloadTimeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", 0, cleanup, sdk.ObjectStoreFailed("download the artifact from %s",
-			sdk.SafeURL(grant.GetUrl())).WithCause(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<10))
-		return "", 0, cleanup, sdk.ObjectStoreFailed("object store rejected the download with %s: %s",
-			resp.Status, trimStoreError(string(body)))
-	}
-
-	hasher := sha256.New()
-	size, err = copyWithProgress(file, io.TeeReader(resp.Body, hasher), onProgress)
-	if err != nil {
-		return "", 0, cleanup, sdk.ObjectStoreFailed("read the artifact").WithCause(err)
+		return "", 0, cleanup, err
 	}
 	if err := file.Close(); err != nil {
 		return "", 0, cleanup, sdk.Internal("write the artifact to disk").WithCause(err)
 	}
 	closed = true
 
-	if err := verifyChecksum(artifact.GetChecksum(), hasher.Sum(nil), size); err != nil {
-		return "", 0, cleanup, err
-	}
-	if declared := artifact.GetSizeBytes(); declared > 0 && declared != size {
-		return "", 0, cleanup, sdk.ArtifactCorrupt(
-			"the artifact is %d bytes but %d were recorded when it was written", size, declared)
-	}
-
 	return path, size, cleanup, nil
-}
-
-// copyWithProgress streams src into dst, reporting the running total at part-sized intervals.
-func copyWithProgress(dst io.Writer, src io.Reader, onProgress func(int64) error) (int64, error) {
-	const (
-		bufferSize  = 1 << 20
-		reportEvery = 64 << 20
-	)
-
-	buf := make([]byte, bufferSize)
-	var total, reported int64
-
-	for {
-		n, readErr := src.Read(buf)
-		if n > 0 {
-			if _, writeErr := dst.Write(buf[:n]); writeErr != nil {
-				return total, writeErr
-			}
-			total += int64(n)
-			if onProgress != nil && total-reported >= reportEvery {
-				reported = total
-				if err := onProgress(total); err != nil {
-					return total, err
-				}
-			}
-		}
-		if errors.Is(readErr, io.EOF) {
-			return total, nil
-		}
-		if readErr != nil {
-			return total, readErr
-		}
-	}
-}
-
-// verifyChecksum compares what arrived against what was recorded when the artifact was written.
-//
-// This is the check that separates "the backup does not restore" from "the backup is not the bytes
-// we stored". A missing checksum is refused rather than skipped: verification whose evidence chain
-// has a hole in it reports a confidence it has not earned.
-func verifyChecksum(expected *fwv1.Checksum, actual []byte, size int64) error {
-	if expected == nil || expected.GetValue() == "" {
-		return sdk.InvalidArgument(
-			"the artifact carries no checksum, so it cannot be confirmed to be the one that was written")
-	}
-	switch expected.GetAlgorithm() {
-	case fwv1.ChecksumAlgorithm_CHECKSUM_ALGORITHM_UNSPECIFIED,
-		fwv1.ChecksumAlgorithm_CHECKSUM_ALGORITHM_SHA256:
-	default:
-		return sdk.InvalidArgument("checksum algorithm %s is not implemented; this plugin computes SHA-256",
-			expected.GetAlgorithm())
-	}
-
-	got := hex.EncodeToString(actual)
-	if !strings.EqualFold(got, strings.TrimSpace(expected.GetValue())) {
-		return sdk.ArtifactCorrupt(
-			"the artifact does not match its checksum: %d bytes hash to %s, but %s was recorded when "+
-				"it was written", size, got, expected.GetValue())
-	}
-	return nil
 }
 
 // restoreOptions is everything needed to build and run the restore child process.

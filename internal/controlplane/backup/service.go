@@ -188,7 +188,31 @@ func (s *Service) prepare(ctx context.Context, in RunBackupInput) (prepared, err
 	if err := validateOptions(method, in.Options); err != nil {
 		return prepared{}, err
 	}
+	if err := requireSharedDirectory(method, conn); err != nil {
+		return prepared{}, err
+	}
 	return prepared{client: client, conn: conn, method: method}, nil
+}
+
+// requireSharedDirectory refuses a method that hands its artifact over as a file when the instance
+// has nowhere to hand it over.
+//
+// The check is here rather than in the plugin because core is what decides to start a run at all,
+// and the answer must arrive when a human is asking — creating a schedule, triggering a backup —
+// rather than at 02:00 from a plugin nobody is watching. Core learns nothing about the engine: the
+// requirement is a flag on the method the plugin published (ADR-0026).
+func requireSharedDirectory(method *fwv1.BackupMethod, conn *inventory.Connection) error {
+	if !method.GetRequiresSharedDirectory() {
+		return nil
+	}
+	share := conn.Credentials.GetSharedDirectory()
+	if share.GetEnginePath() != "" && share.GetLocalPath() != "" {
+		return nil
+	}
+	return fmt.Errorf("%w: the %q backup method writes its artifact to the database server's own "+
+		"filesystem, so this instance needs a shared directory: set the connection's engine_path to "+
+		"the directory the server writes to, and local_path to where this control plane reaches the "+
+		"same directory", ErrInvalidArgument, method.GetId())
 }
 
 // RunBackup starts a backup and returns as soon as it has been recorded.

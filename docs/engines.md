@@ -15,7 +15,7 @@ chosen for a feature list.
 | Engine | Backup method | Status |
 |---|---|---|
 | **PostgreSQL** | `pg_dump` today; `pg_basebackup` + WAL archiving next, `pgbackrest` as a later method | **Reference plugin** — health, discovery, backup, sandbox restore, and verification implemented |
-| **SQL Server** | `BACKUP DATABASE … WITH CHECKSUM`; the transport for the resulting file is an open design question, see below | Slice B2 — the next engine |
+| **SQL Server** | `BACKUP DATABASE … WITH CHECKSUM`, handed over through a shared directory ([ADR-0026](adr/0026-a-shared-directory-carries-a-file-based-artifact.md)) | **Second engine** — health, discovery, backup, sandbox restore, and verification implemented |
 | **MySQL / MariaDB** | `mysqldump` first, `xtrabackup` later | Slice B11 — binary handshakes, no capabilities declared |
 | **Oracle** | RMAN | Slice B12 |
 | **MongoDB** | `mongodump`, snapshot-based to follow | Slice B13 — binary handshakes, no capabilities declared |
@@ -41,32 +41,39 @@ suite has two stages, and only the second one is a real claim:
 - **Stage 1** — a real backup of a real engine is taken, uploaded, restored into a throwaway
   container, and verified against its manifest; then a truncated artifact, a byte-flipped artifact
   of the same length, a manifest that no longer describes its source, and an unreachable target each
-  produce the correct verdict. Only PostgreSQL passes this today.
+  produce the correct verdict. PostgreSQL and SQL Server pass this today.
 
 Opting into Stage 1 is capability-driven: a plugin needs at least one backup method,
 `supports_sandbox_restore`, a `SandboxTemplate`, and a registered fixture. Adding an engine means
 adding a fixture beside your plugin; it never means changing an assertion. Full guide:
 [writing an engine plugin](dev/writing-an-engine-plugin.md).
 
-## The question SQL Server asks that PostgreSQL did not
+## Engines that hand over a file rather than a stream
 
-Worth stating here because it is the first real test of the plugin contract, and because it will
-shape what every later engine can assume.
+Worth stating here because it is what a second engine turned out to cost, and because it decides
+what Oracle's RMAN and Cassandra's `nodetool snapshot` will do when they arrive.
 
 `pg_dump` writes to stdout, and the plugin streams that into presigned multipart part grants
 ([ADR-0021](adr/0021-plugins-upload-artifacts-as-multipart-parts.md)). `BACKUP DATABASE … TO DISK`
-writes a file on the *database server's* filesystem, where the plugin has no access at all. Three
-ways out, none free:
+writes a file on the *database server's* filesystem, where the plugin has no access at all.
 
-- a share both sides can see, with the plugin reading and uploading from there;
-- `BACKUP TO URL` against an S3-compatible endpoint, which SQL Server 2022 speaks natively — but it
-  authenticates with a `CREDENTIAL` object, meaning static storage credentials reach the engine, and
-  [ADR-0007](adr/0007-s3-object-storage-for-artifacts.md) says plugins receive presigned URLs and
-  never credentials;
-- co-locating the plugin with the database server.
+**The artifact is handed over through a directory both of them can see**
+([ADR-0026](adr/0026-a-shared-directory-carries-a-file-based-artifact.md)). The instance carries the
+path the engine writes to and the path Fleetward reaches the same directory by; the plugin creates
+the file, asks the engine to back up onto it, reads it back, uploads it through the same presigned
+part grants every other engine uses, and deletes it. No credential of any kind reaches the engine,
+and no write reaches its access control.
 
-The choice gets its own ADR when slice B2 makes it. Oracle's RMAN and Cassandra's `nodetool
-snapshot` have the same shape, so whatever is decided here is decided for three engines, not one.
+The two rejected options are recorded in that ADR: `BACKUP TO URL`, which authenticates with a
+`CREDENTIAL` object holding a static access key that
+[ADR-0007](adr/0007-s3-object-storage-for-artifacts.md) forbids a plugin to handle and which
+Fleetward would have to create on a production instance; and co-locating the plugin with the
+database server, which is the same design with both paths equal and is what a future agent will use.
+
+> **Operationally this is a precondition, not a preference.** A method that declares
+> `requires_shared_directory` cannot be scheduled against an instance that has none, and Fleetward
+> says so at the point a human asks rather than at 02:00. Configure it with `--backup-dir` and
+> `--backup-dir-local` on `fleetward-cli instance add`.
 
 ## Adding an engine
 

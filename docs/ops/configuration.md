@@ -93,14 +93,16 @@ The security of every stored credential reduces to the protection of the master 
 
 The `kubernetes` provider is not implemented; `docker` is the only working value.
 
-| Variable                  | Default     |  | Notes |
-| ------------------------- | ----------- | --- | --- |
-| `SANDBOX_DOCKER_HOST`     | *(empty)*   |  |  |
-| `SANDBOX_LABEL_PREFIX`    | `fleetward` |  | LabelPrefix marks containers Fleetward owns, so an orphan sweep can find them after a crash. |
-| `SANDBOX_MAX_LIFETIME`    | `2h`        |  | MaxLifetime is a hard ceiling after which a sandbox is destroyed regardless of state. It is the backstop behind the normal deferred cleanup, not a replacement for it. |
-| `SANDBOX_NETWORK`         | *(empty)*   |  | Network attaches sandboxes to a specific Docker network. Empty uses the default bridge. |
-| `SANDBOX_PROVIDER`        | `docker`    |  | Provider is "docker" in the MVP; "kubernetes" is the planned second implementation. |
-| `SANDBOX_STARTUP_TIMEOUT` | `3m`        |  | StartupTimeout bounds how long a sandbox may take to become ready before verification is reported inconclusive. |
+| Variable                    | Default     |  | Notes |
+| --------------------------- | ----------- | --- | --- |
+| `SANDBOX_DOCKER_HOST`       | *(empty)*   |  |  |
+| `SANDBOX_LABEL_PREFIX`      | `fleetward` |  | LabelPrefix marks containers Fleetward owns, so an orphan sweep can find them after a crash. |
+| `SANDBOX_MAX_LIFETIME`      | `2h`        |  | MaxLifetime is a hard ceiling after which a sandbox is destroyed regardless of state. It is the backstop behind the normal deferred cleanup, not a replacement for it. |
+| `SANDBOX_NETWORK`           | *(empty)*   |  | Network attaches sandboxes to a specific Docker network. Empty uses the default bridge. |
+| `SANDBOX_PROVIDER`          | `docker`    |  | Provider is "docker" in the MVP; "kubernetes" is the planned second implementation. |
+| `SANDBOX_SHARED_DIR_LOCAL`  | *(empty)*   |  | SharedDirLocal is where that same volume is mounted in this process's own filesystem. The two are required together: one without the other describes a directory only one side can reach, which is the failure this whole mechanism exists to avoid. |
+| `SANDBOX_SHARED_DIR_VOLUME` | *(empty)*   |  | SharedDirVolume is the name of a Docker volume to mount into a sandbox whose plugin asks for a shared directory (ADR-0026). It is what makes that directory work when the control plane itself runs in a container: a bind mount's source path is resolved by the daemon against its own filesystem rather than against this process's, so a path inside our container would silently mount the wrong thing. Empty falls back to binding a temporary directory, which is correct when the control plane runs directly on the daemon's host. |
+| `SANDBOX_STARTUP_TIMEOUT`   | `3m`        |  | StartupTimeout bounds how long a sandbox may take to become ready before verification is reported inconclusive. |
 
 ## Engine plugins
 

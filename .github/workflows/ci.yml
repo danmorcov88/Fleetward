@@ -215,6 +215,11 @@ jobs:
   conformance:
     name: Conformance
     runs-on: ubuntu-latest
+    # Bounded deliberately rather than inheriting the six-hour default. Since slice B2 the suite
+    # stands up SQL Server as well as PostgreSQL, which on a cold runner means pulling a further
+    # 600 MB and paying for two container starts per end-to-end case. `make conformance` allows the
+    # test binary 60 minutes; this covers that plus the pulls, and still fails the same day.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
 
