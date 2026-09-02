@@ -1,7 +1,13 @@
 # ADR-0003: `hashicorp/go-plugin` for the engine plugin system
 
-- **Status:** Accepted
+- **Status:** Accepted, with corrections
 - **Date:** 2026-07-26
+
+> **Correction, 2026-09-02.** The engine list in the Context below is historical. **Informix is out
+> of scope** and no Informix plugin is planned. Cassandra is still targeted. The current list — eight
+> engines, their order, and what each does today — is in [`../engines.md`](../engines.md), which is
+> the single source. The decision this ADR records is unaffected: it is about the plugin mechanism,
+> not about which engines use it.
 
 ## Context
 

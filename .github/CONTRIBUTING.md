@@ -85,11 +85,32 @@ suite pass.
 Declaring a capability you do not actually support is the one thing that will get a plugin rejected
 outright — core trusts that matrix to decide what it is safe to do to someone's production database.
 
+## Documentation
+
+One rule, and it is the one this project has actually got wrong before:
+
+> **Documentation describes what is. Slice briefs describe what will be. The two never mix in one
+> file.**
+
+Forward-looking behaviour in a reference document is marked `> Planned.` or it is not written. This
+sounds pedantic until you find a security policy claiming an authorization layer that was never
+built, or a repository-layout tree listing four packages that do not exist — both of which happened
+here, because the documentation was written from the architecture rather than from the code.
+
+Where a claim can be checked mechanically it should be. Where it cannot — and "this prose is still
+true" cannot — it is a line in the pull request template, and answering it honestly is part of the
+work.
+
 ## Architecture decisions
 
 Anything that would touch more than one package, change the plugin contract, or alter an external
 interface needs an ADR in `docs/adr/`. Copy the format of an existing one: Context, Decision,
-Consequences, Alternatives considered.
+Consequences, Alternatives considered. Start from [the index](../docs/adr/README.md).
+
+ADRs are not rewritten. A decision is changed by a new ADR that supersedes it — and the superseded
+one gets a reciprocal note, so the relationship is visible from both ends. A detail that simply
+turned out differently gets a dated correction note at the top of the record rather than a silent
+edit.
 
 ## Reporting bugs
 

@@ -1,7 +1,8 @@
 # <type>(<scope>): <subject>        <- Conventional Commits, imperative, <= 72 chars
 #
 # Types: feat fix docs style refactor perf test build ci chore revert
-# Scopes follow the package layout: plugin/postgres, scheduler, storage/secrets, web, adr, ...
+# Scopes follow the package layout: plugin/postgres, plugin/manager, backup, inventory, sandbox,
+#   storage/secrets, config, web, adr, ... — a scope names a package that exists.
 # Breaking change: add ! after the scope, or a "BREAKING CHANGE:" footer.
 #
 # Body: why, not what. Wrap at 100 columns.

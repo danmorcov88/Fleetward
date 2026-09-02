@@ -1,4 +1,4 @@
-# ADR-0023 — The conformance suite carries a per-engine fixture, and only a fixture
+# ADR-0023: The conformance suite carries a per-engine fixture, and only a fixture
 
 - **Status:** Accepted
 - **Date:** 2026-08-31
@@ -34,14 +34,7 @@ instance: it is a §1 non-goal, it is why `ListPrincipals` is read-only (ADR-001
 query editor is gated behind five conditions (ADR-0018). Adding a "run this statement" RPC to make
 a test easier would be the largest blast-radius change in the project, made for the smallest reason.
 
-Three options were considered.
-
-**Back up an empty database.** Costs nothing and proves nothing — see above.
-
-**Add a write RPC to the contract.** Rejected on the grounds above. The test is not a good enough
-reason to give a plugin a general write path into production.
-
-**Let each engine supply the seed, in the test and nowhere else.** Chosen.
+Three options were considered; they are set out under *Alternatives considered* below.
 
 ## Decision
 
@@ -99,3 +92,12 @@ of an assertion that names the object rather than reporting a bare boolean.
 **The suite now needs a container runtime and the plugin's native tooling on `PATH`.** Both missing
 produce a skip rather than a failure, so a contributor without them still gets Stage 0. CI installs
 both, because a skipped merge gate is not a merge gate.
+
+## Alternatives considered
+
+**Back up an empty database.** Costs nothing and proves nothing — see above.
+
+**Add a write RPC to the contract.** Rejected on the grounds above. The test is not a good enough
+reason to give a plugin a general write path into production.
+
+**Let each engine supply the seed, in the test and nowhere else.** Chosen.
