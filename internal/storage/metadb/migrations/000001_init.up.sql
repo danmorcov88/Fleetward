@@ -215,7 +215,12 @@ CREATE TABLE jobs (
 
     -- Lease fields implement at-most-once execution. A runner claims a job by setting lease_owner
     -- and lease_expires_at in one atomic UPDATE, then renews lease_expires_at on a heartbeat while
-    -- the job runs. A crashed runner's lease simply expires and the job becomes claimable again.
+    -- the job runs.
+    --
+    -- A crashed runner's lease expires, and the scheduler's reaper then marks the job 'failed' —
+    -- it does not become claimable again (ADR-0025). Re-running would mean an unattended backup
+    -- starting against a production server at the moment it recovered, and the interrupted run left
+    -- no artifact to salvage. A job therefore moves 'pending' -> 'running' exactly once, ever.
     lease_owner       TEXT,
     lease_expires_at  TIMESTAMPTZ,
     heartbeat_at      TIMESTAMPTZ,

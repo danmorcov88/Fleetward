@@ -623,6 +623,316 @@ var InventoryService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	ScheduleService_ListSchedules_FullMethodName      = "/fleetward.v1.ScheduleService/ListSchedules"
+	ScheduleService_GetSchedule_FullMethodName        = "/fleetward.v1.ScheduleService/GetSchedule"
+	ScheduleService_CreateSchedule_FullMethodName     = "/fleetward.v1.ScheduleService/CreateSchedule"
+	ScheduleService_SetScheduleEnabled_FullMethodName = "/fleetward.v1.ScheduleService/SetScheduleEnabled"
+	ScheduleService_DeleteSchedule_FullMethodName     = "/fleetward.v1.ScheduleService/DeleteSchedule"
+	ScheduleService_ListJobs_FullMethodName           = "/fleetward.v1.ScheduleService/ListJobs"
+)
+
+// ScheduleServiceClient is the client API for ScheduleService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// ScheduleService owns recurring intent: when a backup should run, in which timezone, and whether
+// its verification is automatic. The scheduler turns each schedule into `jobs` rows and leases
+// them; this service is how a human declares and inspects that intent (ADR-0013).
+type ScheduleServiceClient interface {
+	ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*ListSchedulesResponse, error)
+	GetSchedule(ctx context.Context, in *GetScheduleRequest, opts ...grpc.CallOption) (*GetScheduleResponse, error)
+	CreateSchedule(ctx context.Context, in *CreateScheduleRequest, opts ...grpc.CallOption) (*CreateScheduleResponse, error)
+	// SetScheduleEnabled pauses or resumes a schedule without losing it. Pausing during a migration
+	// window is a normal operation, and deleting and recreating a schedule to achieve it would lose
+	// the history that points at it.
+	SetScheduleEnabled(ctx context.Context, in *SetScheduleEnabledRequest, opts ...grpc.CallOption) (*SetScheduleEnabledResponse, error)
+	DeleteSchedule(ctx context.Context, in *DeleteScheduleRequest, opts ...grpc.CallOption) (*DeleteScheduleResponse, error)
+	// ListJobs reports what the scheduler actually did. It is the only way to see that a run was
+	// skipped, leased by another replica, or closed by the reaper after a crash.
+	ListJobs(ctx context.Context, in *ListJobsRequest, opts ...grpc.CallOption) (*ListJobsResponse, error)
+}
+
+type scheduleServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewScheduleServiceClient(cc grpc.ClientConnInterface) ScheduleServiceClient {
+	return &scheduleServiceClient{cc}
+}
+
+func (c *scheduleServiceClient) ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*ListSchedulesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSchedulesResponse)
+	err := c.cc.Invoke(ctx, ScheduleService_ListSchedules_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scheduleServiceClient) GetSchedule(ctx context.Context, in *GetScheduleRequest, opts ...grpc.CallOption) (*GetScheduleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetScheduleResponse)
+	err := c.cc.Invoke(ctx, ScheduleService_GetSchedule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scheduleServiceClient) CreateSchedule(ctx context.Context, in *CreateScheduleRequest, opts ...grpc.CallOption) (*CreateScheduleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateScheduleResponse)
+	err := c.cc.Invoke(ctx, ScheduleService_CreateSchedule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scheduleServiceClient) SetScheduleEnabled(ctx context.Context, in *SetScheduleEnabledRequest, opts ...grpc.CallOption) (*SetScheduleEnabledResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetScheduleEnabledResponse)
+	err := c.cc.Invoke(ctx, ScheduleService_SetScheduleEnabled_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scheduleServiceClient) DeleteSchedule(ctx context.Context, in *DeleteScheduleRequest, opts ...grpc.CallOption) (*DeleteScheduleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteScheduleResponse)
+	err := c.cc.Invoke(ctx, ScheduleService_DeleteSchedule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scheduleServiceClient) ListJobs(ctx context.Context, in *ListJobsRequest, opts ...grpc.CallOption) (*ListJobsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListJobsResponse)
+	err := c.cc.Invoke(ctx, ScheduleService_ListJobs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ScheduleServiceServer is the server API for ScheduleService service.
+// All implementations must embed UnimplementedScheduleServiceServer
+// for forward compatibility.
+//
+// ScheduleService owns recurring intent: when a backup should run, in which timezone, and whether
+// its verification is automatic. The scheduler turns each schedule into `jobs` rows and leases
+// them; this service is how a human declares and inspects that intent (ADR-0013).
+type ScheduleServiceServer interface {
+	ListSchedules(context.Context, *ListSchedulesRequest) (*ListSchedulesResponse, error)
+	GetSchedule(context.Context, *GetScheduleRequest) (*GetScheduleResponse, error)
+	CreateSchedule(context.Context, *CreateScheduleRequest) (*CreateScheduleResponse, error)
+	// SetScheduleEnabled pauses or resumes a schedule without losing it. Pausing during a migration
+	// window is a normal operation, and deleting and recreating a schedule to achieve it would lose
+	// the history that points at it.
+	SetScheduleEnabled(context.Context, *SetScheduleEnabledRequest) (*SetScheduleEnabledResponse, error)
+	DeleteSchedule(context.Context, *DeleteScheduleRequest) (*DeleteScheduleResponse, error)
+	// ListJobs reports what the scheduler actually did. It is the only way to see that a run was
+	// skipped, leased by another replica, or closed by the reaper after a crash.
+	ListJobs(context.Context, *ListJobsRequest) (*ListJobsResponse, error)
+	mustEmbedUnimplementedScheduleServiceServer()
+}
+
+// UnimplementedScheduleServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedScheduleServiceServer struct{}
+
+func (UnimplementedScheduleServiceServer) ListSchedules(context.Context, *ListSchedulesRequest) (*ListSchedulesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSchedules not implemented")
+}
+func (UnimplementedScheduleServiceServer) GetSchedule(context.Context, *GetScheduleRequest) (*GetScheduleResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSchedule not implemented")
+}
+func (UnimplementedScheduleServiceServer) CreateSchedule(context.Context, *CreateScheduleRequest) (*CreateScheduleResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateSchedule not implemented")
+}
+func (UnimplementedScheduleServiceServer) SetScheduleEnabled(context.Context, *SetScheduleEnabledRequest) (*SetScheduleEnabledResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetScheduleEnabled not implemented")
+}
+func (UnimplementedScheduleServiceServer) DeleteSchedule(context.Context, *DeleteScheduleRequest) (*DeleteScheduleResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteSchedule not implemented")
+}
+func (UnimplementedScheduleServiceServer) ListJobs(context.Context, *ListJobsRequest) (*ListJobsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListJobs not implemented")
+}
+func (UnimplementedScheduleServiceServer) mustEmbedUnimplementedScheduleServiceServer() {}
+func (UnimplementedScheduleServiceServer) testEmbeddedByValue()                         {}
+
+// UnsafeScheduleServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ScheduleServiceServer will
+// result in compilation errors.
+type UnsafeScheduleServiceServer interface {
+	mustEmbedUnimplementedScheduleServiceServer()
+}
+
+func RegisterScheduleServiceServer(s grpc.ServiceRegistrar, srv ScheduleServiceServer) {
+	// If the following call pancis, it indicates UnimplementedScheduleServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&ScheduleService_ServiceDesc, srv)
+}
+
+func _ScheduleService_ListSchedules_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSchedulesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScheduleServiceServer).ListSchedules(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ScheduleService_ListSchedules_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScheduleServiceServer).ListSchedules(ctx, req.(*ListSchedulesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScheduleService_GetSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetScheduleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScheduleServiceServer).GetSchedule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ScheduleService_GetSchedule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScheduleServiceServer).GetSchedule(ctx, req.(*GetScheduleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScheduleService_CreateSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateScheduleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScheduleServiceServer).CreateSchedule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ScheduleService_CreateSchedule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScheduleServiceServer).CreateSchedule(ctx, req.(*CreateScheduleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScheduleService_SetScheduleEnabled_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetScheduleEnabledRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScheduleServiceServer).SetScheduleEnabled(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ScheduleService_SetScheduleEnabled_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScheduleServiceServer).SetScheduleEnabled(ctx, req.(*SetScheduleEnabledRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScheduleService_DeleteSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteScheduleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScheduleServiceServer).DeleteSchedule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ScheduleService_DeleteSchedule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScheduleServiceServer).DeleteSchedule(ctx, req.(*DeleteScheduleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScheduleService_ListJobs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListJobsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScheduleServiceServer).ListJobs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ScheduleService_ListJobs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScheduleServiceServer).ListJobs(ctx, req.(*ListJobsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// ScheduleService_ServiceDesc is the grpc.ServiceDesc for ScheduleService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var ScheduleService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetward.v1.ScheduleService",
+	HandlerType: (*ScheduleServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListSchedules",
+			Handler:    _ScheduleService_ListSchedules_Handler,
+		},
+		{
+			MethodName: "GetSchedule",
+			Handler:    _ScheduleService_GetSchedule_Handler,
+		},
+		{
+			MethodName: "CreateSchedule",
+			Handler:    _ScheduleService_CreateSchedule_Handler,
+		},
+		{
+			MethodName: "SetScheduleEnabled",
+			Handler:    _ScheduleService_SetScheduleEnabled_Handler,
+		},
+		{
+			MethodName: "DeleteSchedule",
+			Handler:    _ScheduleService_DeleteSchedule_Handler,
+		},
+		{
+			MethodName: "ListJobs",
+			Handler:    _ScheduleService_ListJobs_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "fleetward/v1/controlplane.proto",
+}
+
+const (
 	BackupService_ListBackups_FullMethodName     = "/fleetward.v1.BackupService/ListBackups"
 	BackupService_GetBackup_FullMethodName       = "/fleetward.v1.BackupService/GetBackup"
 	BackupService_RunBackup_FullMethodName       = "/fleetward.v1.BackupService/RunBackup"

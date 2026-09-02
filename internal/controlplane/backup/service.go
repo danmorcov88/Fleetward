@@ -149,6 +149,46 @@ type RunBackupInput struct {
 	VerifyOnCompletion bool
 	// TriggeredManually records that a human asked for this run rather than a schedule.
 	TriggeredManually bool
+	// JobID attaches this backup to a job row that already exists. The scheduler sets it, because
+	// the job is what it holds the lease on, and creating a second one would collide with
+	// idx_jobs_one_active_per_instance_kind. Empty means "create the job too", which is the manual
+	// path.
+	JobID string
+	// ScheduleID records which recurring intent produced this backup. Empty for a manual run.
+	ScheduleID string
+}
+
+// prepared is everything resolved before a run starts, while the caller's context was still alive.
+type prepared struct {
+	client fwv1.EnginePluginClient
+	conn   *inventory.Connection
+	method *fwv1.BackupMethod
+}
+
+// prepare resolves the connection, the plugin, and the method, and validates the options.
+//
+// It is shared by the asynchronous RPC path and the synchronous scheduled one, so that a scheduled
+// backup cannot be validated differently from a manual one. The two paths differ in who waits for
+// the result, and in nothing else.
+func (s *Service) prepare(ctx context.Context, in RunBackupInput) (prepared, error) {
+	conn, err := s.resolver.ResolveConnection(ctx, in.InstanceID)
+	if err != nil {
+		return prepared{}, err
+	}
+
+	client, caps, err := s.plugins.Client(conn.EngineType)
+	if err != nil {
+		return prepared{}, fmt.Errorf("%w: %s: %w", ErrEngineUnavailable, conn.EngineType, err)
+	}
+
+	method, err := selectMethod(caps, in.MethodID)
+	if err != nil {
+		return prepared{}, err
+	}
+	if err := validateOptions(method, in.Options); err != nil {
+		return prepared{}, err
+	}
+	return prepared{client: client, conn: conn, method: method}, nil
 }
 
 // RunBackup starts a backup and returns as soon as it has been recorded.
@@ -156,27 +196,14 @@ type RunBackupInput struct {
 // It is asynchronous because a backup takes minutes to hours and an HTTP request must not. The
 // caller polls GetBackup; the run itself is bounded by runTimeout and by the service's lifetime.
 func (s *Service) RunBackup(ctx context.Context, in RunBackupInput) (backupID, jobID string, err error) {
-	conn, err := s.resolver.ResolveConnection(ctx, in.InstanceID)
+	p, err := s.prepare(ctx, in)
 	if err != nil {
-		return "", "", err
-	}
-
-	client, caps, err := s.plugins.Client(conn.EngineType)
-	if err != nil {
-		return "", "", fmt.Errorf("%w: %s: %w", ErrEngineUnavailable, conn.EngineType, err)
-	}
-
-	method, err := selectMethod(caps, in.MethodID)
-	if err != nil {
-		return "", "", err
-	}
-	if err := validateOptions(method, in.Options); err != nil {
 		return "", "", err
 	}
 
 	// The rows are created before any work starts, so a backup that fails at the very first step is
 	// still visible as a failed backup rather than as nothing at all.
-	jobID, backupID, err = s.createRows(ctx, conn.InstanceID, method.GetId(), in.TriggeredManually)
+	jobID, backupID, err = s.createRows(ctx, p.conn.InstanceID, p.method.GetId(), in)
 	if err != nil {
 		return "", "", err
 	}
@@ -184,18 +211,20 @@ func (s *Service) RunBackup(ctx context.Context, in RunBackupInput) (backupID, j
 	s.log.InfoContext(ctx, "backup started",
 		slog.String("backup_id", backupID),
 		slog.String("job_id", jobID),
-		slog.String("instance_id", conn.InstanceID),
-		slog.String("engine_type", conn.EngineType),
-		slog.String("method_id", method.GetId()))
+		slog.String("instance_id", p.conn.InstanceID),
+		slog.String("engine_type", p.conn.EngineType),
+		slog.String("method_id", p.method.GetId()))
 
 	s.running.Add(1)
 	go func() {
 		defer s.running.Done()
-		s.execute(client, runRequest{
+		// The error is discarded because execute has already recorded and logged it, and there is
+		// no caller left: RunBackup returned as soon as the rows existed.
+		_ = s.execute(s.runCtx, p.client, runRequest{
 			backupID:   backupID,
 			jobID:      jobID,
-			connection: conn,
-			methodID:   method.GetId(),
+			connection: p.conn,
+			methodID:   p.method.GetId(),
 			options:    in.Options,
 			databases:  in.Databases,
 			verify:     in.VerifyOnCompletion,
@@ -203,6 +232,56 @@ func (s *Service) RunBackup(ctx context.Context, in RunBackupInput) (backupID, j
 	}()
 
 	return backupID, jobID, nil
+}
+
+// RunBackupSync runs a backup against a job that already exists, and returns once the outcome has
+// been recorded.
+//
+// This is the scheduler's entry point. The two differences from RunBackup are both deliberate. It
+// does not create a job, because the caller already holds a lease on one. And it is synchronous and
+// bound to the caller's context, because a runner that loses its lease must be able to stop the
+// work — a cancelled context is the only thing that reaches through the plugin to the native tool
+// it is driving.
+//
+// It registers with the same WaitGroup, so Close waits for a scheduled run exactly as it waits for
+// a manual one.
+func (s *Service) RunBackupSync(ctx context.Context, in RunBackupInput) (backupID string, err error) {
+	if in.JobID == "" {
+		return "", fmt.Errorf("%w: a synchronous backup must name the job it belongs to", ErrInvalidArgument)
+	}
+
+	p, err := s.prepare(ctx, in)
+	if err != nil {
+		return "", err
+	}
+
+	_, backupID, err = s.createRows(ctx, p.conn.InstanceID, p.method.GetId(), in)
+	if err != nil {
+		return "", err
+	}
+
+	s.log.InfoContext(ctx, "scheduled backup started",
+		slog.String("backup_id", backupID),
+		slog.String("job_id", in.JobID),
+		slog.String("instance_id", p.conn.InstanceID),
+		slog.String("engine_type", p.conn.EngineType),
+		slog.String("method_id", p.method.GetId()))
+
+	s.running.Add(1)
+	defer s.running.Done()
+
+	return backupID, s.execute(ctx, p.client, runRequest{
+		backupID:   backupID,
+		jobID:      in.JobID,
+		connection: p.conn,
+		methodID:   p.method.GetId(),
+		options:    in.Options,
+		databases:  in.Databases,
+		// Never chained here. The scheduler queues verification as its own job row, so that the
+		// policy behind it is visible in the job table and so that it competes for the same
+		// concurrency budget as everything else.
+		verify: false,
+	})
 }
 
 // runRequest is one backup's inputs, assembled while the caller's context was still alive.
@@ -216,10 +295,19 @@ type runRequest struct {
 	verify     bool
 }
 
-// execute performs the run and records its outcome. It never returns an error: there is no caller
-// left to receive one, so every outcome is written to the database and the log instead.
-func (s *Service) execute(client fwv1.EnginePluginClient, req runRequest) {
-	ctx, cancel := context.WithTimeout(s.runCtx, runTimeout+runGrace)
+// execute performs the run and records its outcome.
+//
+// Every outcome is written to the database and the log regardless of what the caller does with the
+// returned error: on the asynchronous path there is no caller left to receive one. The scheduler is
+// the caller that does care, because whether the backup succeeded is what decides if a verification
+// is queued behind it.
+//
+// The parent context is a parameter rather than always s.runCtx for the other half of the same
+// reason. A scheduled run belongs to the runner holding its lease, and a lost lease must be able to
+// stop the work — which it can only do through the context that reaches the plugin and the native
+// tool it drives.
+func (s *Service) execute(parent context.Context, client fwv1.EnginePluginClient, req runRequest) error {
+	ctx, cancel := context.WithTimeout(parent, runTimeout+runGrace)
 	defer cancel()
 
 	log := s.log.With(slog.String("backup_id", req.backupID), slog.String("instance_id", req.connection.InstanceID))
@@ -233,10 +321,10 @@ func (s *Service) execute(client fwv1.EnginePluginClient, req runRequest) {
 		defer recordCancel()
 
 		log.ErrorContext(recordCtx, "backup failed", slog.String("error", err.Error()))
-		if err := s.recordFailure(recordCtx, req, err); err != nil {
-			log.ErrorContext(recordCtx, "could not record the backup failure", slog.String("error", err.Error()))
+		if recordErr := s.recordFailure(recordCtx, req, err); recordErr != nil {
+			log.ErrorContext(recordCtx, "could not record the backup failure", slog.String("error", recordErr.Error()))
 		}
-		return
+		return err
 	}
 
 	recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
@@ -249,7 +337,7 @@ func (s *Service) execute(client fwv1.EnginePluginClient, req runRequest) {
 		log.ErrorContext(recordCtx, "backup succeeded but its result could not be recorded",
 			slog.String("object_key", result.GetArtifact().GetKey()),
 			slog.String("error", err.Error()))
-		return
+		return err
 	}
 
 	log.InfoContext(recordCtx, "backup succeeded",
@@ -259,7 +347,7 @@ func (s *Service) execute(client fwv1.EnginePluginClient, req runRequest) {
 		slog.Duration("duration", time.Since(started)))
 
 	if !req.verify {
-		return
+		return nil
 	}
 
 	// A verification asked for with the backup starts here rather than in RunBackup, because it can
@@ -274,6 +362,7 @@ func (s *Service) execute(client fwv1.EnginePluginClient, req runRequest) {
 		log.ErrorContext(recordCtx, "the backup succeeded but its verification could not be started",
 			slog.String("error", err.Error()))
 	}
+	return nil
 }
 
 // transfer mints the upload grant, drives the plugin, and completes the object.
@@ -505,35 +594,52 @@ func contains(values []string, want string) bool {
 // Persistence
 // -----------------------------------------------------------------------------------------------
 
-// createRows inserts the job and the backup that describe this run.
+// createRows inserts the backup that describes this run, and the job it belongs to when there is
+// not one already.
 //
 // The unique index idx_jobs_one_active_per_instance_kind is what makes two concurrent backups of
 // one instance impossible. Enforcing it in the database rather than in code is deliberate: two
 // simultaneous dumps of one production server is an operational incident, not a race to lose.
-func (s *Service) createRows(ctx context.Context, instanceID, methodID string, manual bool) (jobID, backupID string, err error) {
+//
+// A scheduled run arrives with in.JobID already set, because the scheduler created that job in an
+// earlier tick and holds a lease on it. Inserting a second job here would collide with that same
+// index and fail a backup that was perfectly well scheduled, so the job insert is skipped and the
+// backup is attached to the row the lease names.
+func (s *Service) createRows(ctx context.Context, instanceID, methodID string, in RunBackupInput) (jobID, backupID string, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("backup: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	err = tx.QueryRow(ctx, `
-		INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at)
-		VALUES ($1, $2, 'backup', 'running', now())
-		RETURNING id`,
-		s.tenantID, instanceID).Scan(&jobID)
-	if metadb.IsUniqueViolation(err) {
-		return "", "", fmt.Errorf("%w: %s", ErrAlreadyRunning, instanceID)
+	jobID = in.JobID
+	if jobID == "" {
+		err = tx.QueryRow(ctx, `
+			INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at)
+			VALUES ($1, $2, 'backup', 'running', now())
+			RETURNING id`,
+			s.tenantID, instanceID).Scan(&jobID)
+		if metadb.IsUniqueViolation(err) {
+			return "", "", fmt.Errorf("%w: %s", ErrAlreadyRunning, instanceID)
+		}
+		if err != nil {
+			return "", "", fmt.Errorf("backup: create job: %w", err)
+		}
 	}
-	if err != nil {
-		return "", "", fmt.Errorf("backup: create job: %w", err)
+
+	// schedule_id is what lets retention and the estate view answer "which recurring intent
+	// produced this artifact" after the schedule itself has been edited or deleted.
+	var scheduleID any
+	if in.ScheduleID != "" {
+		scheduleID = in.ScheduleID
 	}
 
 	err = tx.QueryRow(ctx, `
-		INSERT INTO backups (tenant_id, instance_id, job_id, method_id, state, started_at, triggered_manually)
-		VALUES ($1, $2, $3, $4, 'running', now(), $5)
+		INSERT INTO backups (tenant_id, instance_id, job_id, schedule_id, method_id, state,
+		                     started_at, triggered_manually)
+		VALUES ($1, $2, $3, $4, $5, 'running', now(), $6)
 		RETURNING id`,
-		s.tenantID, instanceID, jobID, methodID, manual).Scan(&backupID)
+		s.tenantID, instanceID, jobID, scheduleID, methodID, in.TriggeredManually).Scan(&backupID)
 	if err != nil {
 		return "", "", fmt.Errorf("backup: create backup: %w", err)
 	}

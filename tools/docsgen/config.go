@@ -47,7 +47,7 @@ var sections = []struct {
 	{"SANDBOX_", "Verification sandboxes", "The `kubernetes` provider is not implemented; `docker` is the only working value."},
 	{"PLUGINS_", "Engine plugins", ""},
 	{"TSDB_", "Metrics store", "Constructed and health-checked. Nothing writes to it yet."},
-	{"SCHEDULER_", "Scheduler", "Parsed and cross-validated, and read by nothing — there is no scheduler yet."},
+	{"SCHEDULER_", "Scheduler", "Drives every run that nobody asked for. How these interact — the poll, the lease, the reaper — is [`scheduling.md`](scheduling.md)."},
 	{"AUTH_", "Authentication", "Parsed and validated, and read by nothing. **There is no authentication yet, and every API route is open.**"},
 	{"TELEMETRY_", "Telemetry", ""},
 }

@@ -421,6 +421,36 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+    /api/v1/instances/{instanceId}/schedules:
+        post:
+            tags:
+                - ScheduleService
+            operationId: ScheduleService_CreateSchedule
+            parameters:
+                - name: instanceId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateScheduleRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/CreateScheduleResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
     /api/v1/instances/{instanceId}/test-connection:
         post:
             tags:
@@ -454,6 +484,46 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+    /api/v1/jobs:
+        get:
+            tags:
+                - ScheduleService
+            description: |-
+                ListJobs reports what the scheduler actually did. It is the only way to see that a run was
+                 skipped, leased by another replica, or closed by the reaper after a crash.
+            operationId: ScheduleService_ListJobs
+            parameters:
+                - name: instanceId
+                  in: query
+                  schema:
+                    type: string
+                - name: scheduleId
+                  in: query
+                  schema:
+                    type: string
+                - name: state
+                  in: query
+                  schema:
+                    type: integer
+                    format: enum
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListJobsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
     /api/v1/plugins:
         get:
             tags:
@@ -469,6 +539,110 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ListPluginsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/schedules:
+        get:
+            tags:
+                - ScheduleService
+            operationId: ScheduleService_ListSchedules
+            parameters:
+                - name: instanceId
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListSchedulesResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/schedules/{scheduleId}:
+        get:
+            tags:
+                - ScheduleService
+            operationId: ScheduleService_GetSchedule
+            parameters:
+                - name: scheduleId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetScheduleResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        delete:
+            tags:
+                - ScheduleService
+            operationId: ScheduleService_DeleteSchedule
+            parameters:
+                - name: scheduleId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/DeleteScheduleResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/schedules/{scheduleId}/enabled:
+        post:
+            tags:
+                - ScheduleService
+            description: |-
+                SetScheduleEnabled pauses or resumes a schedule without losing it. Pausing during a migration
+                 window is a normal operation, and deleting and recreating a schedule to achieve it would lose
+                 the history that points at it.
+            operationId: ScheduleService_SetScheduleEnabled
+            parameters:
+                - name: scheduleId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SetScheduleEnabledRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SetScheduleEnabledResponse'
                 default:
                     description: Default error response
                     content:
@@ -811,6 +985,39 @@ components:
             properties:
                 instance:
                     $ref: '#/components/schemas/Instance'
+        CreateScheduleRequest:
+            type: object
+            properties:
+                instanceId:
+                    type: string
+                kind:
+                    type: integer
+                    format: enum
+                cronExpression:
+                    type: string
+                timezone:
+                    type: string
+                    description: Defaults to UTC when empty.
+                methodId:
+                    type: string
+                options:
+                    type: object
+                    additionalProperties:
+                        type: string
+                verifyPolicy:
+                    type: integer
+                    format: enum
+                verifySamplePercent:
+                    type: integer
+                    format: int32
+                retentionDays:
+                    type: integer
+                    format: int32
+        CreateScheduleResponse:
+            type: object
+            properties:
+                schedule:
+                    $ref: '#/components/schemas/Schedule'
         DatabaseInfo:
             type: object
             properties:
@@ -831,6 +1038,9 @@ components:
                     type: boolean
                     description: System or internal database, which the UI de-emphasizes and backups usually skip.
         DeleteInstanceResponse:
+            type: object
+            properties: {}
+        DeleteScheduleResponse:
             type: object
             properties: {}
         DiscoverInstanceRequest:
@@ -920,6 +1130,11 @@ components:
             properties:
                 window:
                     $ref: '#/components/schemas/PITRWindow'
+        GetScheduleResponse:
+            type: object
+            properties:
+                schedule:
+                    $ref: '#/components/schemas/Schedule'
         GetVerificationResponse:
             type: object
             properties:
@@ -1022,6 +1237,55 @@ components:
                     allOf:
                         - $ref: '#/components/schemas/BackupSummary'
                     description: Latest backup and verification state, denormalized so the estate grid renders in one query.
+        Job:
+            type: object
+            properties:
+                id:
+                    type: string
+                tenantId:
+                    type: string
+                instanceId:
+                    type: string
+                scheduleId:
+                    type: string
+                    description: Empty for a job a human triggered directly.
+                kind:
+                    type: integer
+                    format: enum
+                state:
+                    type: integer
+                    format: enum
+                scheduledFor:
+                    type: string
+                    format: date-time
+                leaseOwner:
+                    type: string
+                    description: |-
+                        Identifies the process holding the lease, as <hostname>/<pid>/<process-uuid>. The uuid is what
+                         keeps a restarted process on a recycled pid from looking like its own predecessor.
+                leaseExpiresAt:
+                    type: string
+                    format: date-time
+                heartbeatAt:
+                    type: string
+                    format: date-time
+                attempts:
+                    type: integer
+                    format: int32
+                startedAt:
+                    type: string
+                    format: date-time
+                finishedAt:
+                    type: string
+                    format: date-time
+                errorMessage:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
+            description: |-
+                Job is one unit of work the scheduler leases and runs. Every field after `state` exists to answer
+                 a question after the fact, which is the whole reason jobs are rows rather than goroutines.
         ListBackupsResponse:
             type: object
             properties:
@@ -1055,6 +1319,13 @@ components:
                 totalSize:
                     type: integer
                     format: int32
+        ListJobsResponse:
+            type: object
+            properties:
+                jobs:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Job'
         ListPluginsResponse:
             type: object
             properties:
@@ -1072,6 +1343,13 @@ components:
                 model:
                     type: integer
                     format: enum
+        ListSchedulesResponse:
+            type: object
+            properties:
+                schedules:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Schedule'
         ManifestEntry:
             type: object
             properties:
@@ -1389,6 +1667,59 @@ components:
                 SandboxTemplate tells core how to stand up a throwaway instance of this engine for verification.
                  Keeping it here — rather than in a core lookup table — is what allows a new engine to arrive as a
                  plugin with no core change.
+        Schedule:
+            type: object
+            properties:
+                id:
+                    type: string
+                tenantId:
+                    type: string
+                instanceId:
+                    type: string
+                kind:
+                    type: integer
+                    format: enum
+                cronExpression:
+                    type: string
+                    description: Standard five-field cron expression, interpreted in `timezone`.
+                timezone:
+                    type: string
+                    description: |-
+                        IANA location name, e.g. "Europe/Bucharest". A DBA writing "0 2 * * *" means 02:00 where the
+                         server is, which is a different UTC instant in summer than in winter.
+                methodId:
+                    type: string
+                    description: Empty selects the plugin's default backup method.
+                options:
+                    type: object
+                    additionalProperties:
+                        type: string
+                verifyPolicy:
+                    type: integer
+                    format: enum
+                verifySamplePercent:
+                    type: integer
+                    description: Only consulted when verify_policy is SAMPLED.
+                    format: int32
+                retentionDays:
+                    type: integer
+                    format: int32
+                isEnabled:
+                    type: boolean
+                nextRunAt:
+                    type: string
+                    description: The clock. Always UTC on the wire and in storage, computed in `timezone`.
+                    format: date-time
+                lastRunAt:
+                    type: string
+                    format: date-time
+                createdAt:
+                    type: string
+                    format: date-time
+            description: |-
+                Schedule is a recurring intent. It is not a run: the scheduler materializes it into a Job when
+                 next_run_at falls due, and the job carries a snapshot of these parameters so that editing a
+                 schedule never rewrites what an in-flight run was asked to do.
         ServerInfo:
             type: object
             properties:
@@ -1413,6 +1744,18 @@ components:
                     type: object
                     additionalProperties:
                         type: string
+        SetScheduleEnabledRequest:
+            type: object
+            properties:
+                scheduleId:
+                    type: string
+                enabled:
+                    type: boolean
+        SetScheduleEnabledResponse:
+            type: object
+            properties:
+                schedule:
+                    $ref: '#/components/schemas/Schedule'
         SourceManifest:
             type: object
             properties:
@@ -1544,6 +1887,11 @@ tags:
          requires at least the `dba` role and is recorded in the audit log.
     - name: InventoryService
       description: 'InventoryService manages the estate: environments, instances, and their connections.'
+    - name: ScheduleService
+      description: |-
+        ScheduleService owns recurring intent: when a backup should run, in which timezone, and whether
+         its verification is automatic. The scheduler turns each schedule into `jobs` rows and leases
+         them; this service is how a human declares and inspects that intent (ADR-0013).
     - name: SystemService
       description: |-
         SystemService exposes liveness, readiness, and build information. It is the only service that is

@@ -142,11 +142,13 @@ If you write a new one, follow this shape — it is what makes a cold start poss
 | A4 | [Backup with manifest](A4-backup-and-manifest.md) | [entry](../journal/A4-backup-and-manifest.md) | ✅ |
 | A5 | [Restore and verification](A5-restore-and-verify.md) | [entry](../journal/A5-restore-and-verify.md) | ✅ |
 | A6 | [Proving verification fails](A6-verification-fails-loudly.md) | [entry](../journal/A6-verification-fails-loudly.md) | ✅ |
-| B1 | not yet written — next | — | ⬜ |
+| B1 | [Scheduler and leases](B1-scheduler-and-leases.md) | [entry](../journal/B1-scheduler-and-leases.md) | ✅ |
+| B2 | not yet written — next | — | ⬜ |
 
-Phase A is complete. What comes next is in [`../../roadmap.md`](../../roadmap.md). A brief is
-written when its slice starts — writing them all now would be inventing detail that the preceding
-slice is likely to change, and a confidently wrong brief is worse than none.
+Phase A is complete and Phase B has started. What comes next is in
+[`../../roadmap.md`](../../roadmap.md). A brief is written when its slice starts — writing them all
+now would be inventing detail that the preceding slice is likely to change, and a confidently wrong
+brief is worse than none.
 
 The Phase A briefs above use the roadmap vocabulary of the time and defer work to "Phase C" or
 "Phase F". Those labels are retired — the plan is now a numbered slice sequence, and production

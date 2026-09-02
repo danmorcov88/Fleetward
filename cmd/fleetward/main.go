@@ -15,12 +15,21 @@ import (
 	"syscall"
 	"time"
 
+	// The time zone database, embedded in the binary. Schedules fire in the timezone a DBA wrote
+	// them in, which means time.LoadLocation has to work — and Go reads the zone database from the
+	// operating system, which the runtime image (debian:trixie-slim) does not ship. Without this
+	// import every schedule with a real timezone works on a developer's machine, where a Go
+	// installation supplies the database, and fails inside the container. It costs about 450 KB and
+	// cannot drift from the image's package set.
+	_ "time/tzdata"
+
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
 	"github.com/danmorcov88/fleetward/internal/config"
 	"github.com/danmorcov88/fleetward/internal/controlplane/api"
 	"github.com/danmorcov88/fleetward/internal/controlplane/backup"
 	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
 	"github.com/danmorcov88/fleetward/internal/controlplane/sandbox"
+	"github.com/danmorcov88/fleetward/internal/controlplane/scheduler"
 	"github.com/danmorcov88/fleetward/internal/plugin/manager"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 	"github.com/danmorcov88/fleetward/internal/storage/objstore"
@@ -216,6 +225,31 @@ func run() error {
 		backup.NewGRPCServer(backupSvc, log)); err != nil {
 		return fmt.Errorf("backup api: %w", err)
 	}
+
+	// --- Scheduler ------------------------------------------------------------------------------
+	//
+	// Constructed after the backup service, and this ordering is load-bearing rather than tidy.
+	// Deferred calls unwind in reverse, so `defer sched.Close()` registered here runs *before*
+	// `defer backupSvc.Close()` above. That is the only correct sequence: the scheduler stops
+	// claiming work and drains its runners, and only then does the backup service wait for what is
+	// left. In the other order the backup service would wait on runs the scheduler was still
+	// starting, and shutdown would never complete.
+	scheduleSvc := scheduler.NewService(db.Pool(), log)
+	if err := fwv1.RegisterScheduleServiceHandlerServer(ctx, gateway,
+		scheduler.NewGRPCServer(scheduleSvc, log)); err != nil {
+		return fmt.Errorf("schedule api: %w", err)
+	}
+
+	sched := scheduler.New(db.Pool(), scheduler.NewBackupRunner(backupSvc), cfg.Scheduler, log)
+	defer func() { _ = sched.Close() }()
+
+	// Non-critical: a stalled tick loop means nothing runs automatically, which is worth degrading
+	// readiness for and is not worth refusing to serve the estate view for. It is also the only way
+	// this failure is visible at all — a loop that has quietly stopped looks exactly like an estate
+	// with nothing scheduled.
+	health.Register("scheduler", false, api.CheckerFunc(sched.HealthCheck))
+	sched.Start(ctx)
+
 	server.Mux().Handle("/api/v1/", gateway)
 
 	if err := server.Start(ctx); err != nil {
