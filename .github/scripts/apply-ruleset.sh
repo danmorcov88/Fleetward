@@ -23,6 +23,21 @@ set -euo pipefail
 
 RULESET="${RULESET:-.github/rulesets/main-protection.json}"
 
+# Windows installs Python as "python"; a bare "python3" there hits the Microsoft Store alias stub,
+# which prints an install advert and exits non-zero. The repository's own dev machine is Windows, so
+# resolving this properly is the difference between a script that runs and one that is documented.
+PY_BIN=""
+for candidate in python3 python; do
+  if "$candidate" -c 'import json' >/dev/null 2>&1; then
+    PY_BIN="$candidate"
+    break
+  fi
+done
+if [[ -z "$PY_BIN" ]]; then
+  echo "error: needs python3 (or python) on PATH to read and summarise the ruleset JSON." >&2
+  exit 1
+fi
+
 if ! command -v gh >/dev/null 2>&1; then
   echo "error: the GitHub CLI (gh) is required. Install it: https://cli.github.com" >&2
   exit 1
@@ -51,7 +66,7 @@ if [[ -z "$REPO" ]]; then
   exit 1
 fi
 
-NAME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "$RULESET")"
+NAME="$($PY_BIN -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "$RULESET")"
 
 echo "repository : $REPO"
 echo "ruleset    : $NAME  (from $RULESET)"
@@ -79,7 +94,7 @@ echo
 echo "=== stored by GitHub (ruleset $RULESET_ID) ==="
 gh api "repos/$REPO/rulesets/$RULESET_ID" > /tmp/fleetward-ruleset-readback.json
 
-python3 - /tmp/fleetward-ruleset-readback.json <<'PY'
+"$PY_BIN" - /tmp/fleetward-ruleset-readback.json <<'PY'
 import json, sys
 
 d = json.load(open(sys.argv[1]))
