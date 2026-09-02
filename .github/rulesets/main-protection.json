@@ -44,6 +44,7 @@
           { "context": "Conformance" },
           { "context": "Vulnerability scan" },
           { "context": "Web" },
+          { "context": "Docs" },
           { "context": "Dev stack smoke test" }
         ]
       }

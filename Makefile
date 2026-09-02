@@ -127,11 +127,15 @@ cover: ## Run tests with coverage and open the report
 # --- Lint ----------------------------------------------------------------------------------------
 
 .PHONY: lint
-lint: lint-go proto-lint lint-web ## Run every linter
+lint: lint-go proto-lint lint-web docs-check ## Run every linter
 
 .PHONY: lint-go
 lint-go: ## Lint Go code
 	golangci-lint run
+
+.PHONY: docs-check
+docs-check: ## Check documentation claims against the tree (paths, links, ADRs, CI, vocabulary)
+	go run ./tools/docscheck
 
 .PHONY: lint-web
 lint-web: ## Lint the web app
