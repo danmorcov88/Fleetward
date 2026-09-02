@@ -10,6 +10,7 @@ require (
 	github.com/hashicorp/go-plugin v1.8.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/klauspost/compress v1.19.2
+	github.com/microsoft/go-mssqldb v1.11.0
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.1
@@ -49,6 +50,8 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
+	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/yamux v0.1.2 // indirect
@@ -79,6 +82,7 @@ require (
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.6 // indirect
+	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
