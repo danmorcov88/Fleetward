@@ -17,8 +17,13 @@ and everything with a longer lifetime lives elsewhere: rationale in the
 The architecture's central claim is no longer an intention. SQL Server passes the shared conformance
 suite — all five end-to-end cases, including the four that are supposed to fail — and the suite is
 unchanged: the slice added a fixture beside the plugin and the one line that registers it, and
-nothing else under `test/conformance/`. `grep -ri "sqlserver|mssql" internal/ web/src/` returns
-nothing.
+nothing else under `test/conformance/`. No line of executable code in `internal/` or `web/src/`
+names the engine — the only four mentions anywhere in core are a comment explaining why the password
+policy field exists and a unit test that uses the real image name as its fixture data:
+
+```bash
+grep -rniE "sqlserver|mssql|sql server" internal/ web/src/ | grep -v "_test\.go:" | grep -vE ":[0-9]+:\s*//"
+```
 
 It cost the contract four fields, all additive, and none of them an engine-specific escape hatch: an
 image's fixed administrative account, its password policy, a directory an engine and a plugin can

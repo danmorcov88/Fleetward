@@ -38,9 +38,19 @@ both engines in full.
 `fixture_sqlserver_test.go`, 106 lines — and the single line in `fixtures_test.go` that registers it.
 No assertion, no helper, and no skip condition moved.
 
-**`grep -rniE "sqlserver|mssql|sql server" internal/ web/src/` returns nothing.** That is the
-acceptance test for the whole slice, and it is the one worth re-running before believing any future
-change to this area.
+**No line of executable code in `internal/` or `web/src/` names the engine.** That is the
+acceptance test for the whole slice, and it is worth re-running before believing any future change
+to this area. The bare grep is not quite empty, and the difference is worth stating precisely rather
+than rounding off: it finds four mentions, all of them a comment in
+`internal/controlplane/sandbox/sandbox.go` explaining why the password-policy field exists at all,
+and a unit test that uses the real image name as its fixture data. Neither is a branch. The check
+that means what the claim means is
+
+```bash
+grep -rniE "sqlserver|mssql|sql server" internal/ web/src/ | grep -v "_test\.go:" | grep -vE ":[0-9]+:\s*//"
+```
+
+and that one is empty.
 
 `golangci-lint run` reports 0 issues, `gofmt -l` is empty, `buf lint`, `buf format --diff`, and
 `buf breaking --against main` are clean, `go mod tidy` leaves no drift, and `go run ./tools/docscheck`
