@@ -308,6 +308,8 @@ type backupFile struct {
 // which are not the target's, so every one of them has to be relocated by name. It is also the first
 // statement that reads the artifact, which makes it the first place a damaged one is caught.
 func readFileList(ctx context.Context, db *sql.DB, enginePath string) ([]backupFile, error) {
+	//nolint:gosec // G202: a device path is not a bindable parameter; it is built by this package
+	// from the configured shared directory and a core-assigned identifier, and quoted as a literal.
 	rows, err := db.QueryContext(ctx, "RESTORE FILELISTONLY FROM DISK = "+quoteLiteral(enginePath))
 	if err != nil {
 		return nil, restoreFailure(err)
@@ -406,6 +408,9 @@ func runRestoreStatement(ctx context.Context, db *sql.DB, database, enginePath, 
 		moves = append(moves, "MOVE "+quoteLiteral(f.logicalName)+" TO "+quoteLiteral(target))
 	}
 
+	//nolint:gosec // G202: RESTORE takes a database name, a device path, and the logical file names
+	// the artifact itself reported, none of which T-SQL binds as parameters. Every one is escaped
+	// the way QUOTENAME escapes it.
 	stmt := "RESTORE DATABASE " + quoteIdentifier(database) +
 		" FROM DISK = " + quoteLiteral(enginePath) +
 		" WITH " + strings.Join(moves, ", ") +

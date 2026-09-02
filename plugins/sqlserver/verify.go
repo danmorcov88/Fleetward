@@ -281,6 +281,8 @@ func checkIntegrity(ctx context.Context, db *sql.DB, database string) *fwv1.Chec
 	ctx, cancel := context.WithTimeout(ctx, integrityTimeout)
 	defer cancel()
 
+	//nolint:gosec // G202: DBCC takes a database name rather than a parameter, escaped as QUOTENAME
+	// escapes it, and this one is the sandbox's own.
 	stmt := "DBCC CHECKDB (" + quoteIdentifier(database) + ") WITH PHYSICAL_ONLY, NO_INFOMSGS"
 	if _, err := db.ExecContext(ctx, stmt); err != nil {
 		// DBCC reports corruption as an error, and so does a connection that died mid-check. The

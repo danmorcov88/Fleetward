@@ -32,10 +32,6 @@ const (
 	metadataFormat   = "format"
 	metadataDatabase = "database"
 
-	// downloadTimeout bounds fetching one artifact. Generous, because a large artifact crosses a
-	// link the plugin does not control; bounded, because a stalled transfer must not hold a
-	// sandbox open indefinitely.
-	downloadTimeout = 30 * time.Minute
 
 	// defaultRestoreTimeout bounds a run when the request carries no timeout of its own.
 	defaultRestoreTimeout = 2 * time.Hour

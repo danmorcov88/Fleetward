@@ -283,6 +283,10 @@ func createArtifactFile(share *fwv1.SharedDirectory, backupID string) (local, en
 // makes it validate page checksums as it writes, which is the second, independent detector behind
 // the SHA-256 core records.
 func runBackupStatement(ctx context.Context, db *sql.DB, database, enginePath string) error {
+	//nolint:gosec // G202: BACKUP takes a database name and a device path, and T-SQL binds neither
+	// as a parameter. Both are escaped the way QUOTENAME escapes them, the database name comes from
+	// the instance's own configuration, and the path is built by this package from a configured
+	// directory and a core-assigned identifier.
 	stmt := "BACKUP DATABASE " + quoteIdentifier(database) +
 		" TO DISK = " + quoteLiteral(enginePath) +
 		" WITH FORMAT, INIT, CHECKSUM, COMPRESSION, NAME = N'Fleetward full backup'"
