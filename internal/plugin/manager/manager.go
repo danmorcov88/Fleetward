@@ -225,8 +225,10 @@ func discoverBinaries(dir string) (map[string]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("plugin manager: stat %q: %w", path, err)
 		}
-		if info.Mode().Perm()&0o111 == 0 {
-			return nil, fmt.Errorf("plugin manager: %q is not executable", path)
+		// What makes a file launchable differs by platform, so the predicate lives in
+		// executable_unix.go and executable_windows.go rather than here.
+		if err := checkExecutable(path, info); err != nil {
+			return nil, err
 		}
 		found[engineType] = path
 	}

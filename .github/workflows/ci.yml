@@ -125,6 +125,32 @@ jobs:
           path: coverage.out
           retention-days: 7
 
+  # Plugin discovery is the one place where "works on my machine" is platform-shaped: Windows has no
+  # executable permission bit, os.Stat reports 0666 for a compiled binary, and exec.Command resolves
+  # through PATHEXT. A Unix-only predicate silently made every plugin undiscoverable there, which
+  # also meant the conformance suite — this project's own merge gate for plugins — could not be run
+  # locally on a Windows machine at all. This job is what keeps that from coming back.
+  #
+  # Deliberately not -short: the tests that build a real plugin binary and drive it over go-plugin
+  # are exactly the ones that would have caught it, and -short skips them.
+  #
+  # Deliberately no -race and no integration tags: race coverage comes from the Linux job, and
+  # testcontainers on a Windows runner is slow and flaky. This job answers one question — does the
+  # process-launch path work on Windows — and nothing else.
+  test-windows:
+    name: Test Go (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
   build:
     name: Build
     runs-on: ubuntu-latest
