@@ -1,0 +1,74 @@
+name: Wiki
+
+# Publishes docs/ to the GitHub wiki. The repository stays authoritative: a wiki has no pull
+# requests, no required status checks and no branch protection, so anything edited there could
+# be neither reviewed nor checked.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/CONTRIBUTING.md"
+      - ".github/SECURITY.md"
+      - ".github/CODE_OF_CONDUCT.md"
+      - "tools/wikigen/**"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch:
+
+# Deliberately does not cancel in progress. Two merges racing to push to the same wiki repository
+# produce a non-fast-forward, and the loser would be the run carrying the newer documentation.
+# Serialise instead.
+concurrency:
+  group: wiki
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25"
+          cache: true
+
+      # GITHUB_TOKEN cannot push to a wiki, whatever its permissions — the wiki is a separate
+      # repository that the automatic token has no write access to. This needs a fine-grained PAT
+      # with Contents: read/write, scoped to this repository, stored as WIKI_TOKEN.
+      #
+      # The clone also fails with "repository not found" until the wiki has been initialised by
+      # creating its first page through the GitHub UI. That is the single most common reason a
+      # workflow like this fails on its first run, and it is not something CI can do for you.
+      - name: Clone the wiki
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+        run: |
+          if [ -z "$WIKI_TOKEN" ]; then
+            echo "::error::WIKI_TOKEN is not set. See .github/workflows/wiki.yml for what it needs."
+            exit 1
+          fi
+          git clone --depth 1 \
+            "https://x-access-token:${WIKI_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" .wiki
+
+      - name: Generate
+        run: go run ./tools/wikigen -out .wiki
+
+      - name: Publish
+        working-directory: .wiki
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Wiki is already current."
+            exit 0
+          fi
+          git commit -m "docs: publish from ${GITHUB_SHA:0:7}"
+          git push
