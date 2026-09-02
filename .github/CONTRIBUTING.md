@@ -97,9 +97,19 @@ sounds pedantic until you find a security policy claiming an authorization layer
 built, or a repository-layout tree listing four packages that do not exist — both of which happened
 here, because the documentation was written from the architecture rather than from the code.
 
-Where a claim can be checked mechanically it should be. Where it cannot — and "this prose is still
-true" cannot — it is a line in the pull request template, and answering it honestly is part of the
-work.
+Where a claim can be checked mechanically it should be. `make docs-check` runs
+[`tools/docscheck`](../tools/docscheck), which is a required CI job. It asserts that every path the
+documentation names exists, that every relative link resolves, that every control-plane package
+appears in a layout tree, that decision records carry their alternatives and that supersessions
+agree at both ends, that the CI jobs the ruleset requires are the ones the workflow defines, and
+that retired vocabulary stays retired.
+
+A path that genuinely cannot exist yet goes in [`docs/.docscheck-allow`](../docs/.docscheck-allow),
+scoped to the one file allowed to name it and carrying the reason. An allowance without a reason is
+refused, and one nothing uses any more is reported.
+
+Where a claim cannot be checked — and "this prose is still true" cannot — it is a line in the pull
+request template, and answering it honestly is part of the work.
 
 ## Architecture decisions
 

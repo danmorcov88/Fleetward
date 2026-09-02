@@ -311,8 +311,9 @@ flowchart LR
     PR --> C["conformance suite<br/>every plugin"]
     PR --> V["govulncheck"]
     PR --> W["web lint + build"]
+    PR --> DC["docscheck<br/>claims match the tree"]
     PR --> D["docker compose up<br/>readyz must be green"]
-    P & L & T & TW & B & C & V & W & D --> M["mergeable"]
+    P & L & T & TW & B & C & V & W & DC & D --> M["mergeable"]
 
     style M fill:#1f5c3a,stroke:#2e8b57,color:#fff
 ```
