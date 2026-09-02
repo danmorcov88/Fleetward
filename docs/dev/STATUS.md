@@ -12,20 +12,22 @@ and everything with a longer lifetime lives elsewhere: rationale in the
 
 ## Current position
 
-**Slice B1 is complete. Next is B2 — the SQL Server plugin.**
+**Slice B2 is complete. Next is B3 — observed backups.**
 
-Fleetward now runs without being asked. A schedule declares intent — a cron expression, a timezone,
-a verification policy — and the control plane turns it into jobs, leases each one, and records what
-happened. A backup interrupted by `kill -9` no longer sits at `running` forever: within one lease
-period it is closed as failed, with a message saying why, and the next scheduled run proceeds
-normally ([ADR-0025](../adr/0025-an-expired-lease-fails-its-job.md)). Two control planes against one
-database are safe by construction, because a job is claimed by a single atomic statement.
+The architecture's central claim is no longer an intention. SQL Server passes the shared conformance
+suite — all five end-to-end cases, including the four that are supposed to fail — and the suite is
+unchanged: the slice added a fixture beside the plugin and the one line that registers it, and
+nothing else under `test/conformance/`. `grep -ri "sqlserver|mssql" internal/ web/src/` returns
+nothing.
 
-B2's brief is not written yet; briefs are written when the slice starts (see
-[`slices/README.md`](slices/README.md)). Its content, and the reasons SQL Server is the second
-engine rather than the easier MySQL, are in [`../roadmap.md`](../roadmap.md).
+It cost the contract four fields, all additive, and none of them an engine-specific escape hatch: an
+image's fixed administrative account, its password policy, a directory an engine and a plugin can
+both see ([ADR-0026](../adr/0026-a-shared-directory-carries-a-file-based-artifact.md)), and a
+manifest entry admitting a count it could not pin to the artifact. Each is a declaration core acts on
+without learning which engine made it. That is what the slice was for.
 
-Session protocol: [`slices/README.md`](slices/README.md).
+Session protocol: [`slices/README.md`](slices/README.md). B3's brief is not written yet; briefs are
+written when the slice starts.
 
 ## Phases
 
@@ -33,7 +35,7 @@ Session protocol: [`slices/README.md`](slices/README.md).
 |---|---|
 | Foundation — contract, control plane, dev stack | ✅ [journal](journal/00-foundation.md) |
 | A — prove the loop (PostgreSQL), A1–A6 | ✅ [journal](journal/README.md) |
-| B — from a proven loop to an installed tool, B1–B16 | ◐ B1 done, B2 next |
+| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B2 done, B3 next |
 | Access compliance, structural drift, query editor | deferred — see [roadmap](../roadmap.md#deferred-deliberately) |
 
 There is no Phase F. Production readiness is a property of every slice
@@ -47,8 +49,19 @@ Listed so that no session has to re-derive them, and so that no document has to 
   who can reach the port, including the ones that add an instance, create a schedule, and trigger a
   backup. `cfg.Auth` is parsed and validated and read by no file outside `internal/config`. The
   tenant is the constant `metadb.DefaultTenantID`. **B6.**
-- **Only PostgreSQL is a real plugin.** MySQL, MongoDB, and Redis handshake and declare no
-  capabilities. The claim that a new engine needs no change to core is still untested. **B2.**
+- **Five of the eight engines are still binaries that only handshake.** MySQL, MongoDB, and Redis
+  declare no capabilities; Oracle, ClickHouse, and Cassandra have no binary at all. PostgreSQL and
+  SQL Server are real. **B11–B16.**
+- **A backup file left on a shared directory is not swept.** The plugin removes it on every path out
+  of a backup or a restore, including failure, but a plugin killed between the two leaks an
+  artifact-sized file on the share. A sandbox's own directory is removed with the sandbox; a real
+  instance's is not. It has the shape slice A3 solved for containers with a startup sweep, and it
+  does not have that sweep.
+- **A SQL Server manifest is exact only on a quiescent database.** `BACKUP DATABASE` is consistent at
+  the LSN it ends on, and a `COUNT(*)` cannot be tied to that LSN without writing to the monitored
+  instance. The plugin brackets the counting pass and flags an object that changed underneath it, and
+  a mismatch on a flagged object is `INCONCLUSIVE` rather than `FAILED`. So a busy database verifies
+  more weakly than a quiet one, and says so in its report.
 - **Artifacts accumulate forever, and the scheduler now fills the bucket faster.**
   `backups.expires_at`, `schedules.retention_days`, the `expired` state, and `idx_backups_expiring`
   all exist; `retention_days` is stored on every schedule and read by nothing. **B5.**
@@ -83,7 +96,14 @@ Listed so that no session has to re-derive them, and so that no document has to 
 - `make` is not present on a stock Windows install. The targets can be run directly; a session on
   Windows without it should say so rather than report `make lint test` as passing.
 - On Windows, `go test -race` requires cgo and a C toolchain, which a stock install has neither of.
-  The unit suite runs without `-race` there; CI runs it with `-race` on Linux.
+  The unit and conformance suites run without `-race` there; CI runs them with `-race` on Linux.
 - A Windows checkout with `core.autocrlf=true` makes `gofmt` and `buf format --diff` report every
   file in the tree as unformatted. It is a line-ending artefact, not a finding — check a branch in a
   worktree created with `core.autocrlf=false` before believing it.
+- **The SQL Server conformance cases run on this machine and the PostgreSQL ones do not.** The
+  SQL Server plugin shells out to nothing, so it declares no `required_tools` and nothing is missing;
+  PostgreSQL needs `pg_dump`, `pg_restore`, and `psql` on `PATH` and skips without them. Read the
+  skip reasons rather than the exit code.
+- `mcr.microsoft.com/mssql/server:2022-latest` is 625 MB and becomes ready in about nine seconds
+  warm. A full conformance run takes a little under three minutes on this machine with the image
+  already pulled.
