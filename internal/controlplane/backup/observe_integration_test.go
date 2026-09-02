@@ -110,26 +110,40 @@ func TestObservationConvergesWithAManagedBackup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	// A backup Fleetward took, which recorded what the engine called it.
-	var backupID string
-	if err := h.pool.QueryRow(ctx, `
-		INSERT INTO backups (tenant_id, instance_id, method_id, state, origin, external_id,
-		                     completed_at, size_bytes)
-		VALUES ($1, $2, 'dump', 'succeeded', 'managed', 'set-a', now(), 4096)
-		RETURNING id`, h.svc.tenantID, h.instance).Scan(&backupID); err != nil {
-		t.Fatalf("seed a managed backup: %v", err)
+	// A backup Fleetward takes, through the real path, with the plugin reporting what the engine
+	// called it. Seeding the column directly would test the upsert and miss the plumbing that
+	// populates it — which is exactly the defect the walk found: the plugin reported the identity
+	// and recordSuccess dropped it, so every managed backup was observed a second time.
+	h.plugin.payload = []byte("a backup Fleetward took")
+	h.plugin.externalID = "set-a"
+	backupID, _, err := h.svc.RunBackup(ctx, RunBackupInput{InstanceID: h.instance})
+	if err != nil {
+		t.Fatalf("take a managed backup: %v", err)
+	}
+	if b := h.waitForState(t, backupID); b.GetState() != fwv1.BackupState_BACKUP_STATE_SUCCEEDED {
+		t.Fatalf("the managed backup is %s, want SUCCEEDED: %s", b.GetState(), b.GetErrorMessage())
+	}
+
+	var recorded *string
+	if err := h.pool.QueryRow(ctx,
+		`SELECT external_id FROM backups WHERE id = $1`, backupID).Scan(&recorded); err != nil {
+		t.Fatalf("read the managed backup's identity: %v", err)
+	}
+	if recorded == nil || *recorded != "set-a" {
+		t.Fatalf("the managed backup recorded external_id %v, want \"set-a\": the next poll will "+
+			"record this backup a second time as somebody else's", recorded)
 	}
 
 	h.plugin.history = []*fwv1.ObservedBackup{
 		observed("set-a", fwv1.ObservedOutcome_OBSERVED_OUTCOME_SUCCEEDED, time.Now().UTC()),
 	}
 
-	result, err := h.svc.ObserveBackupHistory(ctx, ObserveInput{InstanceID: h.instance})
+	polled, err := h.svc.ObserveBackupHistory(ctx, ObserveInput{InstanceID: h.instance})
 	if err != nil {
 		t.Fatalf("poll: %v", err)
 	}
-	if result.Discovered != 0 {
-		t.Errorf("the poll recorded %d new backups for one Fleetward already took", result.Discovered)
+	if polled.Discovered != 0 {
+		t.Errorf("the poll recorded %d new backups for one Fleetward already took", polled.Discovered)
 	}
 
 	if got := countBackups(t, ctx, h, originObserved); got != 0 {

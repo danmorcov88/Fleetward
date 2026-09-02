@@ -703,6 +703,17 @@ func (s *Service) recordSuccess(ctx context.Context, req runRequest, result *fwv
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// The engine's own identifier for what was just written, where the engine assigns one.
+	//
+	// It is what stops this backup being recorded a second time, as somebody else's, by the next
+	// observation poll: an engine that keeps a backup history records Fleetward's backups alongside
+	// everyone else's, and the upsert in observe.go converges onto this row rather than inserting a
+	// duplicate (ADR-0027). NULL rather than empty, because the identity index is partial on it.
+	var externalID any
+	if id := result.GetExternalId(); id != "" {
+		externalID = id
+	}
+
 	_, err = tx.Exec(ctx, `
 		UPDATE backups
 		SET state              = 'succeeded',
@@ -715,10 +726,11 @@ func (s *Service) recordSuccess(ctx context.Context, req runRequest, result *fwv
 		    consistency_point  = $7,
 		    manifest           = $8,
 		    metadata           = $9,
+		    external_id        = $10,
 		    completed_at       = now(),
-		    duration_ms        = $10,
+		    duration_ms        = $11,
 		    updated_at         = now()
-		WHERE id = $11 AND tenant_id = $12`,
+		WHERE id = $12 AND tenant_id = $13`,
 		result.GetArtifact().GetBucket(),
 		result.GetArtifact().GetKey(),
 		result.GetSizeBytes(),
@@ -728,6 +740,7 @@ func (s *Service) recordSuccess(ctx context.Context, req runRequest, result *fwv
 		nullableTime(result.GetConsistencyPoint()),
 		manifest,
 		metadataOrEmpty(result.GetMetadata()),
+		externalID,
 		result.GetDuration().AsDuration().Milliseconds(),
 		req.backupID, s.tenantID)
 	if err != nil {

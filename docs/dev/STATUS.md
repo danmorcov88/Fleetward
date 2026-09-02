@@ -110,6 +110,11 @@ Listed so that no session has to re-derive them, and so that no document has to 
 - **A manually triggered verification is not bounded.** `SCHEDULER_MAX_CONCURRENT_JOBS` bounds
   scheduled work, which is the case that matters on an estate of fifty. A human calling the verify
   endpoint in a loop can still start a sandbox per call.
+- **A job left `running` with no lease cannot be reaped.** That state is by definition an orphan —
+  nothing is working on it — and the reaper looks for an *expired lease*, which such a row does not
+  have. Nothing produces one today: every job kind now writes its terminal state before releasing
+  the lease, and B3's walk found and fixed the one path that did not. Recorded because the reaper's
+  blind spot is still there.
 - **Failed jobs are not retried.** `jobs.max_attempts` exists and nothing decrements against it; a
   failed run waits for its schedule's next occurrence. That is deliberate for now — see the
   alternatives in [ADR-0025](../adr/0025-an-expired-lease-fails-its-job.md) — and a real retry

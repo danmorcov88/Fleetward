@@ -189,6 +189,14 @@ func (s *Scheduler) run(parent context.Context, job *claimedJob) {
 
 	log.InfoContext(ctx, "scheduled job finished", slog.Duration("duration", time.Since(started)))
 
+	// An observation writes no row that is about the job — it updates the backups it found, and
+	// nothing else — so there is no transaction for its outcome to be folded into, and nothing else
+	// will close it. A job left running is not cosmetic: idx_jobs_one_active_per_instance_kind then
+	// blocks every later observation of that instance, and the polling silently stops.
+	if job.Kind == kindObserve {
+		s.close(parent, job.ID, "succeeded", "", log)
+	}
+
 	// The backup and verification services write the job's terminal state themselves, in the same
 	// transaction as the row that explains it. All that is left is to stop holding the lease.
 	//

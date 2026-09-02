@@ -491,6 +491,9 @@ type stubEngine struct {
 	// history is what this engine claims to see of backups Fleetward did not take, exercised by
 	// observe_integration_test.go.
 	history []*fwv1.ObservedBackup
+	// externalID is what the engine calls the backup this plugin takes, reported back so that the
+	// observation poll can converge on it rather than recording it twice.
+	externalID string
 
 	// The verification half, exercised by verify_integration_test.go.
 	restoreError *fwv1.PluginError
@@ -555,6 +558,9 @@ func (s *stubEngine) Backup(ctx context.Context, in *fwv1.BackupRequest, _ ...gr
 				MethodId: "dump",
 				Manifest: manifest,
 				Parts:    parts,
+				// What the engine called this backup, for engines that keep their own record of
+				// one. Empty for engines that do not, which is the default here.
+				ExternalId: s.externalID,
 			},
 		})
 	}
