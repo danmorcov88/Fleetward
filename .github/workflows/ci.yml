@@ -166,6 +166,17 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      # Same idiom as the protobuf codegen drift check: regenerate, and fail if the result differs
+      # from what was committed. A generated file that is committed is one a reader of the
+      # repository sees without running anything, which is the point of committing it.
+      - name: Verify generated documentation is current
+        run: |
+          make docs
+          if ! git diff --exit-code -- docs/; then
+            echo "::error::Generated documentation is out of date. Run 'make docs' and commit."
+            exit 1
+          fi
+
       - name: Check documentation claims
         run: make docs-check
 

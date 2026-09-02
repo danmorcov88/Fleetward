@@ -84,7 +84,10 @@ username, password, and database name, and the plugin's template says where they
 `{{ .Password }}` where its engine expects one ([ADR-0020](adr/0020-sandbox-credentials-from-template-placeholders.md)).
 
 Architecture decisions are recorded in [`docs/adr/`](adr/) — <!-- adr-count -->24<!-- /adr-count -->
-of them, each with context, consequences, and the alternatives that were rejected.
+of them, each with context, consequences, and the alternatives that were rejected. The metadata
+schema those decisions produced is drawn in [`dev/data-model.md`](dev/data-model.md), and every
+setting the control plane reads is listed in [`ops/configuration.md`](ops/configuration.md). Both
+are generated from the code, so neither can drift from it.
 
 
 ---

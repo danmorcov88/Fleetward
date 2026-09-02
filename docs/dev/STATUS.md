@@ -5,7 +5,8 @@ The first thing a new session reads after `CLAUDE.md`.
 This file is **rewritten**, never appended to. It answers one question — where are we right now —
 and everything with a longer lifetime lives elsewhere: rationale in the
 [engineering journal](journal/README.md), the plan in [`../roadmap.md`](../roadmap.md), decisions in
-[`../adr/`](../adr/). It grew to 586 lines once by ignoring that rule.
+[`../adr/`](../adr/), the schema in [`data-model.md`](data-model.md), and every setting in
+[`../ops/configuration.md`](../ops/configuration.md). It grew to 586 lines once by ignoring that rule.
 
 ---
 
