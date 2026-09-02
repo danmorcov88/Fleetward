@@ -1,9 +1,11 @@
-# ADR-0021 — Plugins upload artifacts through presigned multipart parts
+# ADR-0021: Plugins upload artifacts through presigned multipart parts
 
 - **Status:** Accepted
 - **Date:** 2026-08-29
 - **Slice:** A4 — backup with a manifest
-- **Relates to:** [ADR-0007](0007-s3-object-storage-for-artifacts.md)
+- **Supersedes:** the single-presigned-`PUT` upload mechanism of
+  [ADR-0007](0007-s3-object-storage-for-artifacts.md); that ADR's rule that plugins never hold
+  storage credentials is unchanged and is what this mechanism preserves
 
 ## Context
 
@@ -27,21 +29,7 @@ PUT chunked status: 411 Length Required
 The size of a `pg_dump` stream is not known until the dump has finished. So the two requirements —
 stream without buffering, and write through a single presigned `PUT` — are mutually exclusive.
 
-Three ways out were considered:
-
-1. **Spool the artifact to a temporary file, then `PUT` it with a known length.** Simple and
-   correct, and it is what several established backup tools do. It also needs local disk equal to
-   the compressed size of the database, on the host running the plugin, for every concurrent
-   backup. On the estate this product is for, that is not a cost worth paying to avoid a hundred
-   lines of code.
-2. **Give the plugin storage credentials so it can drive a normal multipart upload.** This is the
-   one option that would make the code simplest, and it is the one ADR-0007 exists to forbid. A
-   plugin is the least trusted component in the system — third parties will write them — and
-   handing it a credential that can read and overwrite every tenant's artifacts to save some
-   plumbing is exactly the trade that decision refused.
-3. **Multipart upload driven by the plugin through presigned part grants.** The contract already
-   anticipated it: `ArtifactTarget` carries `part_urls` and `part_size_bytes`, and has since the
-   contract was first written.
+Three ways out were considered; they are set out under *Alternatives considered* below.
 
 ## Decision
 
@@ -93,3 +81,19 @@ not needed to prove the loop.
 trap remains correct and is honoured — nothing is buffered beyond one part — but the mechanism it
 prescribed could not have worked. The finding is recorded in the brief so a future session does not
 try it again.
+
+## Alternatives considered
+
+1. **Spool the artifact to a temporary file, then `PUT` it with a known length.** Simple and
+   correct, and it is what several established backup tools do. It also needs local disk equal to
+   the compressed size of the database, on the host running the plugin, for every concurrent
+   backup. On the estate this product is for, that is not a cost worth paying to avoid a hundred
+   lines of code.
+2. **Give the plugin storage credentials so it can drive a normal multipart upload.** This is the
+   one option that would make the code simplest, and it is the one ADR-0007 exists to forbid. A
+   plugin is the least trusted component in the system — third parties will write them — and
+   handing it a credential that can read and overwrite every tenant's artifacts to save some
+   plumbing is exactly the trade that decision refused.
+3. **Multipart upload driven by the plugin through presigned part grants.** Chosen. The contract
+   already anticipated it: `ArtifactTarget` carries `part_urls` and `part_size_bytes`, and has
+   since the contract was first written.

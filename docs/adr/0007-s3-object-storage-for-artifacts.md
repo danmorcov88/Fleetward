@@ -1,7 +1,15 @@
 # ADR-0007: S3-compatible object storage for backup artifacts
 
-- **Status:** Accepted
+- **Status:** Accepted; the upload mechanism is superseded by
+  [ADR-0021](0021-plugins-upload-artifacts-as-multipart-parts.md)
 - **Date:** 2026-07-26
+
+> **Superseded in part, 2026-08-29.** The rule that plugins never hold storage credentials stands
+> and is the load-bearing part of this ADR. The *mechanism* below — a single scoped presigned URL
+> per upload — does not work: `PutObject` against a presigned URL requires `Content-Length`, which a
+> streamed artifact does not know in advance. [ADR-0021](0021-plugins-upload-artifacts-as-multipart-parts.md)
+> replaces it with a multipart upload in which core begins and completes the upload and the plugin
+> writes parts through per-part grants. Presigned *download* for verification is unchanged.
 
 ## Context
 

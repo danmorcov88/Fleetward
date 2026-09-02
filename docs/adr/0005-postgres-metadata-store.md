@@ -1,7 +1,20 @@
 # ADR-0005: PostgreSQL 16 as the metadata store
 
-- **Status:** Accepted
+- **Status:** Accepted, with corrections
 - **Date:** 2026-07-26
+
+> **Correction, 2026-09-02.** Two details below never became true, and are recorded here rather than
+> edited out, because an ADR is a record of what was decided and when
+> ([ADR-0001](0001-record-architecture-decisions.md)).
+>
+> - **`sqlc` was never adopted.** There is no `sqlc.yaml`, no `sqlc` in `go.mod`, and no generation
+>   target. Queries are hand-written against `pgx/v5`. The *reason* `sqlc` was chosen still holds and
+>   is still honoured by hand: parameterized queries only, no ORM indirection. What was lost is the
+>   compile-time checking, which is now a review responsibility.
+> - **Migrations live at `internal/storage/metadb/migrations/`,** not at the repository root, so they
+>   can be `go:embed`-ed and the control plane can migrate itself with no external files. That change
+>   was made during the foundation work and recorded in the
+>   [journal](../dev/journal/00-foundation.md).
 
 ## Context
 

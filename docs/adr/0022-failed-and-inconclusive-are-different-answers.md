@@ -1,4 +1,4 @@
-# ADR-0022 — A verification distinguishes a bad backup from broken machinery
+# ADR-0022: A verification distinguishes a bad backup from broken machinery
 
 - **Status:** Accepted
 - **Date:** 2026-08-31
@@ -128,3 +128,30 @@ verification, because it reports a confidence nobody earned.
 artifact size and released as soon as the restore ends, but a fifty-server estate verifying on a
 schedule will want that bounded further. `SandboxConfig` has no knob for concurrent verifications
 today; that is the same gap slice A3 recorded, and it now has a second reason to be closed.
+
+## Alternatives considered
+
+**Two states: `VERIFIED` and `FAILED`.** The obvious design, and the one most backup tooling ships.
+Rejected because it forces every failure of the verification *machinery* to be reported as a failure
+of the *backup*. Docker being unreachable, a sandbox that never became ready, a transfer that broke
+half way — each would raise the loudest alert the product has, about a backup that may be perfectly
+good. The predictable result is that the alert stops being believed, which costs more than the
+missing state saved.
+
+**Two states the other way: treat anything uncertain as `VERIFIED` until proven otherwise.** Rejected
+immediately. A verification that cannot fail is worse than no verification, because it produces a
+green checkmark nobody earned. This is the same reasoning that makes a manifest-less backup
+`INCONCLUSIVE` by construction rather than trivially passing.
+
+**Keep two states, and distinguish the cases by matching on error message text.** The information is
+present — the plugin knows perfectly well whether it was the artifact or the machinery — but
+recovering it in core by string-matching a message written for a human is precisely the coupling a
+typed plugin contract exists to prevent. It also breaks silently the first time a plugin author
+rewords an error, and third parties will write plugins.
+
+**Add a dedicated error code to the contract instead of an SDK detail.** Considered seriously, and
+still the tidier design in the abstract. Rejected for now because "the artifact is corrupt" is a
+statement about a specific operation rather than a new class of failure, and because a convention
+carried in the SDK can be revised without a contract change while the loop is still being proven. If
+a second engine needs to express the same thing and the convention creaks, that is the signal to
+promote it.

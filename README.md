@@ -8,9 +8,9 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.25%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![Contract](https://img.shields.io/badge/plugin%20contract-v1-6E56CF)](api/proto/fleetward/v1/plugin.proto)
-[![Status](https://img.shields.io/badge/status-pre--alpha%20·%20Phase%20A-orange)](docs/dev/STATUS.md)
+[![Status](https://img.shields.io/badge/status-pre--alpha%20·%20Phase%20B-orange)](docs/dev/STATUS.md)
 
-[Why](#why-fleetward) · [Architecture](#architecture) · [Verification](#the-backup-verification-flow) · [Quickstart](#quickstart) · [Engines](#supported-engines) · [Contributing](.github/CONTRIBUTING.md)
+[Why](docs/why.md) · [Architecture](docs/architecture.md) · [Engines](docs/engines.md) · [Quickstart](#quickstart) · [Roadmap](docs/roadmap.md) · [Contributing](.github/CONTRIBUTING.md)
 
 </div>
 
@@ -41,190 +41,22 @@ A backup that succeeded but failed verification is surfaced as **critical** — 
 backup at all, because it is more dangerous. It is the difference between knowing you are exposed
 and believing you are safe.
 
-### Built for an estate you cannot check by hand
-
 Fleetward exists for the DBA responsible for fifty servers who cannot physically verify all of them
-in a working week. Three questions, one shape — *declare what should be true, detect what actually
-is, show the gap*:
+in a working week. It reads the backups your existing cron and scripts already take, so it reports
+on the whole estate from day one without you migrating anything — and the backups it takes itself
+carry a manifest that makes full verification possible. The two are never shown as the same green
+checkmark.
 
-| Pillar | The question it answers |
-|---|---|
-| **Backup compliance** | Did every server's backup run on schedule, succeed, and is it restorable? |
-| **Access compliance** | Who has access, does their account expire, and who is non-compliant? |
-| **Structural drift** | Did the schema change in a way nobody intended? |
-
-Backups already taken by your existing cron and scripts are read as **observed** backups, so
-Fleetward reports on your whole estate from day one without you migrating anything. Backups it takes
-itself are **managed**, and only those carry a manifest that makes full verification possible —
-the two are never shown as the same green checkmark
-([ADR-0015](docs/adr/0015-observed-and-managed-backups.md)).
-
----
-
-## Architecture
-
-Fleetward is a Go control plane that talks to **engine plugins**: separate binaries, each speaking a
-versioned gRPC contract, launched and supervised by a plugin manager.
-
-```mermaid
-flowchart TB
-    subgraph clients["Clients"]
-        UI["Web UI<br/><i>React 19 · TanStack</i>"]
-        CLI["fleetward-cli<br/><i>cobra</i>"]
-    end
-
-    subgraph core["Control plane · Go"]
-        API["REST API<br/><i>grpc-gateway · OpenAPI v3</i>"]
-        RBAC["AuthN / AuthZ<br/><i>OIDC · role × scope</i>"]
-        INV["Inventory"]
-        SCHED["Scheduler<br/><i>cron · lease locking</i>"]
-        BACKUP["Backup &amp; verification"]
-        ALERT["Alerting"]
-        PM["Plugin manager<br/><i>launch · supervise · restart</i>"]
-        SANDBOX["Sandbox provider<br/><i>Docker, then k8s Jobs</i>"]
-    end
-
-    subgraph plugins["Engine plugins · separate processes"]
-        PG["postgresql"]
-        MY["mysql"]
-        MG["mongodb"]
-        RD["redis"]
-        FUTURE["9-engine ready"]
-    end
-
-    subgraph storage["Storage"]
-        META[("PostgreSQL<br/><i>metadata</i>")]
-        TSDB[("VictoriaMetrics<br/><i>metrics</i>")]
-        OBJ[("S3 / MinIO<br/><i>artifacts</i>")]
-    end
-
-    subgraph estate["Monitored estate"]
-        DB1[("Production<br/>databases")]
-    end
-
-    UI --> API
-    CLI --> API
-    API --> RBAC
-    RBAC --> INV & SCHED & BACKUP & ALERT
-    INV & SCHED & BACKUP --> PM
-    BACKUP --> SANDBOX
-    PM -.->|"gRPC over local socket, mutual TLS"| PG & MY & MG & RD & FUTURE
-    PG & MY & MG & RD -->|"native tooling"| DB1
-    INV & SCHED & BACKUP & ALERT --> META
-    BACKUP -->|"presigned URLs"| OBJ
-    PG & MY & MG & RD -.->|"artifacts"| OBJ
-    ALERT --> TSDB
-
-    style core fill:#1a1a2e,stroke:#4a4a6a,color:#fff
-    style plugins fill:#16213e,stroke:#4a4a6a,color:#fff
-    style storage fill:#0f3460,stroke:#4a4a6a,color:#fff
-    style estate fill:#2a1a1a,stroke:#6a4a4a,color:#fff
-```
-
-### The one rule that shapes everything
-
-> **Core branches on a plugin's declared capabilities — never on its engine name.**
-
-Adding SQL Server, Oracle, or ClickHouse means writing a plugin. It never means
-modifying core. If core would need to know that an instance is PostgreSQL in order to behave
-correctly, the missing information belongs in the capability matrix.
-
-That constraint is enforced structurally rather than by convention. `SandboxTemplate` — the image,
-tag, port, and readiness probe used to verify a restore — lives *inside* `Capabilities`, so the
-control plane provisions verification containers from what a plugin declares and never needs a
-lookup table of engines. Even the sandbox's credentials keep the rule: core generates a fresh
-username, password, and database name, and the plugin's template says where they belong by writing
-`{{ .Password }}` where its engine expects one ([ADR-0020](docs/adr/0020-sandbox-credentials-from-template-placeholders.md)).
-
-Architecture decisions are recorded in [`docs/adr/`](docs/adr/) — 20 of them, each with context,
-consequences, and the alternatives that were rejected.
-
----
-
-## The backup verification flow
-
-This is the product. Correctness here outranks everything else.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant S as Scheduler
-    participant C as Core
-    participant P as Engine plugin
-    participant DB as Source instance
-    participant O as Object store
-    participant SB as Sandbox container
-
-    S->>C: BackupJob fires (lease claimed)
-    C->>O: begin multipart upload, presign one grant per part
-    C->>P: Backup(method, presigned part grants)
-    P->>DB: open a snapshot, capture SourceManifest (objects, record counts)
-    P->>DB: run native tool (pg_dump, mongodump, ...) on that same snapshot
-    P-->>O: stream artifact part by part, hashing as it goes
-    P-->>C: progress, then BackupResult (size, checksum, manifest, part receipts)
-    C->>O: complete the upload — or abort it, on any failure
-    C->>C: persist metadata row
-
-    Note over S,C: On success the scheduler enqueues a VerifyJob<br/>(always / sampled / manual)
-
-    S->>C: VerifyJob fires
-    C->>SB: provision isolated container from the plugin's SandboxTemplate
-    C->>P: Restore(artifacts into sandbox)
-    P->>O: fetch artifact, verify checksum
-    P->>SB: restore
-    C->>P: VerifyRestore(expected manifest)
-    P->>SB: connectivity, record counts, schema presence, integrity
-    P-->>C: verified / failed / inconclusive + report
-
-    C->>SB: destroy (guaranteed, including on panic)
-    C->>C: persist result, emit metric
-
-    alt verification failed
-        C->>C: critical alert - a backup believed good is proven bad
-    end
-```
-
-Three details that matter more than they look:
-
-**The manifest is not optional.** Without record counts captured at backup time, "verification"
-degrades to *did the server start* — and shipping that under the same green checkmark as a real
-check is worse than shipping no check at all.
-
-**`FAILED` and `INCONCLUSIVE` are different states.** A sandbox that never became ready is an
-infrastructure problem, not data loss. Collapsing them would train operators to ignore the one
-alert that matters most.
-
-**A partial artifact never becomes an object.** The plugin holds no storage credential: it writes
-parts through presigned grants and reports their receipts, and only core completes the upload
-([ADR-0021](docs/adr/0021-plugins-upload-artifacts-as-multipart-parts.md)). A backup that fails half
-way is aborted, so there is no window in which a truncated artifact exists to be restored later.
-
-**The sandbox is always destroyed.** Guaranteed teardown on every path, including panic — and
-defended twice more behind that, because a leaked container breaks nothing until it has eaten the
-machine. A lifetime ceiling reaps a verification that hung rather than failed, and a label-driven
-sweep at startup removes whatever a control plane killed mid-verification left behind.
-
----
-
-## Supported engines
-
-| Engine | Backup method | Status |
-|---|---|---|
-| **PostgreSQL** | `pg_dump` today; `pg_basebackup` + WAL archiving next, `pgbackrest` as a later method | Reference plugin — health, discovery, backup, sandbox restore, and verification implemented |
-| **MySQL / MariaDB** | `xtrabackup`, with `mysqldump` shipping first | Stage 3 |
-| **MongoDB** | `mongodump`, snapshot-based to follow | Stage 3 |
-| **Redis** | RDB via `BGSAVE` + fetch, AOF expressed in capabilities | Stage 3 |
-| SQL Server · Oracle · ClickHouse | — | Phase E — in the target estate, so the multi-engine architecture is a requirement, not a thought experiment |
-
-Fleetward orchestrates native tooling rather than implementing backup formats. Your engine's
-maintainers have spent years on those tools; the value is in scheduling, verifying, and reporting
-on them.
+**More:** [why Fleetward exists](docs/why.md) · [how it is built](docs/architecture.md) ·
+[which engines](docs/engines.md)
 
 ---
 
 ## Quickstart
 
-Requires **Docker** and **Docker Compose**. Nothing else.
+Requires **Docker** and **Docker Compose** to run the stack. The CLI steps further down build from
+source, which needs **Go 1.25+** — or use the `fleetward-cli` already inside the control-plane
+container, via `docker compose exec fleetward fleetward-cli …`.
 
 ```bash
 git clone https://github.com/danmorcov88/Fleetward.git
@@ -403,60 +235,17 @@ whole product exists to surface.
 
 ---
 
-## The plugin contract
+## Where to go next
 
-[`api/proto/fleetward/v1/plugin.proto`](api/proto/fleetward/v1/plugin.proto) defines ten RPCs that
-every engine plugin implements:
-
-| RPC | Purpose |
+| If you want to | Read |
 |---|---|
-| `GetCapabilities` | Typed feature matrix — the only thing core branches on |
-| `Discover` | Topology, version, databases |
-| `GetConfig` | Normalized key/value plus the raw form |
-| `CollectMetrics` | Streams batches, named per OTel database semantic conventions |
-| `Backup` | Streams progress; writes the artifact via presigned URL |
-| `Restore` | Streams progress; into a sandbox or a real instance |
-| `VerifyRestore` | Smoke-tests a restored instance against the source manifest |
-| `ListPITRTargets` | The point-in-time-recovery window, with its gaps |
-| `ListPrincipals` | Users, roles, privileges — strictly read-only |
-| `HealthCheck` | Liveness and health signals |
-
-### Non-negotiable rules
-
-1. **Capability-driven, never name-driven.** Grepping for `"postgres"` in `internal/` or `web/` is
-   a code smell and almost always a bug.
-2. **Plugins never persist credentials.** They arrive per-request and must not outlive the call.
-   Artifacts move through presigned URLs, so no storage credential ever reaches a plugin.
-3. **Plugins orchestrate native tooling.** They declare what they shell out to, and the manager
-   reports a missing binary at startup rather than at 3am.
-4. **Conformance is the merge gate.** A plugin merges only when the shared suite passes. It stands
-   your engine up from your own `SandboxTemplate`, backs it up, restores it, verifies it — and then
-   corrupts the artifact in the bucket and requires you to say so. Four of its end-to-end cases are
-   failures rather than successes, because a verification that has only ever been shown to pass is
-   indistinguishable from one that always passes.
-
-### Writing your own
-
-An engine plugin is a standalone binary whose `main` is three lines:
-
-```go
-package main
-
-import (
-    "github.com/danmorcov88/fleetward/internal/plugin/sdk"
-    "github.com/danmorcov88/fleetward/plugins/mynewengine"
-)
-
-func main() {
-    sdk.Serve(mynewengine.New())
-}
-```
-
-Embedding `sdk.Base` supplies typed "not supported" answers for everything you have not written
-yet, so the plugin satisfies the contract at every point in its construction rather than only at
-the end.
-
-Full guide: [**writing an engine plugin**](docs/dev/writing-an-engine-plugin.md).
+| Understand the problem it solves | [docs/why.md](docs/why.md) |
+| See how it is built, and the one rule that shapes it | [docs/architecture.md](docs/architecture.md) |
+| Know which engines are supported, and what "supported" means | [docs/engines.md](docs/engines.md) |
+| Write a plugin for your own engine | [docs/dev/writing-an-engine-plugin.md](docs/dev/writing-an-engine-plugin.md) |
+| Know what is built and what is not | [docs/dev/STATUS.md](docs/dev/STATUS.md) |
+| Know what comes next, and why in that order | [docs/roadmap.md](docs/roadmap.md) |
+| Understand why something is the way it is | [decision records](docs/adr/) · [design notes](docs/dev/design-notes.md) |
 
 ---
 
@@ -474,17 +263,21 @@ fleetward/
 │   └── plugins/*/            # thin plugin mains
 ├── internal/
 │   ├── config/               # env-driven configuration, shared by server and CLI
-│   ├── controlplane/         # api, inventory, scheduler, backup, alerting, rbac, auth
+│   ├── controlplane/         # api · inventory · backup · sandbox
 │   ├── plugin/{manager,sdk}/ # process supervision · the plugin author's harness
 │   ├── storage/              # metadb · tsdb · objstore · secrets
 │   └── telemetry/            # slog + OpenTelemetry
 ├── plugins/*/                # engine plugin implementations
 ├── web/                      # React app
 ├── test/{conformance,e2e}/   # the shared conformance suite
-├── deploy/{docker,dev,helm}/ # container definitions, dev IdP config
-├── docs/{adr,dev}/           # 23 ADRs, developer guides, project status
+├── deploy/{docker,dev}/      # container definitions, dev IdP config
+├── docs/                     # ADRs, architecture, roadmap, developer guides, status
 └── .github/                  # CI, contributing, security policy, templates
 ```
+
+The tree above is what exists, not what is planned — `internal/controlplane/` gains a `scheduler`
+in slice B1 and `auth` and `rbac` in B6, and a Helm chart waits on the Kubernetes sandbox provider.
+Directories are added by the slice that fills them.
 
 The repository root holds only files their tooling requires to be there. Anything with a legitimate
 home elsewhere lives in that home.
@@ -532,46 +325,16 @@ it cannot quietly rot between releases.
 
 ## Project status
 
-**Pre-alpha — Phase A complete, starting Phase B.** The contract, plugin system, metadata schema,
-dev stack, and CI are in place and verified end to end. Work is cut into slices, each independently
-demoable.
+**Pre-alpha.** Phase A is complete: the verification loop is closed and proven on PostgreSQL, in
+both directions — a corrupted artifact returns `FAILED`, and a sandbox that never answered returns
+`INCONCLUSIVE`. Phase B turns that proven loop into something installable.
 
-Phase A is done. The PostgreSQL plugin answers `HealthCheck` and `Discover` against a real server;
-the inventory service, REST API, and CLI make that reachable, so a server can be added and seen
-healthy; the control plane provisions a throwaway database container from a plugin's
-`SandboxTemplate` and is proven not to leak one; `backup run` takes a real `pg_dump`, streams it
-into object storage without buffering it, and records a manifest of what the source contained; and
-`backup verify` restores that artifact into the sandbox and compares it to the manifest row for row.
+Not yet built, stated plainly because a reference document should not imply otherwise: there is no
+scheduler, so nothing runs automatically; there is no authentication, so every API route is open to
+anyone who can reach the port; nothing is delivered anywhere, so a failed verification is visible
+only by polling; and only PostgreSQL is a real plugin.
 
-**The loop is closed, and it is proven in both directions.** An artifact corrupted where it lives —
-truncated in the bucket, or with one byte flipped mid-stream — comes back `FAILED` rather than
-restoring quietly. A restored copy that is short of what its manifest recorded comes back `FAILED`
-with the object and both counts named. And a sandbox that never answered comes back `INCONCLUSIVE`,
-never `FAILED`, because a system that reports infrastructure trouble as data loss gets muted, and a
-muted alert is the same as no alert.
-
-All of that lives in the shared plugin conformance suite rather than in a PostgreSQL test, so every
-engine added later inherits the proof instead of reinventing it.
-
-| Phase | Scope | Status |
-|---|---|---|
-| **Foundation** | Contract, plugin manager, schema, dev stack, CI | ✅ Complete |
-| **A** | Prove the loop: PostgreSQL backup → sandbox restore → verification | ✅ Complete |
-| **B** | Compliance console: observed backups, schedule adherence, Estate Overview, alerts | 🔨 Next |
-| **C** | Access compliance: who has access, expiry, non-compliant accounts | ⬜ |
-| **D** | Structural drift: schema snapshots and diffs over time | ⬜ |
-| **E** | Remaining engines: MySQL/MariaDB, MongoDB, Redis, SQL Server, Oracle, ClickHouse | ⬜ |
-| **F** | Production readiness: RBAC enforcement, audit, metrics, signed releases | ⬜ |
-| **G** | Query editor — last, and gated on the conditions in ADR-0018 | ⬜ |
-
-Detail and per-slice checklists: [`docs/dev/STATUS.md`](docs/dev/STATUS.md).
-
-> The PostgreSQL plugin declares five capabilities today — schema discovery, replication,
-> replication lag, online backup, and sandbox restore — plus the three verification checks it
-> actually implements. Every other flag is still `false`. A flag is turned on in the same change
-> that implements the behaviour behind it, never in advance. Core trusts that matrix when deciding
-> what is safe to do to a production database, and a premature flag produces its failure during a
-> recovery.
+The full list, and which slice owns each item, is in [docs/dev/STATUS.md](docs/dev/STATUS.md).
 
 ---
 

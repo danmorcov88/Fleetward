@@ -19,6 +19,12 @@ Closes #
 - [ ] `make lint test` passes locally
 - [ ] Conventional Commits title
 - [ ] `README.md` updated if this changes what the project does, how it is run, or its architecture
+- [ ] **No documentation added here describes behaviour that does not exist**, unless it is in a
+      slice brief or marked `> Planned.`
+- [ ] If this changed what a security researcher needs to know, `.github/SECURITY.md` is updated.
+      *(Nothing can detect that a prose claim became false — this one is on you.)*
+- [ ] If a slice completed: a journal entry exists at `docs/dev/journal/`, and `docs/dev/STATUS.md`
+      has been rewritten to point at the next slice
 
 ### If this touches a plugin
 

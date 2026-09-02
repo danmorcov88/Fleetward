@@ -99,8 +99,13 @@ in full. `pg_dump` writes to stdout — pipe it to the HTTP request body.
 > [ADR-0021](../../adr/0021-plugins-upload-artifacts-as-multipart-parts.md).
 
 **A non-zero exit from `pg_dump` still produces output.** A partial artifact uploaded as success is
-a corrupt backup that reports green. Check the exit code before marking the backup complete, and
-delete the object if the tool failed.
+a corrupt backup that reports green. Check the exit code before marking the backup complete.
+
+> **Corrected after the fact:** this trap originally continued *"and delete the object if the tool
+> failed"*. [ADR-0021](../../adr/0021-plugins-upload-artifacts-as-multipart-parts.md) rejected that:
+> writing an object and deleting it on failure has a window in which a truncated artifact looks like
+> a backup. Aborting the multipart upload instead leaves nothing behind at all, which is the
+> stronger guarantee.
 
 ## Scope fence
 

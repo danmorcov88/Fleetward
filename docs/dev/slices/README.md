@@ -17,15 +17,15 @@ Each brief is self-contained. It does not assume you remember the conversation t
 Paste this into a fresh chat, changing only the slice identifier:
 
 ```
-Lucrăm la Fleetward. Citește în ordine, înainte să scrii cod:
+We are working on Fleetward. Read these in order, before writing any code:
 
-1. CLAUDE.md                                  — contextul proiectului, regulile care nu se negociază
-2. docs/dev/STATUS.md                         — unde suntem acum
-3. docs/dev/slices/README.md                  — protocolul de sesiune
-4. docs/dev/slices/<slice>.md                 — slice-ul de executat
+1. CLAUDE.md                                  — project context, the rules that are not negotiable
+2. docs/dev/STATUS.md                         — where we are right now
+3. docs/dev/slices/README.md                  — the session protocol
+4. docs/dev/slices/<slice>.md                 — the slice to execute
 
-Execută slice-ul respectând protocolul: branch nou, teste verzi, STATUS.md actualizat,
-push și pull request. Nu depăși scope fence-ul din brief.
+Execute the slice following the protocol: new branch, green tests, STATUS.md rewritten,
+a journal entry added, push, pull request. Do not exceed the scope fence in the brief.
 ```
 
 Replace `<slice>.md` with whichever slice `STATUS.md` says is next.
@@ -82,13 +82,18 @@ buf breaking --against '.git#branch=main'
 
 ### 5. Close out
 
-Three things, always:
+Four things, always:
 
-- **`docs/dev/STATUS.md`** — mark the slice done, point "Current position" at the next one, and add
-  a short *delivered* section recording decisions worth carrying forward. This is what the next
-  session reads first; it is not bookkeeping.
-- **`README.md`** — update if the change alters what Fleetward does, how it is run, its
-  architecture, or its stage. The Mermaid diagrams live there and drift silently.
+- **A journal entry** at `docs/dev/journal/<slice>-<slug>.md` — what shipped, how it was verified
+  with the actual numbers, the decisions worth carrying forward, and what was deliberately left
+  unbuilt. Append-only; never edited afterwards. See
+  [`../journal/README.md`](../journal/README.md) for the shape.
+- **`docs/dev/STATUS.md`** — **rewritten**, not appended to: current position pointing at the next
+  slice, and the known-broken list adjusted. It stays short because everything with a longer
+  lifetime goes in the journal. This is what the next session reads first; it is not bookkeeping.
+- **`README.md` and the docs under `docs/`** — update if the change alters what Fleetward does, how
+  it is run, or its architecture. Mermaid diagrams drift silently. Documentation describes what is;
+  briefs describe what will be; the two never mix in one file.
 - **An ADR** in `docs/adr/` for anything a future session might otherwise undo.
 
 ### 6. Ship
@@ -129,15 +134,22 @@ If you write a new one, follow this shape — it is what makes a cold start poss
 
 ## Current slices
 
-| Slice | Brief | State |
-|---|---|---|
-| A1 | — (delivered; notes in `STATUS.md`) | ✅ |
-| A2 | [Inventory service and CLI](A2-inventory-and-cli.md) | ✅ |
-| A3 | [Sandbox provider](A3-sandbox-provider.md) | ✅ |
-| A4 | [Backup with manifest](A4-backup-and-manifest.md) | ✅ |
-| A5 | [Restore and verification](A5-restore-and-verify.md) | ✅ |
-| A6 | [Proving verification fails](A6-verification-fails-loudly.md) | ✅ |
+| Slice | Brief | Journal | State |
+|---|---|---|---|
+| A1 | — | [entry](../journal/A1-health-and-discover.md) | ✅ |
+| A2 | [Inventory service and CLI](A2-inventory-and-cli.md) | [entry](../journal/A2-inventory-and-cli.md) | ✅ |
+| A3 | [Sandbox provider](A3-sandbox-provider.md) | [entry](../journal/A3-sandbox-provider.md) | ✅ |
+| A4 | [Backup with manifest](A4-backup-and-manifest.md) | [entry](../journal/A4-backup-and-manifest.md) | ✅ |
+| A5 | [Restore and verification](A5-restore-and-verify.md) | [entry](../journal/A5-restore-and-verify.md) | ✅ |
+| A6 | [Proving verification fails](A6-verification-fails-loudly.md) | [entry](../journal/A6-verification-fails-loudly.md) | ✅ |
+| B1 | not yet written — next | — | ⬜ |
 
-Phase A is complete. Phases B through G are described in `CLAUDE.md` §6 and `STATUS.md`. Their
-briefs are written when the phase starts — writing them now would be inventing detail that the
-preceding phase is likely to change, and a confidently wrong brief is worse than none.
+Phase A is complete. What comes next is in [`../../roadmap.md`](../../roadmap.md). A brief is
+written when its slice starts — writing them all now would be inventing detail that the preceding
+slice is likely to change, and a confidently wrong brief is worse than none.
+
+The Phase A briefs above use the roadmap vocabulary of the time and defer work to "Phase C" or
+"Phase F". Those labels are retired — the plan is now a numbered slice sequence, and production
+readiness is a property of every slice rather than a phase
+([ADR-0024](../../adr/0024-production-readiness-is-a-slice-property.md)). The briefs are left as
+written; read such a reference as "a later slice".
