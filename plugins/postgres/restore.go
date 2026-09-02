@@ -32,7 +32,6 @@ const (
 	metadataFormat   = "format"
 	metadataDatabase = "database"
 
-
 	// defaultRestoreTimeout bounds a run when the request carries no timeout of its own.
 	defaultRestoreTimeout = 2 * time.Hour
 )
