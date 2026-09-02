@@ -10,6 +10,9 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"os"
+	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -18,6 +21,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"google.golang.org/protobuf/proto"
@@ -362,6 +366,17 @@ func (p *DockerProvider) create(ctx context.Context, spec Spec, id identity, ima
 		}
 	}
 
+	// A plugin whose engine hands its artifact over as a file needs somewhere both of them can
+	// reach (ADR-0026). Core makes that directory and mounts it; what goes in it is the plugin's
+	// business, and core never learns which engine asked.
+	share, err := p.prepareSharedDir(spec.Template.GetSharedDirectory(), sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	if share != nil {
+		hostConfig.Mounts = append(hostConfig.Mounts, share.mount)
+	}
+
 	name := p.namePrefix + "-sandbox-" + sandboxID
 
 	created, err := p.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
@@ -376,6 +391,9 @@ func (p *DockerProvider) create(ctx context.Context, spec Spec, id identity, ima
 		HostConfig: hostConfig,
 	})
 	if err != nil {
+		if share != nil {
+			share.cleanup()
+		}
 		return nil, fmt.Errorf("create sandbox container: %w", err)
 	}
 	for _, warning := range created.Warnings {
@@ -383,7 +401,7 @@ func (p *DockerProvider) create(ctx context.Context, spec Spec, id identity, ima
 			slog.String("sandbox_id", sandboxID), slog.String("warning", warning))
 	}
 
-	return &dockerSandbox{
+	box := &dockerSandbox{
 		provider:      p,
 		id:            sandboxID,
 		containerID:   created.ID,
@@ -395,8 +413,78 @@ func (p *DockerProvider) create(ctx context.Context, spec Spec, id identity, ima
 			Database: id.Database,
 			Options:  map[string]string{},
 		},
+	}
+	if share != nil {
+		box.creds.SharedDirectory = &fwv1.SharedDirectory{
+			EnginePath: share.enginePath,
+			LocalPath:  share.localPath,
+		}
+		box.cleanupShare = share.cleanup
+	}
+	return box, nil
+}
+
+// sharedDir is one prepared directory, in the two forms its two users need it in.
+type sharedDir struct {
+	mount      mount.Mount
+	enginePath string
+	localPath  string
+	// cleanup removes what prepareSharedDir created. It never removes a configured volume, only
+	// this sandbox's own subtree of it.
+	cleanup func()
+}
+
+// prepareSharedDir creates the directory a template asked for and describes how to mount it.
+//
+// Two shapes, and which one applies is a property of where the control plane runs rather than of
+// the engine. With a configured volume, the sandbox mounts that volume and core writes into the
+// place the same volume is already mounted for itself — the only arrangement that works when the
+// control plane is itself a container, because a bind mount's source is resolved by the daemon
+// against its own filesystem. Without one, core binds a temporary directory of its own, which is
+// what the conformance suite and any host-run control plane get.
+//
+// Either way the sandbox gets its own subdirectory, so two sandboxes sharing a volume cannot see
+// each other's artifacts.
+func (p *DockerProvider) prepareSharedDir(containerPath, sandboxID string) (*sharedDir, error) {
+	if containerPath == "" {
+		return nil, nil
+	}
+
+	if volume := p.cfg.SharedDirVolume; volume != "" {
+		local := filepath.Join(p.cfg.SharedDirLocal, sandboxID)
+		if err := os.MkdirAll(local, sharedDirMode); err != nil {
+			return nil, fmt.Errorf("create the shared directory for a sandbox: %w", err)
+		}
+		return &sharedDir{
+			mount:      mount.Mount{Type: mount.TypeVolume, Source: volume, Target: containerPath},
+			enginePath: path.Join(containerPath, sandboxID),
+			localPath:  local,
+			cleanup:    func() { _ = os.RemoveAll(local) },
+		}, nil
+	}
+
+	local, err := os.MkdirTemp("", "fleetward-share-")
+	if err != nil {
+		return nil, fmt.Errorf("create the shared directory for a sandbox: %w", err)
+	}
+	// MkdirTemp is 0700 by design, and the engine runs as its own user. It needs to traverse the
+	// directory and write the file the plugin creates in it; it never needs to create one, which
+	// is what keeps the artifact owned by the plugin.
+	if err := os.Chmod(local, sharedDirMode); err != nil {
+		_ = os.RemoveAll(local)
+		return nil, fmt.Errorf("open the shared directory to the engine: %w", err)
+	}
+	return &sharedDir{
+		mount:      mount.Mount{Type: mount.TypeBind, Source: local, Target: containerPath},
+		enginePath: containerPath,
+		localPath:  local,
+		cleanup:    func() { _ = os.RemoveAll(local) },
 	}, nil
 }
+
+// sharedDirMode lets the engine's own user reach the directory. The artifact inside it is created
+// by the plugin and stays the plugin's; this permits traversal, not creation.
+const sharedDirMode = 0o777
 
 // bindAddress decides which host interface a sandbox's published port binds to.
 //
@@ -809,6 +897,11 @@ type dockerSandbox struct {
 
 	creds *fwv1.Credentials
 
+	// cleanupShare removes the shared directory this sandbox was given, if it was given one. A
+	// verified artifact is a full copy of a production database, so it does not outlive the
+	// container it was restored into.
+	cleanupShare func()
+
 	destroyOnce sync.Once
 	destroyErr  error
 }
@@ -843,6 +936,11 @@ func (s *dockerSandbox) Credentials() *fwv1.Credentials {
 func (s *dockerSandbox) Destroy(ctx context.Context) error {
 	s.destroyOnce.Do(func() {
 		s.destroyErr = s.provider.remove(ctx, s.containerID)
+		// The directory goes even when the container did not, because leaving a restored copy of a
+		// production database on disk is the worse of the two leaks.
+		if s.cleanupShare != nil {
+			s.cleanupShare()
+		}
 		if s.destroyErr == nil {
 			s.provider.log.Info("sandbox destroyed", slog.String("sandbox_id", s.id))
 		}

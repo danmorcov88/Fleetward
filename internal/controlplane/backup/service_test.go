@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
 )
 
 func capsWith(methods ...*fwv1.BackupMethod) *fwv1.Capabilities {
@@ -70,6 +71,87 @@ func TestSelectMethod(t *testing.T) {
 			}
 			if method.GetId() != tc.wantID {
 				t.Errorf("selectMethod() = %q, want %q", method.GetId(), tc.wantID)
+			}
+		})
+	}
+}
+
+// TestRequireSharedDirectory covers the precondition a file-based engine introduced (ADR-0026).
+//
+// The check has to run where a human is asking — creating a schedule, triggering a backup — rather
+// than at 02:00 from a plugin nobody is watching. And it is capability-driven: core reads a flag the
+// plugin published and never learns which engine set it.
+func TestRequireSharedDirectory(t *testing.T) {
+	streaming := &fwv1.BackupMethod{Id: "dump"}
+	fileBased := &fwv1.BackupMethod{Id: "full", RequiresSharedDirectory: true}
+
+	conn := func(share *fwv1.SharedDirectory) *inventory.Connection {
+		return &inventory.Connection{
+			InstanceID:  "11111111-1111-1111-1111-111111111111",
+			EngineType:  "testengine",
+			Credentials: &fwv1.Credentials{Host: "db-1", Port: 1433, SharedDirectory: share},
+		}
+	}
+	complete := &fwv1.SharedDirectory{EnginePath: "/var/opt/db/backup", LocalPath: "/mnt/backup"}
+
+	tests := []struct {
+		name    string
+		method  *fwv1.BackupMethod
+		conn    *inventory.Connection
+		wantErr bool
+	}{
+		{
+			// The overwhelming majority of engines stream, and none of them should have to
+			// configure anything for a field they do not use.
+			name:   "a streaming method needs nothing",
+			method: streaming,
+			conn:   conn(nil),
+		},
+		{
+			name:   "a file-based method with both paths",
+			method: fileBased,
+			conn:   conn(complete),
+		},
+		{
+			name:    "a file-based method with no directory at all",
+			method:  fileBased,
+			conn:    conn(nil),
+			wantErr: true,
+		},
+		{
+			// Half of it is the mistake worth catching: a path the engine writes to that core
+			// cannot read produces a backup that appears to succeed and then cannot be uploaded.
+			name:    "a file-based method with only the engine's half",
+			method:  fileBased,
+			conn:    conn(&fwv1.SharedDirectory{EnginePath: "/var/opt/db/backup"}),
+			wantErr: true,
+		},
+		{
+			name:    "a file-based method with only core's half",
+			method:  fileBased,
+			conn:    conn(&fwv1.SharedDirectory{LocalPath: "/mnt/backup"}),
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := requireSharedDirectory(tc.method, tc.conn)
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("requireSharedDirectory() error = %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("a backup with nowhere to write its file was accepted")
+			}
+			if !errors.Is(err, ErrInvalidArgument) {
+				t.Errorf("error = %v, want ErrInvalidArgument so the API answers 400 rather than 500", err)
+			}
+			// The operator has to be able to act on this without reading the source.
+			if !strings.Contains(err.Error(), "engine_path") || !strings.Contains(err.Error(), "local_path") {
+				t.Errorf("the message does not name both halves: %v", err)
 			}
 		})
 	}

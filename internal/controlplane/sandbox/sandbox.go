@@ -8,7 +8,15 @@
 //
 // The one thing core does own is identity. A sandbox gets a generated username, password, and
 // database name; the template says where they belong by referencing them as {{ .Username }},
-// {{ .Password }}, and {{ .Database }} in its environment and commands. See ADR-0020.
+// {{ .Password }}, and {{ .Database }} in its environment and commands. See ADR-0020. A template
+// may narrow that: an image whose administrative account cannot be renamed declares
+// fixed_username, and an image that validates the password it is handed declares a password_policy.
+// Neither tells core which engine it is talking to.
+//
+// A template may also ask for a directory the plugin can reach — shared_directory — for an engine
+// that hands its artifact over as a file rather than as a stream (ADR-0026). Core creates it,
+// mounts it, reports both of its names in the sandbox's credentials, and removes it with the
+// sandbox. What goes in it is the plugin's business.
 //
 // Cleanup is defended three times over, because a leaked sandbox does not break anything — it
 // quietly consumes a machine until someone notices:
@@ -29,6 +37,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math/big"
 	"slices"
 	"strings"
 	"text/template"
@@ -171,8 +180,12 @@ type identity struct {
 }
 
 // newIdentity generates the credentials for one sandbox.
+//
+// The username is core's to generate unless the image will not accept one: an engine whose
+// administrative account is fixed says so in its template, and core uses that name rather than
+// inventing one the image would ignore. The password is never the plugin's to choose.
 func newIdentity(spec Spec) (identity, error) {
-	password, err := generatePassword()
+	password, err := generatePassword(spec.Template.GetPasswordPolicy())
 	if err != nil {
 		return identity{}, err
 	}
@@ -183,6 +196,12 @@ func newIdentity(spec Spec) (identity, error) {
 		Database: spec.Database,
 		Port:     spec.Template.GetContainerPort(),
 	}
+	if fixed := spec.Template.GetFixedUsername(); fixed != "" {
+		// The image creates this account and cannot be told to rename it, so a generated name
+		// would produce a sandbox nobody can log in to. A caller's override loses to it for the
+		// same reason.
+		id.Username = fixed
+	}
 	if id.Username == "" {
 		id.Username = defaultSandboxUsername
 	}
@@ -192,16 +211,105 @@ func newIdentity(spec Spec) (identity, error) {
 	return id, nil
 }
 
-// generatePassword returns a URL-safe random password.
+// Character classes a password policy can require. The order is the order a generated password
+// draws its guaranteed characters in, so it is stable rather than incidental.
+const (
+	passwordUpper   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	passwordLower   = "abcdefghijklmnopqrstuvwxyz"
+	passwordDigits  = "0123456789"
+	passwordSymbols = "-_"
+	// passwordClasses is how many there are, and therefore the ceiling on min_character_classes.
+	passwordClasses = 4
+)
+
+// generatePassword returns a random password that satisfies the engine's policy.
 //
-// Base64 without padding keeps it free of characters that a shell-quoted readiness command or a
-// libpq connection parameter would have to escape.
-func generatePassword() (string, error) {
-	buf := make([]byte, generatedPasswordBytes)
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("generate sandbox password: %w", err)
+// With no policy it is base64url of generatedPasswordBytes, unchanged from ADR-0020: URL-safe, so
+// free of anything a shell-quoted readiness command or a connection parameter would have to
+// escape.
+//
+// With a policy it is built from the same alphabet, but the required classes are placed first and
+// the result shuffled — satisfied by construction rather than by generating and retrying. The
+// difference matters: mcr.microsoft.com/mssql/server refuses to start unless three of the four
+// classes appear, and base64url of 24 bytes misses two of them about once in eight hundred. A
+// rejection-sampling generator would hide that behind a loop with no upper bound; this one cannot
+// fail on a legal policy.
+func generatePassword(policy *fwv1.PasswordPolicy) (string, error) {
+	if policy == nil || (policy.GetMinLength() <= 0 && policy.GetMinCharacterClasses() <= 0) {
+		buf := make([]byte, generatedPasswordBytes)
+		if _, err := rand.Read(buf); err != nil {
+			return "", fmt.Errorf("generate sandbox password: %w", err)
+		}
+		return base64.RawURLEncoding.EncodeToString(buf), nil
 	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
+
+	symbols := policy.GetSymbolAlphabet()
+	if symbols == "" {
+		symbols = passwordSymbols
+	}
+	classes := []string{passwordUpper, passwordLower, passwordDigits, symbols}
+
+	required := int(policy.GetMinCharacterClasses())
+	if required > passwordClasses {
+		return "", fmt.Errorf("%w: min_character_classes of %d exceeds the %d classes that exist",
+			ErrInvalidTemplate, required, passwordClasses)
+	}
+
+	// The default length is what an unconstrained sandbox password already has, so declaring a
+	// policy never shortens one.
+	length := base64.RawURLEncoding.EncodedLen(generatedPasswordBytes)
+	if min := int(policy.GetMinLength()); min > length {
+		length = min
+	}
+	if required > length {
+		return "", fmt.Errorf("%w: min_character_classes of %d cannot fit in %d characters",
+			ErrInvalidTemplate, required, length)
+	}
+
+	pool := strings.Join(classes, "")
+	out := make([]byte, 0, length)
+	for i := range required {
+		c, err := randomChar(classes[i])
+		if err != nil {
+			return "", err
+		}
+		out = append(out, c)
+	}
+	for len(out) < length {
+		c, err := randomChar(pool)
+		if err != nil {
+			return "", err
+		}
+		out = append(out, c)
+	}
+
+	if err := shuffle(out); err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// randomChar picks one character uniformly from an alphabet.
+func randomChar(alphabet string) (byte, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+	if err != nil {
+		return 0, fmt.Errorf("generate sandbox password: %w", err)
+	}
+	return alphabet[n.Int64()], nil
+}
+
+// shuffle is Fisher-Yates over a cryptographic source, so the guaranteed characters do not sit at
+// a predictable offset.
+func shuffle(b []byte) error {
+	for i := len(b) - 1; i > 0; i-- {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return fmt.Errorf("generate sandbox password: %w", err)
+		}
+		j := n.Int64()
+		b[i], b[j] = b[j], b[i]
+	}
+	return nil
 }
 
 // randomID returns a short identifier used in container names and labels.

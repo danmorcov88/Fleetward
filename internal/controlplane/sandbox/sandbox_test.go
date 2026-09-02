@@ -185,6 +185,114 @@ func TestNewIdentityHonoursOverrides(t *testing.T) {
 	}
 }
 
+// TestAPasswordPolicyIsSatisfiedByConstruction is the regression test for a bug that had not
+// happened yet.
+//
+// mcr.microsoft.com/mssql/server refuses to start unless its password carries three of the four
+// character classes, and base64url of 24 bytes misses two of them roughly once in eight hundred.
+// One in eight hundred is the worst frequency a defect can have: too rare to reproduce, common
+// enough to fire. Sixteen samples would not catch it either, so this asserts the property rather
+// than sampling for the absence of the failure.
+func TestAPasswordPolicyIsSatisfiedByConstruction(t *testing.T) {
+	t.Parallel()
+
+	spec := Spec{Template: &fwv1.SandboxTemplate{
+		ImageRepository: "mcr.microsoft.com/mssql/server",
+		ContainerPort:   1433,
+		PasswordPolicy:  &fwv1.PasswordPolicy{MinLength: 32, MinCharacterClasses: 3},
+	}}
+
+	for range 512 {
+		id, err := newIdentity(spec)
+		if err != nil {
+			t.Fatalf("newIdentity: %v", err)
+		}
+		if len(id.Password) < 32 {
+			t.Fatalf("password %q is only %d characters, want at least 32", id.Password, len(id.Password))
+		}
+		if classes := characterClasses(id.Password); classes < 3 {
+			t.Fatalf("password %q carries %d character classes, want at least 3", id.Password, classes)
+		}
+	}
+}
+
+// TestAPasswordWithoutAPolicyIsUnchanged pins ADR-0020's generator for every plugin that declares
+// no policy, so adding the policy did not quietly change what PostgreSQL's sandboxes get.
+func TestAPasswordWithoutAPolicyIsUnchanged(t *testing.T) {
+	t.Parallel()
+
+	spec := Spec{Template: &fwv1.SandboxTemplate{ImageRepository: "postgres", ContainerPort: 5432}}
+
+	id, err := newIdentity(spec)
+	if err != nil {
+		t.Fatalf("newIdentity: %v", err)
+	}
+	if len(id.Password) != 32 {
+		t.Fatalf("password is %d characters, want the 32 of base64url over 24 bytes", len(id.Password))
+	}
+	if strings.ContainsFunc(id.Password, func(r rune) bool {
+		return !strings.ContainsRune(passwordUpper+passwordLower+passwordDigits+passwordSymbols, r)
+	}) {
+		t.Fatalf("password %q left the URL-safe alphabet", id.Password)
+	}
+}
+
+// TestAnUnsatisfiablePolicyIsRefusedRatherThanApproximated. A policy core cannot meet has to fail
+// loudly here, where the message names the template, rather than produce a password the engine
+// will reject at startup with a diagnosis nobody reads.
+func TestAnUnsatisfiablePolicyIsRefusedRatherThanApproximated(t *testing.T) {
+	t.Parallel()
+
+	spec := Spec{Template: &fwv1.SandboxTemplate{
+		ImageRepository: "example",
+		ContainerPort:   1234,
+		PasswordPolicy:  &fwv1.PasswordPolicy{MinCharacterClasses: 5},
+	}}
+
+	if _, err := newIdentity(spec); !errors.Is(err, ErrInvalidTemplate) {
+		t.Fatalf("error = %v, want ErrInvalidTemplate", err)
+	}
+}
+
+// TestAFixedUsernameWins covers the engine whose administrative account cannot be renamed. A
+// generated name would produce a sandbox nobody can log in to, so it loses even to a caller's
+// explicit override.
+func TestAFixedUsernameWins(t *testing.T) {
+	t.Parallel()
+
+	spec := Spec{
+		Template: &fwv1.SandboxTemplate{
+			ImageRepository: "mcr.microsoft.com/mssql/server",
+			ContainerPort:   1433,
+			FixedUsername:   "sa",
+		},
+		Username: "restorer",
+		Database: "orders",
+	}
+
+	id, err := newIdentity(spec)
+	if err != nil {
+		t.Fatalf("newIdentity: %v", err)
+	}
+	if id.Username != "sa" {
+		t.Errorf("username = %q, want the template's fixed %q", id.Username, "sa")
+	}
+	if id.Database != "orders" {
+		t.Errorf("database = %q; a fixed username must not disturb the database override", id.Database)
+	}
+}
+
+// characterClasses counts how many of the four classes a password draws from.
+func characterClasses(password string) int {
+	var found int
+	for _, class := range []string{passwordUpper, passwordLower, passwordDigits, passwordSymbols} {
+		if strings.ContainsAny(password, class) {
+			found++
+		}
+	}
+	return found
+}
+
 func TestNewLabelsUsesTheConfiguredPrefix(t *testing.T) {
 	t.Parallel()
 

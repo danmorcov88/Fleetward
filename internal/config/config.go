@@ -198,6 +198,17 @@ type SandboxConfig struct {
 	Network string
 	// LabelPrefix marks containers Fleetward owns, so an orphan sweep can find them after a crash.
 	LabelPrefix string
+	// SharedDirVolume is the name of a Docker volume to mount into a sandbox whose plugin asks for
+	// a shared directory (ADR-0026). It is what makes that directory work when the control plane
+	// itself runs in a container: a bind mount's source path is resolved by the daemon against its
+	// own filesystem rather than against this process's, so a path inside our container would
+	// silently mount the wrong thing. Empty falls back to binding a temporary directory, which is
+	// correct when the control plane runs directly on the daemon's host.
+	SharedDirVolume string
+	// SharedDirLocal is where that same volume is mounted in this process's own filesystem. The two
+	// are required together: one without the other describes a directory only one side can reach,
+	// which is the failure this whole mechanism exists to avoid.
+	SharedDirLocal string
 }
 
 // Load reads configuration from the environment and validates it.
@@ -299,6 +310,9 @@ func Load() (*Config, error) {
 			MaxLifetime:    envDuration("SANDBOX_MAX_LIFETIME", 2*time.Hour),
 			Network:        env("SANDBOX_NETWORK", ""),
 			LabelPrefix:    env("SANDBOX_LABEL_PREFIX", "fleetward"),
+
+			SharedDirVolume: env("SANDBOX_SHARED_DIR_VOLUME", ""),
+			SharedDirLocal:  env("SANDBOX_SHARED_DIR_LOCAL", ""),
 		},
 	}
 
@@ -351,6 +365,14 @@ func (c *Config) Validate() error {
 			"%sSCHEDULER_LEASE_HEARTBEAT (%s) must be shorter than %sSCHEDULER_LEASE_TTL (%s), "+
 				"otherwise a running job's lease expires before it is renewed and the job can be claimed twice",
 			envPrefix, c.Scheduler.LeaseHeartbeat, envPrefix, c.Scheduler.LeaseTTL))
+	}
+
+	if (c.Sandbox.SharedDirVolume == "") != (c.Sandbox.SharedDirLocal == "") {
+		errs = append(errs, fmt.Errorf(
+			"%sSANDBOX_SHARED_DIR_VOLUME and %sSANDBOX_SHARED_DIR_LOCAL must be set together: "+
+				"one names the volume a sandbox mounts and the other says where this process sees "+
+				"the same volume, and half of that describes a directory only one side can reach",
+			envPrefix, envPrefix))
 	}
 
 	// Production must not run with the development shortcuts that make the quickstart pleasant.

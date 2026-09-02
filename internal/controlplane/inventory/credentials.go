@@ -35,6 +35,17 @@ type credentialSecret struct {
 type connectionOptions struct {
 	Engine map[string]string `json:"engine,omitempty"`
 	TLS    *tlsOptions       `json:"tls,omitempty"`
+	// Share is where this instance's backup files are written and where this control plane sees
+	// the same directory (ADR-0026). It is not a secret — it is a path — so it lives here beside
+	// the other non-secret half of a connection rather than in the secret store.
+	Share *sharedDirOptions `json:"shared_directory,omitempty"`
+}
+
+// sharedDirOptions is the stored form of one directory under the two names its two users know it
+// by. Only an engine whose backup tooling writes a file rather than a stream needs one.
+type sharedDirOptions struct {
+	EnginePath string `json:"engine_path,omitempty"`
+	LocalPath  string `json:"local_path,omitempty"`
 }
 
 // tlsOptions holds the non-secret half of a connection's TLS configuration. Whether TLS is on at
@@ -66,6 +77,12 @@ func marshalCredentialSecret(spec *fwv1.ConnectionSpec) ([]byte, error) {
 // marshalConnectionOptions extracts the non-secret half of a connection spec.
 func marshalConnectionOptions(spec *fwv1.ConnectionSpec) ([]byte, error) {
 	opts := connectionOptions{Engine: spec.GetOptions()}
+	if share := spec.GetSharedDirectory(); share.GetEnginePath() != "" || share.GetLocalPath() != "" {
+		opts.Share = &sharedDirOptions{
+			EnginePath: share.GetEnginePath(),
+			LocalPath:  share.GetLocalPath(),
+		}
+	}
 	if tls := spec.GetTls(); tls.GetEnabled() {
 		opts.TLS = &tlsOptions{
 			InsecureSkipVerify: tls.GetInsecureSkipVerify(),
@@ -92,6 +109,19 @@ func unmarshalConnectionOptions(raw []byte) (*connectionOptions, error) {
 		return nil, fmt.Errorf("inventory: decode connection options: %w", err)
 	}
 	return opts, nil
+}
+
+// sharedDirectory reassembles the contract's message, or nil when this connection has no such
+// directory. Absent rather than empty-and-present: a plugin reads a nil block as "this engine
+// streams", which is the truth for every engine but the few that hand over a file.
+func (o *connectionOptions) sharedDirectory() *fwv1.SharedDirectory {
+	if o.Share == nil {
+		return nil
+	}
+	return &fwv1.SharedDirectory{
+		EnginePath: o.Share.EnginePath,
+		LocalPath:  o.Share.LocalPath,
+	}
 }
 
 // tlsSettings reassembles the contract's TLS message from both halves for one plugin call.
