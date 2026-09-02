@@ -1,7 +1,17 @@
 # ADR-0013: Internal cron scheduler with Postgres lease locking
 
-- **Status:** Accepted
+- **Status:** Accepted; what an expired lease does is superseded by [ADR-0025](0025-an-expired-lease-fails-its-job.md)
 - **Date:** 2026-07-26
+
+> **Superseded in part, 2026-09-02.** Everything below stands — internal cron, leases in
+> PostgreSQL, at-most-once, renewal by heartbeat — except the clause under **Decision** saying that
+> "an expired lease from a crashed runner becomes claimable again". Implementing the scheduler in
+> slice B1 showed that re-running is the wrong answer for the work this product actually schedules:
+> an interrupted backup leaves no artifact to salvage, and starting a six-hour dump against a
+> production server unattended, at the moment that server has just come back, is worse than the
+> missed run. An expired lease now **fails** its job, with a message saying so, and the next
+> scheduled occurrence creates a new one. See
+> [ADR-0025](0025-an-expired-lease-fails-its-job.md).
 
 ## Context
 
@@ -19,7 +29,8 @@ An internal scheduler in the control plane (`robfig/cron` for cron expression pa
 - Job definitions and run history **persisted in Postgres**, not held in memory.
 - **At-most-once execution via lease locking**: a runner claims a job by atomically setting a lease
   with an expiry; leases are renewed while running and released on completion. An expired lease
-  from a crashed runner becomes claimable again.
+  from a crashed runner becomes claimable again. *(Superseded: it is failed rather than re-claimed —
+  see the note above and [ADR-0025](0025-an-expired-lease-fails-its-job.md).)*
 
 ## Consequences
 

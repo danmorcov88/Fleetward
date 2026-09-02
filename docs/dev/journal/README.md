@@ -32,6 +32,7 @@ the decisions with the longest reach and links back to the entries they came fro
 | [A4](A4-backup-and-manifest.md) — backups with a source manifest | 2026-08-29 | [brief](../slices/A4-backup-and-manifest.md) |
 | [A5](A5-restore-and-verify.md) — restore into a sandbox, and prove it | 2026-08-31 | [brief](../slices/A5-restore-and-verify.md) |
 | [A6](A6-verification-fails-loudly.md) — verification fails loudly | 2026-08-31 | [brief](../slices/A6-verification-fails-loudly.md) |
+| [B1](B1-scheduler-and-leases.md) — the scheduler and the job lease | 2026-09-02 | [brief](../slices/B1-scheduler-and-leases.md) |
 
 ## Writing an entry
 

@@ -233,6 +233,47 @@ public.orders    120       118    the restored copy holds a different number of 
 backup and its proof are separate facts, and a green backup with a red verification is the case the
 whole product exists to surface.
 
+### Stop asking
+
+Everything above was typed by a person. On fifty servers that does not scale, so a schedule declares
+the intent once and the control plane does it:
+
+```bash
+bin/fleetward-cli schedule create --instance prod-1   --cron "0 2 * * *" --timezone Europe/Bucharest --verify always
+```
+
+```
+schedule 7c2f18ab-4d90-4e21-9f55-2b6e0c3a71d4 created on prod-1
+  0 2 * * * in Europe/Bucharest — next run 2026-09-03 00:00:00
+```
+
+The cron expression is read **in the schedule's own timezone** and stored in UTC, so `0 2 * * *`
+means 02:00 in Bucharest in July as well as in January. What actually ran is a table of its own:
+
+```bash
+bin/fleetward-cli job list --instance prod-1
+```
+
+```
+ID        KIND    STATE      TRIGGER   ATTEMPTS  STARTED (UTC)        FINISHED (UTC)       ERROR
+1f0c…     verify  succeeded  schedule  1         2026-09-03 00:00:31  2026-09-03 00:01:04
+9ab3…     backup  succeeded  schedule  1         2026-09-03 00:00:02  2026-09-03 00:00:29
+```
+
+The verification is a **separate job**, not something chained invisibly onto the backup — so
+`--verify sampled --verify-percent 20` is a decision you can read back out of that table later.
+
+The clock is a column in the database rather than a timer in the process, which is what makes the
+next two things true. A control plane restarted at 01:59 still runs the 02:00 backup. And a control
+plane killed **during** a backup does not leave a row saying `running` forever: within one lease
+period the job is closed as failed, with a message saying what happened, and the next scheduled run
+proceeds normally ([ADR-0025](docs/adr/0025-an-expired-lease-fails-its-job.md)).
+
+Two control planes against one database are safe by construction: a job is claimed by a single
+atomic `UPDATE`, so exactly one of them gets it.
+
+**More:** [scheduling, leases, and what daylight saving does](docs/ops/scheduling.md).
+
 ---
 
 ## Where to go next
@@ -243,6 +284,7 @@ whole product exists to surface.
 | See how it is built, and the one rule that shapes it | [docs/architecture.md](docs/architecture.md) |
 | Know which engines are supported, and what "supported" means | [docs/engines.md](docs/engines.md) |
 | Configure it — every setting, with its default | [docs/ops/configuration.md](docs/ops/configuration.md) |
+| Schedule backups, and know what a crash or a DST change does | [docs/ops/scheduling.md](docs/ops/scheduling.md) |
 | See the metadata schema | [docs/dev/data-model.md](docs/dev/data-model.md) |
 | Write a plugin for your own engine | [docs/dev/writing-an-engine-plugin.md](docs/dev/writing-an-engine-plugin.md) |
 | Know what is built and what is not | [docs/dev/STATUS.md](docs/dev/STATUS.md) |
@@ -265,7 +307,7 @@ fleetward/
 │   └── plugins/*/            # thin plugin mains
 ├── internal/
 │   ├── config/               # env-driven configuration, shared by server and CLI
-│   ├── controlplane/         # api · inventory · backup · sandbox
+│   ├── controlplane/         # api · inventory · backup · sandbox · scheduler
 │   ├── plugin/{manager,sdk}/ # process supervision · the plugin author's harness
 │   ├── storage/              # metadb · tsdb · objstore · secrets
 │   └── telemetry/            # slog + OpenTelemetry
@@ -277,9 +319,9 @@ fleetward/
 └── .github/                  # CI, contributing, security policy, templates
 ```
 
-The tree above is what exists, not what is planned — `internal/controlplane/` gains a `scheduler`
-in slice B1 and `auth` and `rbac` in B6, and a Helm chart waits on the Kubernetes sandbox provider.
-Directories are added by the slice that fills them.
+The tree above is what exists, not what is planned — `internal/controlplane/` gains `auth` and
+`rbac` in B6, and a Helm chart waits on the Kubernetes sandbox provider. Directories are added by
+the slice that fills them.
 
 The repository root holds only files their tooling requires to be there. Anything with a legitimate
 home elsewhere lives in that home.
@@ -330,12 +372,13 @@ it cannot quietly rot between releases.
 
 **Pre-alpha.** Phase A is complete: the verification loop is closed and proven on PostgreSQL, in
 both directions — a corrupted artifact returns `FAILED`, and a sandbox that never answered returns
-`INCONCLUSIVE`. Phase B turns that proven loop into something installable.
+`INCONCLUSIVE`. Phase B turns that proven loop into something installable, and its first slice has
+landed: backups and their verifications now run on a schedule, without anyone asking.
 
 Not yet built, stated plainly because a reference document should not imply otherwise: there is no
-scheduler, so nothing runs automatically; there is no authentication, so every API route is open to
-anyone who can reach the port; nothing is delivered anywhere, so a failed verification is visible
-only by polling; and only PostgreSQL is a real plugin.
+authentication, so every API route is open to anyone who can reach the port; artifacts are never
+expired, so they accumulate; nothing is delivered anywhere, so a failed verification is visible only
+by polling; and only PostgreSQL is a real plugin.
 
 The full list, and which slice owns each item, is in [docs/dev/STATUS.md](docs/dev/STATUS.md).
 

@@ -104,6 +104,7 @@ supersedes the old.
 | Internal telemetry | OpenTelemetry Go SDK; DB-facing metrics follow OTel database semantic conventions (`db.client.*`) | [0011](docs/adr/0011-opentelemetry-and-semconv.md) |
 | Testing | Unit + `testcontainers-go` integration; one shared **plugin-conformance suite** run against all plugins | [0012](docs/adr/0012-testcontainers-and-conformance-suite.md) |
 | Scheduler | Internal cron-style scheduler in control plane (`robfig/cron`), jobs persisted in Postgres, at-most-once via lease locking | [0013](docs/adr/0013-internal-scheduler-with-leases.md) |
+| Expired leases | A lease that expires fails its job; the job is never claimed twice, and the next scheduled run creates a new one | [0025](docs/adr/0025-an-expired-lease-fails-its-job.md) |
 | Logging | `log/slog`, JSON in prod, pretty in dev | [0014](docs/adr/0014-slog-structured-logging.md) |
 | Sandbox credentials | Core generates the identity; the plugin's `SandboxTemplate` places it via `{{ .Username }}` / `{{ .Password }}` / `{{ .Database }}` / `{{ .Port }}` | [0020](docs/adr/0020-sandbox-credentials-from-template-placeholders.md) |
 | Artifact transfer | Plugins write artifacts through presigned multipart part grants; core begins and completes the upload, so a partial artifact is never a visible object | [0021](docs/adr/0021-plugins-upload-artifacts-as-multipart-parts.md) |
@@ -155,7 +156,7 @@ fleetward/
 
   internal/
     config/                          # shared by the server and the CLI
-    controlplane/{api,inventory,backup,sandbox}/
+    controlplane/{api,inventory,backup,sandbox,scheduler}/
     plugin/{manager,sdk}/            # sdk = harness plugin authors implement against
     storage/{metadb,tsdb,objstore,secrets}/
       metadb/migrations/             # golang-migrate SQL, go:embed-ed into the binary
@@ -177,9 +178,9 @@ fleetward/
 **Rules:**
 
 - **This tree is what exists, not what is planned.** A directory is added by the slice that fills
-  it: `controlplane/scheduler/` in B1, `controlplane/{auth,rbac}/` in B6, `deploy/helm/` once the
-  Kubernetes sandbox provider exists. Listing a directory before it has contents is how this tree
-  came to describe four packages that were never written.
+  it: `controlplane/{auth,rbac}/` in B6, `deploy/helm/` once the Kubernetes sandbox provider exists.
+  Listing a directory before it has contents is how this tree came to describe four packages that
+  were never written.
 - `cmd/plugins/<engine>/` holds only a thin `main` that wires the implementation from
   `plugins/<engine>/`. Keep logic out of `main`.
 - The repository root holds only files their tooling requires to be there. Anything with a

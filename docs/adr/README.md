@@ -10,7 +10,7 @@ the top of the affected record ([ADR-0001](0001-record-architecture-decisions.md
 
 Each carries Context, Decision, Consequences, and the alternatives that were rejected. `make docs-check` enforces that.
 
-<!-- adr-count -->24<!-- /adr-count --> records.
+<!-- adr-count -->25<!-- /adr-count --> records.
 
 | ADR                                                                | Decision                                                                          |                    | Date |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ------------------ | --- |
@@ -26,7 +26,7 @@ Each carries Context, Decision, Consequences, and the alternatives that were rej
 | [0010](0010-react-frontend-stack.md)                               | React 19 + TypeScript + Vite + Tailwind + shadcn/ui + TanStack                    |                    | 2026-07-26 |
 | [0011](0011-opentelemetry-and-semconv.md)                          | OpenTelemetry SDK and OTel database semantic conventions                          |                    | 2026-07-26 |
 | [0012](0012-testcontainers-and-conformance-suite.md)               | testcontainers-go integration tests and a shared plugin-conformance suite         |                    | 2026-07-26 |
-| [0013](0013-internal-scheduler-with-leases.md)                     | Internal cron scheduler with Postgres lease locking                               |                    | 2026-07-26 |
+| [0013](0013-internal-scheduler-with-leases.md)                     | Internal cron scheduler with Postgres lease locking                               | superseded in part | 2026-07-26 |
 | [0014](0014-slog-structured-logging.md)                            | `log/slog` for structured logging                                                 |                    | 2026-07-26 |
 | [0015](0015-observed-and-managed-backups.md)                       | Observed and managed backups                                                      |                    | 2026-07-27 |
 | [0016](0016-schema-drift-snapshots.md)                             | Structural drift detection via schema snapshots                                   |                    | 2026-07-27 |
@@ -38,6 +38,7 @@ Each carries Context, Decision, Consequences, and the alternatives that were rej
 | [0022](0022-failed-and-inconclusive-are-different-answers.md)      | A verification distinguishes a bad backup from broken machinery                   |                    | 2026-08-31 |
 | [0023](0023-conformance-fixtures-seed-what-the-contract-cannot.md) | The conformance suite carries a per-engine fixture, and only a fixture            |                    | 2026-08-31 |
 | [0024](0024-production-readiness-is-a-slice-property.md)           | Production readiness is a property of every slice, not a phase                    |                    | 2026-09-02 |
+| [0025](0025-an-expired-lease-fails-its-job.md)                     | An expired lease fails its job rather than making it claimable again              |                    | 2026-09-02 |
 
 ## Reading the older records
 

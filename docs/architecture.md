@@ -15,7 +15,7 @@ flowchart TB
         API["REST API<br/><i>grpc-gateway · OpenAPI v3</i>"]
         RBAC["AuthN / AuthZ<br/><i>OIDC · role × scope</i>"]:::planned
         INV["Inventory"]
-        SCHED["Scheduler<br/><i>cron · lease locking</i>"]:::planned
+        SCHED["Scheduler<br/><i>cron · lease locking</i>"]
         BACKUP["Backup &amp; verification"]
         ALERT["Alerting"]:::planned
         PM["Plugin manager<br/><i>launch · supervise · restart</i>"]
@@ -61,8 +61,8 @@ flowchart TB
     style estate fill:#2a1a1a,stroke:#6a4a4a,color:#fff
 ```
 
-**Dashed boxes are planned, not built.** Today the scheduler, authorization, and alerting do not
-exist, and only the PostgreSQL plugin implements anything beyond a handshake — see
+**Dashed boxes are planned, not built.** Today authorization and alerting do not exist, and only
+the PostgreSQL plugin implements anything beyond a handshake — see
 [`dev/STATUS.md`](dev/STATUS.md) for what is actually running and [`roadmap.md`](roadmap.md) for
 when the rest arrives. The diagram is drawn with them because the shape of the system is what the
 contract and the metadata schema were designed against, and a reader deserves to see the target as
@@ -83,7 +83,7 @@ lookup table of engines. Even the sandbox's credentials keep the rule: core gene
 username, password, and database name, and the plugin's template says where they belong by writing
 `{{ .Password }}` where its engine expects one ([ADR-0020](adr/0020-sandbox-credentials-from-template-placeholders.md)).
 
-Architecture decisions are recorded in [`docs/adr/`](adr/) — <!-- adr-count -->24<!-- /adr-count -->
+Architecture decisions are recorded in [`docs/adr/`](adr/) — <!-- adr-count -->25<!-- /adr-count -->
 of them, each with context, consequences, and the alternatives that were rejected. The metadata
 schema those decisions produced is drawn in [`dev/data-model.md`](dev/data-model.md), and every
 setting the control plane reads is listed in [`ops/configuration.md`](ops/configuration.md). Both

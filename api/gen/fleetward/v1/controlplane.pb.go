@@ -195,6 +195,180 @@ func (BackupState) EnumDescriptor() ([]byte, []int) {
 	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{2}
 }
 
+// VerifyPolicy decides whether a successful scheduled backup is proven restorable. It is recorded
+// on the job the backup created, so "why was this backup never verified" is answerable by looking
+// at the job table rather than by reading the scheduler's source.
+type VerifyPolicy int32
+
+const (
+	VerifyPolicy_VERIFY_POLICY_UNSPECIFIED VerifyPolicy = 0
+	// Every successful backup is verified.
+	VerifyPolicy_VERIFY_POLICY_ALWAYS VerifyPolicy = 1
+	// A percentage of successful backups is verified, chosen at random per run.
+	VerifyPolicy_VERIFY_POLICY_SAMPLED VerifyPolicy = 2
+	// Verification only when a human asks.
+	VerifyPolicy_VERIFY_POLICY_MANUAL VerifyPolicy = 3
+)
+
+// Enum value maps for VerifyPolicy.
+var (
+	VerifyPolicy_name = map[int32]string{
+		0: "VERIFY_POLICY_UNSPECIFIED",
+		1: "VERIFY_POLICY_ALWAYS",
+		2: "VERIFY_POLICY_SAMPLED",
+		3: "VERIFY_POLICY_MANUAL",
+	}
+	VerifyPolicy_value = map[string]int32{
+		"VERIFY_POLICY_UNSPECIFIED": 0,
+		"VERIFY_POLICY_ALWAYS":      1,
+		"VERIFY_POLICY_SAMPLED":     2,
+		"VERIFY_POLICY_MANUAL":      3,
+	}
+)
+
+func (x VerifyPolicy) Enum() *VerifyPolicy {
+	p := new(VerifyPolicy)
+	*p = x
+	return p
+}
+
+func (x VerifyPolicy) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (VerifyPolicy) Descriptor() protoreflect.EnumDescriptor {
+	return file_fleetward_v1_controlplane_proto_enumTypes[3].Descriptor()
+}
+
+func (VerifyPolicy) Type() protoreflect.EnumType {
+	return &file_fleetward_v1_controlplane_proto_enumTypes[3]
+}
+
+func (x VerifyPolicy) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use VerifyPolicy.Descriptor instead.
+func (VerifyPolicy) EnumDescriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{3}
+}
+
+type JobKind int32
+
+const (
+	JobKind_JOB_KIND_UNSPECIFIED JobKind = 0
+	JobKind_JOB_KIND_BACKUP      JobKind = 1
+	JobKind_JOB_KIND_VERIFY      JobKind = 2
+	JobKind_JOB_KIND_RESTORE     JobKind = 3
+	JobKind_JOB_KIND_DISCOVERY   JobKind = 4
+	JobKind_JOB_KIND_METRICS     JobKind = 5
+)
+
+// Enum value maps for JobKind.
+var (
+	JobKind_name = map[int32]string{
+		0: "JOB_KIND_UNSPECIFIED",
+		1: "JOB_KIND_BACKUP",
+		2: "JOB_KIND_VERIFY",
+		3: "JOB_KIND_RESTORE",
+		4: "JOB_KIND_DISCOVERY",
+		5: "JOB_KIND_METRICS",
+	}
+	JobKind_value = map[string]int32{
+		"JOB_KIND_UNSPECIFIED": 0,
+		"JOB_KIND_BACKUP":      1,
+		"JOB_KIND_VERIFY":      2,
+		"JOB_KIND_RESTORE":     3,
+		"JOB_KIND_DISCOVERY":   4,
+		"JOB_KIND_METRICS":     5,
+	}
+)
+
+func (x JobKind) Enum() *JobKind {
+	p := new(JobKind)
+	*p = x
+	return p
+}
+
+func (x JobKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (JobKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_fleetward_v1_controlplane_proto_enumTypes[4].Descriptor()
+}
+
+func (JobKind) Type() protoreflect.EnumType {
+	return &file_fleetward_v1_controlplane_proto_enumTypes[4]
+}
+
+func (x JobKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use JobKind.Descriptor instead.
+func (JobKind) EnumDescriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{4}
+}
+
+type JobState int32
+
+const (
+	JobState_JOB_STATE_UNSPECIFIED JobState = 0
+	JobState_JOB_STATE_PENDING     JobState = 1
+	JobState_JOB_STATE_RUNNING     JobState = 2
+	JobState_JOB_STATE_SUCCEEDED   JobState = 3
+	JobState_JOB_STATE_FAILED      JobState = 4
+	JobState_JOB_STATE_CANCELED    JobState = 5
+)
+
+// Enum value maps for JobState.
+var (
+	JobState_name = map[int32]string{
+		0: "JOB_STATE_UNSPECIFIED",
+		1: "JOB_STATE_PENDING",
+		2: "JOB_STATE_RUNNING",
+		3: "JOB_STATE_SUCCEEDED",
+		4: "JOB_STATE_FAILED",
+		5: "JOB_STATE_CANCELED",
+	}
+	JobState_value = map[string]int32{
+		"JOB_STATE_UNSPECIFIED": 0,
+		"JOB_STATE_PENDING":     1,
+		"JOB_STATE_RUNNING":     2,
+		"JOB_STATE_SUCCEEDED":   3,
+		"JOB_STATE_FAILED":      4,
+		"JOB_STATE_CANCELED":    5,
+	}
+)
+
+func (x JobState) Enum() *JobState {
+	p := new(JobState)
+	*p = x
+	return p
+}
+
+func (x JobState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (JobState) Descriptor() protoreflect.EnumDescriptor {
+	return file_fleetward_v1_controlplane_proto_enumTypes[5].Descriptor()
+}
+
+func (JobState) Type() protoreflect.EnumType {
+	return &file_fleetward_v1_controlplane_proto_enumTypes[5]
+}
+
+func (x JobState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use JobState.Descriptor instead.
+func (JobState) EnumDescriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{5}
+}
+
 type GetHealthRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -2985,6 +3159,949 @@ func (x *GetPITRWindowResponse) GetWindow() *PITRWindow {
 	return nil
 }
 
+// Schedule is a recurring intent. It is not a run: the scheduler materializes it into a Job when
+// next_run_at falls due, and the job carries a snapshot of these parameters so that editing a
+// schedule never rewrites what an in-flight run was asked to do.
+type Schedule struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	TenantId   string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	InstanceId string                 `protobuf:"bytes,3,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	Kind       JobKind                `protobuf:"varint,4,opt,name=kind,proto3,enum=fleetward.v1.JobKind" json:"kind,omitempty"`
+	// Standard five-field cron expression, interpreted in `timezone`.
+	CronExpression string `protobuf:"bytes,5,opt,name=cron_expression,json=cronExpression,proto3" json:"cron_expression,omitempty"`
+	// IANA location name, e.g. "Europe/Bucharest". A DBA writing "0 2 * * *" means 02:00 where the
+	// server is, which is a different UTC instant in summer than in winter.
+	Timezone string `protobuf:"bytes,6,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	// Empty selects the plugin's default backup method.
+	MethodId     string            `protobuf:"bytes,7,opt,name=method_id,json=methodId,proto3" json:"method_id,omitempty"`
+	Options      map[string]string `protobuf:"bytes,8,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	VerifyPolicy VerifyPolicy      `protobuf:"varint,9,opt,name=verify_policy,json=verifyPolicy,proto3,enum=fleetward.v1.VerifyPolicy" json:"verify_policy,omitempty"`
+	// Only consulted when verify_policy is SAMPLED.
+	VerifySamplePercent int32 `protobuf:"varint,10,opt,name=verify_sample_percent,json=verifySamplePercent,proto3" json:"verify_sample_percent,omitempty"`
+	RetentionDays       int32 `protobuf:"varint,11,opt,name=retention_days,json=retentionDays,proto3" json:"retention_days,omitempty"`
+	IsEnabled           bool  `protobuf:"varint,12,opt,name=is_enabled,json=isEnabled,proto3" json:"is_enabled,omitempty"`
+	// The clock. Always UTC on the wire and in storage, computed in `timezone`.
+	NextRunAt     *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=next_run_at,json=nextRunAt,proto3" json:"next_run_at,omitempty"`
+	LastRunAt     *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=last_run_at,json=lastRunAt,proto3" json:"last_run_at,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Schedule) Reset() {
+	*x = Schedule{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Schedule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Schedule) ProtoMessage() {}
+
+func (x *Schedule) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Schedule.ProtoReflect.Descriptor instead.
+func (*Schedule) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *Schedule) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Schedule) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *Schedule) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *Schedule) GetKind() JobKind {
+	if x != nil {
+		return x.Kind
+	}
+	return JobKind_JOB_KIND_UNSPECIFIED
+}
+
+func (x *Schedule) GetCronExpression() string {
+	if x != nil {
+		return x.CronExpression
+	}
+	return ""
+}
+
+func (x *Schedule) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+func (x *Schedule) GetMethodId() string {
+	if x != nil {
+		return x.MethodId
+	}
+	return ""
+}
+
+func (x *Schedule) GetOptions() map[string]string {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+func (x *Schedule) GetVerifyPolicy() VerifyPolicy {
+	if x != nil {
+		return x.VerifyPolicy
+	}
+	return VerifyPolicy_VERIFY_POLICY_UNSPECIFIED
+}
+
+func (x *Schedule) GetVerifySamplePercent() int32 {
+	if x != nil {
+		return x.VerifySamplePercent
+	}
+	return 0
+}
+
+func (x *Schedule) GetRetentionDays() int32 {
+	if x != nil {
+		return x.RetentionDays
+	}
+	return 0
+}
+
+func (x *Schedule) GetIsEnabled() bool {
+	if x != nil {
+		return x.IsEnabled
+	}
+	return false
+}
+
+func (x *Schedule) GetNextRunAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NextRunAt
+	}
+	return nil
+}
+
+func (x *Schedule) GetLastRunAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastRunAt
+	}
+	return nil
+}
+
+func (x *Schedule) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+// Job is one unit of work the scheduler leases and runs. Every field after `state` exists to answer
+// a question after the fact, which is the whole reason jobs are rows rather than goroutines.
+type Job struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	TenantId   string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	InstanceId string                 `protobuf:"bytes,3,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	// Empty for a job a human triggered directly.
+	ScheduleId   string                 `protobuf:"bytes,4,opt,name=schedule_id,json=scheduleId,proto3" json:"schedule_id,omitempty"`
+	Kind         JobKind                `protobuf:"varint,5,opt,name=kind,proto3,enum=fleetward.v1.JobKind" json:"kind,omitempty"`
+	State        JobState               `protobuf:"varint,6,opt,name=state,proto3,enum=fleetward.v1.JobState" json:"state,omitempty"`
+	ScheduledFor *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=scheduled_for,json=scheduledFor,proto3" json:"scheduled_for,omitempty"`
+	// Identifies the process holding the lease, as <hostname>/<pid>/<process-uuid>. The uuid is what
+	// keeps a restarted process on a recycled pid from looking like its own predecessor.
+	LeaseOwner     string                 `protobuf:"bytes,8,opt,name=lease_owner,json=leaseOwner,proto3" json:"lease_owner,omitempty"`
+	LeaseExpiresAt *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=lease_expires_at,json=leaseExpiresAt,proto3" json:"lease_expires_at,omitempty"`
+	HeartbeatAt    *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=heartbeat_at,json=heartbeatAt,proto3" json:"heartbeat_at,omitempty"`
+	Attempts       int32                  `protobuf:"varint,11,opt,name=attempts,proto3" json:"attempts,omitempty"`
+	StartedAt      *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	FinishedAt     *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	ErrorMessage   string                 `protobuf:"bytes,14,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *Job) Reset() {
+	*x = Job{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Job) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Job) ProtoMessage() {}
+
+func (x *Job) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Job.ProtoReflect.Descriptor instead.
+func (*Job) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *Job) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Job) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *Job) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *Job) GetScheduleId() string {
+	if x != nil {
+		return x.ScheduleId
+	}
+	return ""
+}
+
+func (x *Job) GetKind() JobKind {
+	if x != nil {
+		return x.Kind
+	}
+	return JobKind_JOB_KIND_UNSPECIFIED
+}
+
+func (x *Job) GetState() JobState {
+	if x != nil {
+		return x.State
+	}
+	return JobState_JOB_STATE_UNSPECIFIED
+}
+
+func (x *Job) GetScheduledFor() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ScheduledFor
+	}
+	return nil
+}
+
+func (x *Job) GetLeaseOwner() string {
+	if x != nil {
+		return x.LeaseOwner
+	}
+	return ""
+}
+
+func (x *Job) GetLeaseExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LeaseExpiresAt
+	}
+	return nil
+}
+
+func (x *Job) GetHeartbeatAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.HeartbeatAt
+	}
+	return nil
+}
+
+func (x *Job) GetAttempts() int32 {
+	if x != nil {
+		return x.Attempts
+	}
+	return 0
+}
+
+func (x *Job) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *Job) GetFinishedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FinishedAt
+	}
+	return nil
+}
+
+func (x *Job) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *Job) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+type ListSchedulesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSchedulesRequest) Reset() {
+	*x = ListSchedulesRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSchedulesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSchedulesRequest) ProtoMessage() {}
+
+func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSchedulesRequest.ProtoReflect.Descriptor instead.
+func (*ListSchedulesRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *ListSchedulesRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+type ListSchedulesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Schedules     []*Schedule            `protobuf:"bytes,1,rep,name=schedules,proto3" json:"schedules,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSchedulesResponse) Reset() {
+	*x = ListSchedulesResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSchedulesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSchedulesResponse) ProtoMessage() {}
+
+func (x *ListSchedulesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSchedulesResponse.ProtoReflect.Descriptor instead.
+func (*ListSchedulesResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *ListSchedulesResponse) GetSchedules() []*Schedule {
+	if x != nil {
+		return x.Schedules
+	}
+	return nil
+}
+
+type GetScheduleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ScheduleId    string                 `protobuf:"bytes,1,opt,name=schedule_id,json=scheduleId,proto3" json:"schedule_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetScheduleRequest) Reset() {
+	*x = GetScheduleRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetScheduleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetScheduleRequest) ProtoMessage() {}
+
+func (x *GetScheduleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetScheduleRequest.ProtoReflect.Descriptor instead.
+func (*GetScheduleRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *GetScheduleRequest) GetScheduleId() string {
+	if x != nil {
+		return x.ScheduleId
+	}
+	return ""
+}
+
+type GetScheduleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Schedule      *Schedule              `protobuf:"bytes,1,opt,name=schedule,proto3" json:"schedule,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetScheduleResponse) Reset() {
+	*x = GetScheduleResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetScheduleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetScheduleResponse) ProtoMessage() {}
+
+func (x *GetScheduleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetScheduleResponse.ProtoReflect.Descriptor instead.
+func (*GetScheduleResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *GetScheduleResponse) GetSchedule() *Schedule {
+	if x != nil {
+		return x.Schedule
+	}
+	return nil
+}
+
+type CreateScheduleRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId     string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	Kind           JobKind                `protobuf:"varint,2,opt,name=kind,proto3,enum=fleetward.v1.JobKind" json:"kind,omitempty"`
+	CronExpression string                 `protobuf:"bytes,3,opt,name=cron_expression,json=cronExpression,proto3" json:"cron_expression,omitempty"`
+	// Defaults to UTC when empty.
+	Timezone            string            `protobuf:"bytes,4,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	MethodId            string            `protobuf:"bytes,5,opt,name=method_id,json=methodId,proto3" json:"method_id,omitempty"`
+	Options             map[string]string `protobuf:"bytes,6,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	VerifyPolicy        VerifyPolicy      `protobuf:"varint,7,opt,name=verify_policy,json=verifyPolicy,proto3,enum=fleetward.v1.VerifyPolicy" json:"verify_policy,omitempty"`
+	VerifySamplePercent int32             `protobuf:"varint,8,opt,name=verify_sample_percent,json=verifySamplePercent,proto3" json:"verify_sample_percent,omitempty"`
+	RetentionDays       int32             `protobuf:"varint,9,opt,name=retention_days,json=retentionDays,proto3" json:"retention_days,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *CreateScheduleRequest) Reset() {
+	*x = CreateScheduleRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateScheduleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateScheduleRequest) ProtoMessage() {}
+
+func (x *CreateScheduleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateScheduleRequest.ProtoReflect.Descriptor instead.
+func (*CreateScheduleRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *CreateScheduleRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *CreateScheduleRequest) GetKind() JobKind {
+	if x != nil {
+		return x.Kind
+	}
+	return JobKind_JOB_KIND_UNSPECIFIED
+}
+
+func (x *CreateScheduleRequest) GetCronExpression() string {
+	if x != nil {
+		return x.CronExpression
+	}
+	return ""
+}
+
+func (x *CreateScheduleRequest) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+func (x *CreateScheduleRequest) GetMethodId() string {
+	if x != nil {
+		return x.MethodId
+	}
+	return ""
+}
+
+func (x *CreateScheduleRequest) GetOptions() map[string]string {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+func (x *CreateScheduleRequest) GetVerifyPolicy() VerifyPolicy {
+	if x != nil {
+		return x.VerifyPolicy
+	}
+	return VerifyPolicy_VERIFY_POLICY_UNSPECIFIED
+}
+
+func (x *CreateScheduleRequest) GetVerifySamplePercent() int32 {
+	if x != nil {
+		return x.VerifySamplePercent
+	}
+	return 0
+}
+
+func (x *CreateScheduleRequest) GetRetentionDays() int32 {
+	if x != nil {
+		return x.RetentionDays
+	}
+	return 0
+}
+
+type CreateScheduleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Schedule      *Schedule              `protobuf:"bytes,1,opt,name=schedule,proto3" json:"schedule,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateScheduleResponse) Reset() {
+	*x = CreateScheduleResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateScheduleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateScheduleResponse) ProtoMessage() {}
+
+func (x *CreateScheduleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateScheduleResponse.ProtoReflect.Descriptor instead.
+func (*CreateScheduleResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *CreateScheduleResponse) GetSchedule() *Schedule {
+	if x != nil {
+		return x.Schedule
+	}
+	return nil
+}
+
+type SetScheduleEnabledRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ScheduleId    string                 `protobuf:"bytes,1,opt,name=schedule_id,json=scheduleId,proto3" json:"schedule_id,omitempty"`
+	Enabled       bool                   `protobuf:"varint,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetScheduleEnabledRequest) Reset() {
+	*x = SetScheduleEnabledRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetScheduleEnabledRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetScheduleEnabledRequest) ProtoMessage() {}
+
+func (x *SetScheduleEnabledRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetScheduleEnabledRequest.ProtoReflect.Descriptor instead.
+func (*SetScheduleEnabledRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *SetScheduleEnabledRequest) GetScheduleId() string {
+	if x != nil {
+		return x.ScheduleId
+	}
+	return ""
+}
+
+func (x *SetScheduleEnabledRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+type SetScheduleEnabledResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Schedule      *Schedule              `protobuf:"bytes,1,opt,name=schedule,proto3" json:"schedule,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetScheduleEnabledResponse) Reset() {
+	*x = SetScheduleEnabledResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetScheduleEnabledResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetScheduleEnabledResponse) ProtoMessage() {}
+
+func (x *SetScheduleEnabledResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetScheduleEnabledResponse.ProtoReflect.Descriptor instead.
+func (*SetScheduleEnabledResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *SetScheduleEnabledResponse) GetSchedule() *Schedule {
+	if x != nil {
+		return x.Schedule
+	}
+	return nil
+}
+
+type DeleteScheduleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ScheduleId    string                 `protobuf:"bytes,1,opt,name=schedule_id,json=scheduleId,proto3" json:"schedule_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteScheduleRequest) Reset() {
+	*x = DeleteScheduleRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteScheduleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteScheduleRequest) ProtoMessage() {}
+
+func (x *DeleteScheduleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteScheduleRequest.ProtoReflect.Descriptor instead.
+func (*DeleteScheduleRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *DeleteScheduleRequest) GetScheduleId() string {
+	if x != nil {
+		return x.ScheduleId
+	}
+	return ""
+}
+
+type DeleteScheduleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteScheduleResponse) Reset() {
+	*x = DeleteScheduleResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteScheduleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteScheduleResponse) ProtoMessage() {}
+
+func (x *DeleteScheduleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteScheduleResponse.ProtoReflect.Descriptor instead.
+func (*DeleteScheduleResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{55}
+}
+
+type ListJobsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId    string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	ScheduleId    string                 `protobuf:"bytes,2,opt,name=schedule_id,json=scheduleId,proto3" json:"schedule_id,omitempty"`
+	State         JobState               `protobuf:"varint,3,opt,name=state,proto3,enum=fleetward.v1.JobState" json:"state,omitempty"`
+	PageSize      int32                  `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListJobsRequest) Reset() {
+	*x = ListJobsRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListJobsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListJobsRequest) ProtoMessage() {}
+
+func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListJobsRequest.ProtoReflect.Descriptor instead.
+func (*ListJobsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *ListJobsRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *ListJobsRequest) GetScheduleId() string {
+	if x != nil {
+		return x.ScheduleId
+	}
+	return ""
+}
+
+func (x *ListJobsRequest) GetState() JobState {
+	if x != nil {
+		return x.State
+	}
+	return JobState_JOB_STATE_UNSPECIFIED
+}
+
+func (x *ListJobsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type ListJobsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Jobs          []*Job                 `protobuf:"bytes,1,rep,name=jobs,proto3" json:"jobs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListJobsResponse) Reset() {
+	*x = ListJobsResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListJobsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListJobsResponse) ProtoMessage() {}
+
+func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListJobsResponse.ProtoReflect.Descriptor instead.
+func (*ListJobsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *ListJobsResponse) GetJobs() []*Job {
+	if x != nil {
+		return x.Jobs
+	}
+	return nil
+}
+
 var File_fleetward_v1_controlplane_proto protoreflect.FileDescriptor
 
 const file_fleetward_v1_controlplane_proto_rawDesc = "" +
@@ -3232,7 +4349,98 @@ const file_fleetward_v1_controlplane_proto_rawDesc = "" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\"I\n" +
 	"\x15GetPITRWindowResponse\x120\n" +
-	"\x06window\x18\x01 \x01(\v2\x18.fleetward.v1.PITRWindowR\x06window*\x86\x01\n" +
+	"\x06window\x18\x01 \x01(\v2\x18.fleetward.v1.PITRWindowR\x06window\"\xce\x05\n" +
+	"\bSchedule\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x1f\n" +
+	"\vinstance_id\x18\x03 \x01(\tR\n" +
+	"instanceId\x12)\n" +
+	"\x04kind\x18\x04 \x01(\x0e2\x15.fleetward.v1.JobKindR\x04kind\x12'\n" +
+	"\x0fcron_expression\x18\x05 \x01(\tR\x0ecronExpression\x12\x1a\n" +
+	"\btimezone\x18\x06 \x01(\tR\btimezone\x12\x1b\n" +
+	"\tmethod_id\x18\a \x01(\tR\bmethodId\x12=\n" +
+	"\aoptions\x18\b \x03(\v2#.fleetward.v1.Schedule.OptionsEntryR\aoptions\x12?\n" +
+	"\rverify_policy\x18\t \x01(\x0e2\x1a.fleetward.v1.VerifyPolicyR\fverifyPolicy\x122\n" +
+	"\x15verify_sample_percent\x18\n" +
+	" \x01(\x05R\x13verifySamplePercent\x12%\n" +
+	"\x0eretention_days\x18\v \x01(\x05R\rretentionDays\x12\x1d\n" +
+	"\n" +
+	"is_enabled\x18\f \x01(\bR\tisEnabled\x12:\n" +
+	"\vnext_run_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tnextRunAt\x12:\n" +
+	"\vlast_run_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tlastRunAt\x129\n" +
+	"\n" +
+	"created_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x1a:\n" +
+	"\fOptionsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa8\x05\n" +
+	"\x03Job\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x1f\n" +
+	"\vinstance_id\x18\x03 \x01(\tR\n" +
+	"instanceId\x12\x1f\n" +
+	"\vschedule_id\x18\x04 \x01(\tR\n" +
+	"scheduleId\x12)\n" +
+	"\x04kind\x18\x05 \x01(\x0e2\x15.fleetward.v1.JobKindR\x04kind\x12,\n" +
+	"\x05state\x18\x06 \x01(\x0e2\x16.fleetward.v1.JobStateR\x05state\x12?\n" +
+	"\rscheduled_for\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\fscheduledFor\x12\x1f\n" +
+	"\vlease_owner\x18\b \x01(\tR\n" +
+	"leaseOwner\x12D\n" +
+	"\x10lease_expires_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\x12=\n" +
+	"\fheartbeat_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\vheartbeatAt\x12\x1a\n" +
+	"\battempts\x18\v \x01(\x05R\battempts\x129\n" +
+	"\n" +
+	"started_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12;\n" +
+	"\vfinished_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"finishedAt\x12#\n" +
+	"\rerror_message\x18\x0e \x01(\tR\ferrorMessage\x129\n" +
+	"\n" +
+	"created_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"7\n" +
+	"\x14ListSchedulesRequest\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\"M\n" +
+	"\x15ListSchedulesResponse\x124\n" +
+	"\tschedules\x18\x01 \x03(\v2\x16.fleetward.v1.ScheduleR\tschedules\"5\n" +
+	"\x12GetScheduleRequest\x12\x1f\n" +
+	"\vschedule_id\x18\x01 \x01(\tR\n" +
+	"scheduleId\"I\n" +
+	"\x13GetScheduleResponse\x122\n" +
+	"\bschedule\x18\x01 \x01(\v2\x16.fleetward.v1.ScheduleR\bschedule\"\xe9\x03\n" +
+	"\x15CreateScheduleRequest\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12)\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x15.fleetward.v1.JobKindR\x04kind\x12'\n" +
+	"\x0fcron_expression\x18\x03 \x01(\tR\x0ecronExpression\x12\x1a\n" +
+	"\btimezone\x18\x04 \x01(\tR\btimezone\x12\x1b\n" +
+	"\tmethod_id\x18\x05 \x01(\tR\bmethodId\x12J\n" +
+	"\aoptions\x18\x06 \x03(\v20.fleetward.v1.CreateScheduleRequest.OptionsEntryR\aoptions\x12?\n" +
+	"\rverify_policy\x18\a \x01(\x0e2\x1a.fleetward.v1.VerifyPolicyR\fverifyPolicy\x122\n" +
+	"\x15verify_sample_percent\x18\b \x01(\x05R\x13verifySamplePercent\x12%\n" +
+	"\x0eretention_days\x18\t \x01(\x05R\rretentionDays\x1a:\n" +
+	"\fOptionsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"L\n" +
+	"\x16CreateScheduleResponse\x122\n" +
+	"\bschedule\x18\x01 \x01(\v2\x16.fleetward.v1.ScheduleR\bschedule\"V\n" +
+	"\x19SetScheduleEnabledRequest\x12\x1f\n" +
+	"\vschedule_id\x18\x01 \x01(\tR\n" +
+	"scheduleId\x12\x18\n" +
+	"\aenabled\x18\x02 \x01(\bR\aenabled\"P\n" +
+	"\x1aSetScheduleEnabledResponse\x122\n" +
+	"\bschedule\x18\x01 \x01(\v2\x16.fleetward.v1.ScheduleR\bschedule\"8\n" +
+	"\x15DeleteScheduleRequest\x12\x1f\n" +
+	"\vschedule_id\x18\x01 \x01(\tR\n" +
+	"scheduleId\"\x18\n" +
+	"\x16DeleteScheduleResponse\"\x9e\x01\n" +
+	"\x0fListJobsRequest\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12\x1f\n" +
+	"\vschedule_id\x18\x02 \x01(\tR\n" +
+	"scheduleId\x12,\n" +
+	"\x05state\x18\x03 \x01(\x0e2\x16.fleetward.v1.JobStateR\x05state\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\"9\n" +
+	"\x10ListJobsResponse\x12%\n" +
+	"\x04jobs\x18\x01 \x03(\v2\x11.fleetward.v1.JobR\x04jobs*\x86\x01\n" +
 	"\rServiceHealth\x12\x1e\n" +
 	"\x1aSERVICE_HEALTH_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16SERVICE_HEALTH_HEALTHY\x10\x01\x12\x1b\n" +
@@ -3252,7 +4460,26 @@ const file_fleetward_v1_controlplane_proto_rawDesc = "" +
 	"\x16BACKUP_STATE_SUCCEEDED\x10\x03\x12\x17\n" +
 	"\x13BACKUP_STATE_FAILED\x10\x04\x12\x19\n" +
 	"\x15BACKUP_STATE_CANCELED\x10\x05\x12\x18\n" +
-	"\x14BACKUP_STATE_EXPIRED\x10\x062\xcc\x02\n" +
+	"\x14BACKUP_STATE_EXPIRED\x10\x06*|\n" +
+	"\fVerifyPolicy\x12\x1d\n" +
+	"\x19VERIFY_POLICY_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14VERIFY_POLICY_ALWAYS\x10\x01\x12\x19\n" +
+	"\x15VERIFY_POLICY_SAMPLED\x10\x02\x12\x18\n" +
+	"\x14VERIFY_POLICY_MANUAL\x10\x03*\x91\x01\n" +
+	"\aJobKind\x12\x18\n" +
+	"\x14JOB_KIND_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fJOB_KIND_BACKUP\x10\x01\x12\x13\n" +
+	"\x0fJOB_KIND_VERIFY\x10\x02\x12\x14\n" +
+	"\x10JOB_KIND_RESTORE\x10\x03\x12\x16\n" +
+	"\x12JOB_KIND_DISCOVERY\x10\x04\x12\x14\n" +
+	"\x10JOB_KIND_METRICS\x10\x05*\x9a\x01\n" +
+	"\bJobState\x12\x19\n" +
+	"\x15JOB_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11JOB_STATE_PENDING\x10\x01\x12\x15\n" +
+	"\x11JOB_STATE_RUNNING\x10\x02\x12\x17\n" +
+	"\x13JOB_STATE_SUCCEEDED\x10\x03\x12\x14\n" +
+	"\x10JOB_STATE_FAILED\x10\x04\x12\x16\n" +
+	"\x12JOB_STATE_CANCELED\x10\x052\xcc\x02\n" +
 	"\rSystemService\x12d\n" +
 	"\tGetHealth\x12\x1e.fleetward.v1.GetHealthRequest\x1a\x1f.fleetward.v1.GetHealthResponse\"\x16\x82\xd3\xe4\x93\x02\x10\x12\x0e/api/v1/health\x12h\n" +
 	"\n" +
@@ -3267,7 +4494,14 @@ const file_fleetward_v1_controlplane_proto_rawDesc = "" +
 	"\x0eDeleteInstance\x12#.fleetward.v1.DeleteInstanceRequest\x1a$.fleetward.v1.DeleteInstanceResponse\"'\x82\xd3\xe4\x93\x02!*\x1f/api/v1/instances/{instance_id}\x12\x97\x01\n" +
 	"\x0eTestConnection\x12#.fleetward.v1.TestConnectionRequest\x1a$.fleetward.v1.TestConnectionResponse\":\x82\xd3\xe4\x93\x024:\x01*\"//api/v1/instances/{instance_id}/test-connection\x12\x96\x01\n" +
 	"\x10DiscoverInstance\x12%.fleetward.v1.DiscoverInstanceRequest\x1a&.fleetward.v1.DiscoverInstanceResponse\"3\x82\xd3\xe4\x93\x02-:\x01*\"(/api/v1/instances/{instance_id}/discover\x12\xb0\x01\n" +
-	"\x19ListPrincipalsForInstance\x12..fleetward.v1.ListPrincipalsForInstanceRequest\x1a/.fleetward.v1.ListPrincipalsForInstanceResponse\"2\x82\xd3\xe4\x93\x02,\x12*/api/v1/instances/{instance_id}/principals2\xa4\x06\n" +
+	"\x19ListPrincipalsForInstance\x12..fleetward.v1.ListPrincipalsForInstanceRequest\x1a/.fleetward.v1.ListPrincipalsForInstanceResponse\"2\x82\xd3\xe4\x93\x02,\x12*/api/v1/instances/{instance_id}/principals2\x9d\x06\n" +
+	"\x0fScheduleService\x12s\n" +
+	"\rListSchedules\x12\".fleetward.v1.ListSchedulesRequest\x1a#.fleetward.v1.ListSchedulesResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/api/v1/schedules\x12{\n" +
+	"\vGetSchedule\x12 .fleetward.v1.GetScheduleRequest\x1a!.fleetward.v1.GetScheduleResponse\"'\x82\xd3\xe4\x93\x02!\x12\x1f/api/v1/schedules/{schedule_id}\x12\x91\x01\n" +
+	"\x0eCreateSchedule\x12#.fleetward.v1.CreateScheduleRequest\x1a$.fleetward.v1.CreateScheduleResponse\"4\x82\xd3\xe4\x93\x02.:\x01*\")/api/v1/instances/{instance_id}/schedules\x12\x9b\x01\n" +
+	"\x12SetScheduleEnabled\x12'.fleetward.v1.SetScheduleEnabledRequest\x1a(.fleetward.v1.SetScheduleEnabledResponse\"2\x82\xd3\xe4\x93\x02,:\x01*\"'/api/v1/schedules/{schedule_id}/enabled\x12\x84\x01\n" +
+	"\x0eDeleteSchedule\x12#.fleetward.v1.DeleteScheduleRequest\x1a$.fleetward.v1.DeleteScheduleResponse\"'\x82\xd3\xe4\x93\x02!*\x1f/api/v1/schedules/{schedule_id}\x12_\n" +
+	"\bListJobs\x12\x1d.fleetward.v1.ListJobsRequest\x1a\x1e.fleetward.v1.ListJobsResponse\"\x14\x82\xd3\xe4\x93\x02\x0e\x12\f/api/v1/jobs2\xa4\x06\n" +
 	"\rBackupService\x12k\n" +
 	"\vListBackups\x12 .fleetward.v1.ListBackupsRequest\x1a!.fleetward.v1.ListBackupsResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/api/v1/backups\x12q\n" +
 	"\tGetBackup\x12\x1e.fleetward.v1.GetBackupRequest\x1a\x1f.fleetward.v1.GetBackupResponse\"#\x82\xd3\xe4\x93\x02\x1d\x12\x1b/api/v1/backups/{backup_id}\x12\x80\x01\n" +
@@ -3289,182 +4523,236 @@ func file_fleetward_v1_controlplane_proto_rawDescGZIP() []byte {
 	return file_fleetward_v1_controlplane_proto_rawDescData
 }
 
-var file_fleetward_v1_controlplane_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_fleetward_v1_controlplane_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
+var file_fleetward_v1_controlplane_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_fleetward_v1_controlplane_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
 var file_fleetward_v1_controlplane_proto_goTypes = []any{
 	(ServiceHealth)(0),                        // 0: fleetward.v1.ServiceHealth
 	(PluginState)(0),                          // 1: fleetward.v1.PluginState
 	(BackupState)(0),                          // 2: fleetward.v1.BackupState
-	(*GetHealthRequest)(nil),                  // 3: fleetward.v1.GetHealthRequest
-	(*GetHealthResponse)(nil),                 // 4: fleetward.v1.GetHealthResponse
-	(*ComponentHealth)(nil),                   // 5: fleetward.v1.ComponentHealth
-	(*GetVersionRequest)(nil),                 // 6: fleetward.v1.GetVersionRequest
-	(*GetVersionResponse)(nil),                // 7: fleetward.v1.GetVersionResponse
-	(*ListPluginsRequest)(nil),                // 8: fleetward.v1.ListPluginsRequest
-	(*ListPluginsResponse)(nil),               // 9: fleetward.v1.ListPluginsResponse
-	(*PluginInfo)(nil),                        // 10: fleetward.v1.PluginInfo
-	(*Environment)(nil),                       // 11: fleetward.v1.Environment
-	(*Instance)(nil),                          // 12: fleetward.v1.Instance
-	(*BackupSummary)(nil),                     // 13: fleetward.v1.BackupSummary
-	(*ListEnvironmentsRequest)(nil),           // 14: fleetward.v1.ListEnvironmentsRequest
-	(*ListEnvironmentsResponse)(nil),          // 15: fleetward.v1.ListEnvironmentsResponse
-	(*CreateEnvironmentRequest)(nil),          // 16: fleetward.v1.CreateEnvironmentRequest
-	(*CreateEnvironmentResponse)(nil),         // 17: fleetward.v1.CreateEnvironmentResponse
-	(*ListInstancesRequest)(nil),              // 18: fleetward.v1.ListInstancesRequest
-	(*ListInstancesResponse)(nil),             // 19: fleetward.v1.ListInstancesResponse
-	(*GetInstanceRequest)(nil),                // 20: fleetward.v1.GetInstanceRequest
-	(*GetInstanceResponse)(nil),               // 21: fleetward.v1.GetInstanceResponse
-	(*CreateInstanceRequest)(nil),             // 22: fleetward.v1.CreateInstanceRequest
-	(*ConnectionSpec)(nil),                    // 23: fleetward.v1.ConnectionSpec
-	(*CreateInstanceResponse)(nil),            // 24: fleetward.v1.CreateInstanceResponse
-	(*DeleteInstanceRequest)(nil),             // 25: fleetward.v1.DeleteInstanceRequest
-	(*DeleteInstanceResponse)(nil),            // 26: fleetward.v1.DeleteInstanceResponse
-	(*TestConnectionRequest)(nil),             // 27: fleetward.v1.TestConnectionRequest
-	(*TestConnectionResponse)(nil),            // 28: fleetward.v1.TestConnectionResponse
-	(*DiscoverInstanceRequest)(nil),           // 29: fleetward.v1.DiscoverInstanceRequest
-	(*DiscoverInstanceResponse)(nil),          // 30: fleetward.v1.DiscoverInstanceResponse
-	(*ListPrincipalsForInstanceRequest)(nil),  // 31: fleetward.v1.ListPrincipalsForInstanceRequest
-	(*ListPrincipalsForInstanceResponse)(nil), // 32: fleetward.v1.ListPrincipalsForInstanceResponse
-	(*Backup)(nil),                            // 33: fleetward.v1.Backup
-	(*Verification)(nil),                      // 34: fleetward.v1.Verification
-	(*ListBackupsRequest)(nil),                // 35: fleetward.v1.ListBackupsRequest
-	(*ListBackupsResponse)(nil),               // 36: fleetward.v1.ListBackupsResponse
-	(*GetBackupRequest)(nil),                  // 37: fleetward.v1.GetBackupRequest
-	(*GetBackupResponse)(nil),                 // 38: fleetward.v1.GetBackupResponse
-	(*RunBackupRequest)(nil),                  // 39: fleetward.v1.RunBackupRequest
-	(*RunBackupResponse)(nil),                 // 40: fleetward.v1.RunBackupResponse
-	(*RunVerificationRequest)(nil),            // 41: fleetward.v1.RunVerificationRequest
-	(*RunVerificationResponse)(nil),           // 42: fleetward.v1.RunVerificationResponse
-	(*GetVerificationRequest)(nil),            // 43: fleetward.v1.GetVerificationRequest
-	(*GetVerificationResponse)(nil),           // 44: fleetward.v1.GetVerificationResponse
-	(*GetPITRWindowRequest)(nil),              // 45: fleetward.v1.GetPITRWindowRequest
-	(*GetPITRWindowResponse)(nil),             // 46: fleetward.v1.GetPITRWindowResponse
-	nil,                                       // 47: fleetward.v1.Instance.LabelsEntry
-	nil,                                       // 48: fleetward.v1.CreateInstanceRequest.LabelsEntry
-	nil,                                       // 49: fleetward.v1.ConnectionSpec.OptionsEntry
-	nil,                                       // 50: fleetward.v1.RunBackupRequest.OptionsEntry
-	(*durationpb.Duration)(nil),               // 51: google.protobuf.Duration
-	(*Capabilities)(nil),                      // 52: fleetward.v1.Capabilities
-	(*timestamppb.Timestamp)(nil),             // 53: google.protobuf.Timestamp
-	(HealthState)(0),                          // 54: fleetward.v1.HealthState
-	(VerificationStatus)(0),                   // 55: fleetward.v1.VerificationStatus
-	(*ServerInfo)(nil),                        // 56: fleetward.v1.ServerInfo
-	(*DatabaseInfo)(nil),                      // 57: fleetward.v1.DatabaseInfo
-	(*Topology)(nil),                          // 58: fleetward.v1.Topology
-	(*TLSSettings)(nil),                       // 59: fleetward.v1.TLSSettings
-	(*HealthStatus)(nil),                      // 60: fleetward.v1.HealthStatus
-	(*Principal)(nil),                         // 61: fleetward.v1.Principal
-	(PrincipalModel)(0),                       // 62: fleetward.v1.PrincipalModel
-	(*Checksum)(nil),                          // 63: fleetward.v1.Checksum
-	(*ObjectRef)(nil),                         // 64: fleetward.v1.ObjectRef
-	(*CheckResult)(nil),                       // 65: fleetward.v1.CheckResult
-	(*TimeRange)(nil),                         // 66: fleetward.v1.TimeRange
-	(*SourceManifest)(nil),                    // 67: fleetward.v1.SourceManifest
-	(VerificationCheck)(0),                    // 68: fleetward.v1.VerificationCheck
-	(*PITRWindow)(nil),                        // 69: fleetward.v1.PITRWindow
+	(VerifyPolicy)(0),                         // 3: fleetward.v1.VerifyPolicy
+	(JobKind)(0),                              // 4: fleetward.v1.JobKind
+	(JobState)(0),                             // 5: fleetward.v1.JobState
+	(*GetHealthRequest)(nil),                  // 6: fleetward.v1.GetHealthRequest
+	(*GetHealthResponse)(nil),                 // 7: fleetward.v1.GetHealthResponse
+	(*ComponentHealth)(nil),                   // 8: fleetward.v1.ComponentHealth
+	(*GetVersionRequest)(nil),                 // 9: fleetward.v1.GetVersionRequest
+	(*GetVersionResponse)(nil),                // 10: fleetward.v1.GetVersionResponse
+	(*ListPluginsRequest)(nil),                // 11: fleetward.v1.ListPluginsRequest
+	(*ListPluginsResponse)(nil),               // 12: fleetward.v1.ListPluginsResponse
+	(*PluginInfo)(nil),                        // 13: fleetward.v1.PluginInfo
+	(*Environment)(nil),                       // 14: fleetward.v1.Environment
+	(*Instance)(nil),                          // 15: fleetward.v1.Instance
+	(*BackupSummary)(nil),                     // 16: fleetward.v1.BackupSummary
+	(*ListEnvironmentsRequest)(nil),           // 17: fleetward.v1.ListEnvironmentsRequest
+	(*ListEnvironmentsResponse)(nil),          // 18: fleetward.v1.ListEnvironmentsResponse
+	(*CreateEnvironmentRequest)(nil),          // 19: fleetward.v1.CreateEnvironmentRequest
+	(*CreateEnvironmentResponse)(nil),         // 20: fleetward.v1.CreateEnvironmentResponse
+	(*ListInstancesRequest)(nil),              // 21: fleetward.v1.ListInstancesRequest
+	(*ListInstancesResponse)(nil),             // 22: fleetward.v1.ListInstancesResponse
+	(*GetInstanceRequest)(nil),                // 23: fleetward.v1.GetInstanceRequest
+	(*GetInstanceResponse)(nil),               // 24: fleetward.v1.GetInstanceResponse
+	(*CreateInstanceRequest)(nil),             // 25: fleetward.v1.CreateInstanceRequest
+	(*ConnectionSpec)(nil),                    // 26: fleetward.v1.ConnectionSpec
+	(*CreateInstanceResponse)(nil),            // 27: fleetward.v1.CreateInstanceResponse
+	(*DeleteInstanceRequest)(nil),             // 28: fleetward.v1.DeleteInstanceRequest
+	(*DeleteInstanceResponse)(nil),            // 29: fleetward.v1.DeleteInstanceResponse
+	(*TestConnectionRequest)(nil),             // 30: fleetward.v1.TestConnectionRequest
+	(*TestConnectionResponse)(nil),            // 31: fleetward.v1.TestConnectionResponse
+	(*DiscoverInstanceRequest)(nil),           // 32: fleetward.v1.DiscoverInstanceRequest
+	(*DiscoverInstanceResponse)(nil),          // 33: fleetward.v1.DiscoverInstanceResponse
+	(*ListPrincipalsForInstanceRequest)(nil),  // 34: fleetward.v1.ListPrincipalsForInstanceRequest
+	(*ListPrincipalsForInstanceResponse)(nil), // 35: fleetward.v1.ListPrincipalsForInstanceResponse
+	(*Backup)(nil),                            // 36: fleetward.v1.Backup
+	(*Verification)(nil),                      // 37: fleetward.v1.Verification
+	(*ListBackupsRequest)(nil),                // 38: fleetward.v1.ListBackupsRequest
+	(*ListBackupsResponse)(nil),               // 39: fleetward.v1.ListBackupsResponse
+	(*GetBackupRequest)(nil),                  // 40: fleetward.v1.GetBackupRequest
+	(*GetBackupResponse)(nil),                 // 41: fleetward.v1.GetBackupResponse
+	(*RunBackupRequest)(nil),                  // 42: fleetward.v1.RunBackupRequest
+	(*RunBackupResponse)(nil),                 // 43: fleetward.v1.RunBackupResponse
+	(*RunVerificationRequest)(nil),            // 44: fleetward.v1.RunVerificationRequest
+	(*RunVerificationResponse)(nil),           // 45: fleetward.v1.RunVerificationResponse
+	(*GetVerificationRequest)(nil),            // 46: fleetward.v1.GetVerificationRequest
+	(*GetVerificationResponse)(nil),           // 47: fleetward.v1.GetVerificationResponse
+	(*GetPITRWindowRequest)(nil),              // 48: fleetward.v1.GetPITRWindowRequest
+	(*GetPITRWindowResponse)(nil),             // 49: fleetward.v1.GetPITRWindowResponse
+	(*Schedule)(nil),                          // 50: fleetward.v1.Schedule
+	(*Job)(nil),                               // 51: fleetward.v1.Job
+	(*ListSchedulesRequest)(nil),              // 52: fleetward.v1.ListSchedulesRequest
+	(*ListSchedulesResponse)(nil),             // 53: fleetward.v1.ListSchedulesResponse
+	(*GetScheduleRequest)(nil),                // 54: fleetward.v1.GetScheduleRequest
+	(*GetScheduleResponse)(nil),               // 55: fleetward.v1.GetScheduleResponse
+	(*CreateScheduleRequest)(nil),             // 56: fleetward.v1.CreateScheduleRequest
+	(*CreateScheduleResponse)(nil),            // 57: fleetward.v1.CreateScheduleResponse
+	(*SetScheduleEnabledRequest)(nil),         // 58: fleetward.v1.SetScheduleEnabledRequest
+	(*SetScheduleEnabledResponse)(nil),        // 59: fleetward.v1.SetScheduleEnabledResponse
+	(*DeleteScheduleRequest)(nil),             // 60: fleetward.v1.DeleteScheduleRequest
+	(*DeleteScheduleResponse)(nil),            // 61: fleetward.v1.DeleteScheduleResponse
+	(*ListJobsRequest)(nil),                   // 62: fleetward.v1.ListJobsRequest
+	(*ListJobsResponse)(nil),                  // 63: fleetward.v1.ListJobsResponse
+	nil,                                       // 64: fleetward.v1.Instance.LabelsEntry
+	nil,                                       // 65: fleetward.v1.CreateInstanceRequest.LabelsEntry
+	nil,                                       // 66: fleetward.v1.ConnectionSpec.OptionsEntry
+	nil,                                       // 67: fleetward.v1.RunBackupRequest.OptionsEntry
+	nil,                                       // 68: fleetward.v1.Schedule.OptionsEntry
+	nil,                                       // 69: fleetward.v1.CreateScheduleRequest.OptionsEntry
+	(*durationpb.Duration)(nil),               // 70: google.protobuf.Duration
+	(*Capabilities)(nil),                      // 71: fleetward.v1.Capabilities
+	(*timestamppb.Timestamp)(nil),             // 72: google.protobuf.Timestamp
+	(HealthState)(0),                          // 73: fleetward.v1.HealthState
+	(VerificationStatus)(0),                   // 74: fleetward.v1.VerificationStatus
+	(*ServerInfo)(nil),                        // 75: fleetward.v1.ServerInfo
+	(*DatabaseInfo)(nil),                      // 76: fleetward.v1.DatabaseInfo
+	(*Topology)(nil),                          // 77: fleetward.v1.Topology
+	(*TLSSettings)(nil),                       // 78: fleetward.v1.TLSSettings
+	(*HealthStatus)(nil),                      // 79: fleetward.v1.HealthStatus
+	(*Principal)(nil),                         // 80: fleetward.v1.Principal
+	(PrincipalModel)(0),                       // 81: fleetward.v1.PrincipalModel
+	(*Checksum)(nil),                          // 82: fleetward.v1.Checksum
+	(*ObjectRef)(nil),                         // 83: fleetward.v1.ObjectRef
+	(*CheckResult)(nil),                       // 84: fleetward.v1.CheckResult
+	(*TimeRange)(nil),                         // 85: fleetward.v1.TimeRange
+	(*SourceManifest)(nil),                    // 86: fleetward.v1.SourceManifest
+	(VerificationCheck)(0),                    // 87: fleetward.v1.VerificationCheck
+	(*PITRWindow)(nil),                        // 88: fleetward.v1.PITRWindow
 }
 var file_fleetward_v1_controlplane_proto_depIdxs = []int32{
-	0,  // 0: fleetward.v1.GetHealthResponse.status:type_name -> fleetward.v1.ServiceHealth
-	5,  // 1: fleetward.v1.GetHealthResponse.components:type_name -> fleetward.v1.ComponentHealth
-	0,  // 2: fleetward.v1.ComponentHealth.status:type_name -> fleetward.v1.ServiceHealth
-	51, // 3: fleetward.v1.ComponentHealth.latency:type_name -> google.protobuf.Duration
-	10, // 4: fleetward.v1.ListPluginsResponse.plugins:type_name -> fleetward.v1.PluginInfo
-	52, // 5: fleetward.v1.PluginInfo.capabilities:type_name -> fleetward.v1.Capabilities
-	1,  // 6: fleetward.v1.PluginInfo.state:type_name -> fleetward.v1.PluginState
-	53, // 7: fleetward.v1.Environment.created_at:type_name -> google.protobuf.Timestamp
-	54, // 8: fleetward.v1.Instance.health:type_name -> fleetward.v1.HealthState
-	53, // 9: fleetward.v1.Instance.last_seen_at:type_name -> google.protobuf.Timestamp
-	47, // 10: fleetward.v1.Instance.labels:type_name -> fleetward.v1.Instance.LabelsEntry
-	53, // 11: fleetward.v1.Instance.created_at:type_name -> google.protobuf.Timestamp
-	13, // 12: fleetward.v1.Instance.backup_summary:type_name -> fleetward.v1.BackupSummary
-	53, // 13: fleetward.v1.BackupSummary.last_backup_at:type_name -> google.protobuf.Timestamp
-	2,  // 14: fleetward.v1.BackupSummary.last_backup_state:type_name -> fleetward.v1.BackupState
-	53, // 15: fleetward.v1.BackupSummary.last_verification_at:type_name -> google.protobuf.Timestamp
-	55, // 16: fleetward.v1.BackupSummary.last_verification_status:type_name -> fleetward.v1.VerificationStatus
-	11, // 17: fleetward.v1.ListEnvironmentsResponse.environments:type_name -> fleetward.v1.Environment
-	11, // 18: fleetward.v1.CreateEnvironmentResponse.environment:type_name -> fleetward.v1.Environment
-	12, // 19: fleetward.v1.ListInstancesResponse.instances:type_name -> fleetward.v1.Instance
-	12, // 20: fleetward.v1.GetInstanceResponse.instance:type_name -> fleetward.v1.Instance
-	52, // 21: fleetward.v1.GetInstanceResponse.capabilities:type_name -> fleetward.v1.Capabilities
-	56, // 22: fleetward.v1.GetInstanceResponse.server:type_name -> fleetward.v1.ServerInfo
-	57, // 23: fleetward.v1.GetInstanceResponse.databases:type_name -> fleetward.v1.DatabaseInfo
-	58, // 24: fleetward.v1.GetInstanceResponse.topology:type_name -> fleetward.v1.Topology
-	23, // 25: fleetward.v1.CreateInstanceRequest.connection:type_name -> fleetward.v1.ConnectionSpec
-	48, // 26: fleetward.v1.CreateInstanceRequest.labels:type_name -> fleetward.v1.CreateInstanceRequest.LabelsEntry
-	59, // 27: fleetward.v1.ConnectionSpec.tls:type_name -> fleetward.v1.TLSSettings
-	49, // 28: fleetward.v1.ConnectionSpec.options:type_name -> fleetward.v1.ConnectionSpec.OptionsEntry
-	12, // 29: fleetward.v1.CreateInstanceResponse.instance:type_name -> fleetward.v1.Instance
-	23, // 30: fleetward.v1.TestConnectionRequest.connection:type_name -> fleetward.v1.ConnectionSpec
-	60, // 31: fleetward.v1.TestConnectionResponse.health:type_name -> fleetward.v1.HealthStatus
-	56, // 32: fleetward.v1.DiscoverInstanceResponse.server:type_name -> fleetward.v1.ServerInfo
-	57, // 33: fleetward.v1.DiscoverInstanceResponse.databases:type_name -> fleetward.v1.DatabaseInfo
-	58, // 34: fleetward.v1.DiscoverInstanceResponse.topology:type_name -> fleetward.v1.Topology
-	61, // 35: fleetward.v1.ListPrincipalsForInstanceResponse.principals:type_name -> fleetward.v1.Principal
-	62, // 36: fleetward.v1.ListPrincipalsForInstanceResponse.model:type_name -> fleetward.v1.PrincipalModel
-	2,  // 37: fleetward.v1.Backup.state:type_name -> fleetward.v1.BackupState
-	63, // 38: fleetward.v1.Backup.checksum:type_name -> fleetward.v1.Checksum
-	53, // 39: fleetward.v1.Backup.started_at:type_name -> google.protobuf.Timestamp
-	53, // 40: fleetward.v1.Backup.completed_at:type_name -> google.protobuf.Timestamp
-	51, // 41: fleetward.v1.Backup.duration:type_name -> google.protobuf.Duration
-	53, // 42: fleetward.v1.Backup.consistency_point:type_name -> google.protobuf.Timestamp
-	53, // 43: fleetward.v1.Backup.expires_at:type_name -> google.protobuf.Timestamp
-	64, // 44: fleetward.v1.Backup.artifact:type_name -> fleetward.v1.ObjectRef
-	34, // 45: fleetward.v1.Backup.verification:type_name -> fleetward.v1.Verification
-	55, // 46: fleetward.v1.Verification.status:type_name -> fleetward.v1.VerificationStatus
-	65, // 47: fleetward.v1.Verification.checks:type_name -> fleetward.v1.CheckResult
-	53, // 48: fleetward.v1.Verification.started_at:type_name -> google.protobuf.Timestamp
-	53, // 49: fleetward.v1.Verification.completed_at:type_name -> google.protobuf.Timestamp
-	51, // 50: fleetward.v1.Verification.duration:type_name -> google.protobuf.Duration
-	66, // 51: fleetward.v1.ListBackupsRequest.within:type_name -> fleetward.v1.TimeRange
-	2,  // 52: fleetward.v1.ListBackupsRequest.state:type_name -> fleetward.v1.BackupState
-	33, // 53: fleetward.v1.ListBackupsResponse.backups:type_name -> fleetward.v1.Backup
-	33, // 54: fleetward.v1.GetBackupResponse.backup:type_name -> fleetward.v1.Backup
-	67, // 55: fleetward.v1.GetBackupResponse.manifest:type_name -> fleetward.v1.SourceManifest
-	50, // 56: fleetward.v1.RunBackupRequest.options:type_name -> fleetward.v1.RunBackupRequest.OptionsEntry
-	68, // 57: fleetward.v1.RunVerificationRequest.checks:type_name -> fleetward.v1.VerificationCheck
-	34, // 58: fleetward.v1.GetVerificationResponse.verification:type_name -> fleetward.v1.Verification
-	69, // 59: fleetward.v1.GetPITRWindowResponse.window:type_name -> fleetward.v1.PITRWindow
-	3,  // 60: fleetward.v1.SystemService.GetHealth:input_type -> fleetward.v1.GetHealthRequest
-	6,  // 61: fleetward.v1.SystemService.GetVersion:input_type -> fleetward.v1.GetVersionRequest
-	8,  // 62: fleetward.v1.SystemService.ListPlugins:input_type -> fleetward.v1.ListPluginsRequest
-	14, // 63: fleetward.v1.InventoryService.ListEnvironments:input_type -> fleetward.v1.ListEnvironmentsRequest
-	16, // 64: fleetward.v1.InventoryService.CreateEnvironment:input_type -> fleetward.v1.CreateEnvironmentRequest
-	18, // 65: fleetward.v1.InventoryService.ListInstances:input_type -> fleetward.v1.ListInstancesRequest
-	20, // 66: fleetward.v1.InventoryService.GetInstance:input_type -> fleetward.v1.GetInstanceRequest
-	22, // 67: fleetward.v1.InventoryService.CreateInstance:input_type -> fleetward.v1.CreateInstanceRequest
-	25, // 68: fleetward.v1.InventoryService.DeleteInstance:input_type -> fleetward.v1.DeleteInstanceRequest
-	27, // 69: fleetward.v1.InventoryService.TestConnection:input_type -> fleetward.v1.TestConnectionRequest
-	29, // 70: fleetward.v1.InventoryService.DiscoverInstance:input_type -> fleetward.v1.DiscoverInstanceRequest
-	31, // 71: fleetward.v1.InventoryService.ListPrincipalsForInstance:input_type -> fleetward.v1.ListPrincipalsForInstanceRequest
-	35, // 72: fleetward.v1.BackupService.ListBackups:input_type -> fleetward.v1.ListBackupsRequest
-	37, // 73: fleetward.v1.BackupService.GetBackup:input_type -> fleetward.v1.GetBackupRequest
-	39, // 74: fleetward.v1.BackupService.RunBackup:input_type -> fleetward.v1.RunBackupRequest
-	41, // 75: fleetward.v1.BackupService.RunVerification:input_type -> fleetward.v1.RunVerificationRequest
-	43, // 76: fleetward.v1.BackupService.GetVerification:input_type -> fleetward.v1.GetVerificationRequest
-	45, // 77: fleetward.v1.BackupService.GetPITRWindow:input_type -> fleetward.v1.GetPITRWindowRequest
-	4,  // 78: fleetward.v1.SystemService.GetHealth:output_type -> fleetward.v1.GetHealthResponse
-	7,  // 79: fleetward.v1.SystemService.GetVersion:output_type -> fleetward.v1.GetVersionResponse
-	9,  // 80: fleetward.v1.SystemService.ListPlugins:output_type -> fleetward.v1.ListPluginsResponse
-	15, // 81: fleetward.v1.InventoryService.ListEnvironments:output_type -> fleetward.v1.ListEnvironmentsResponse
-	17, // 82: fleetward.v1.InventoryService.CreateEnvironment:output_type -> fleetward.v1.CreateEnvironmentResponse
-	19, // 83: fleetward.v1.InventoryService.ListInstances:output_type -> fleetward.v1.ListInstancesResponse
-	21, // 84: fleetward.v1.InventoryService.GetInstance:output_type -> fleetward.v1.GetInstanceResponse
-	24, // 85: fleetward.v1.InventoryService.CreateInstance:output_type -> fleetward.v1.CreateInstanceResponse
-	26, // 86: fleetward.v1.InventoryService.DeleteInstance:output_type -> fleetward.v1.DeleteInstanceResponse
-	28, // 87: fleetward.v1.InventoryService.TestConnection:output_type -> fleetward.v1.TestConnectionResponse
-	30, // 88: fleetward.v1.InventoryService.DiscoverInstance:output_type -> fleetward.v1.DiscoverInstanceResponse
-	32, // 89: fleetward.v1.InventoryService.ListPrincipalsForInstance:output_type -> fleetward.v1.ListPrincipalsForInstanceResponse
-	36, // 90: fleetward.v1.BackupService.ListBackups:output_type -> fleetward.v1.ListBackupsResponse
-	38, // 91: fleetward.v1.BackupService.GetBackup:output_type -> fleetward.v1.GetBackupResponse
-	40, // 92: fleetward.v1.BackupService.RunBackup:output_type -> fleetward.v1.RunBackupResponse
-	42, // 93: fleetward.v1.BackupService.RunVerification:output_type -> fleetward.v1.RunVerificationResponse
-	44, // 94: fleetward.v1.BackupService.GetVerification:output_type -> fleetward.v1.GetVerificationResponse
-	46, // 95: fleetward.v1.BackupService.GetPITRWindow:output_type -> fleetward.v1.GetPITRWindowResponse
-	78, // [78:96] is the sub-list for method output_type
-	60, // [60:78] is the sub-list for method input_type
-	60, // [60:60] is the sub-list for extension type_name
-	60, // [60:60] is the sub-list for extension extendee
-	0,  // [0:60] is the sub-list for field type_name
+	0,   // 0: fleetward.v1.GetHealthResponse.status:type_name -> fleetward.v1.ServiceHealth
+	8,   // 1: fleetward.v1.GetHealthResponse.components:type_name -> fleetward.v1.ComponentHealth
+	0,   // 2: fleetward.v1.ComponentHealth.status:type_name -> fleetward.v1.ServiceHealth
+	70,  // 3: fleetward.v1.ComponentHealth.latency:type_name -> google.protobuf.Duration
+	13,  // 4: fleetward.v1.ListPluginsResponse.plugins:type_name -> fleetward.v1.PluginInfo
+	71,  // 5: fleetward.v1.PluginInfo.capabilities:type_name -> fleetward.v1.Capabilities
+	1,   // 6: fleetward.v1.PluginInfo.state:type_name -> fleetward.v1.PluginState
+	72,  // 7: fleetward.v1.Environment.created_at:type_name -> google.protobuf.Timestamp
+	73,  // 8: fleetward.v1.Instance.health:type_name -> fleetward.v1.HealthState
+	72,  // 9: fleetward.v1.Instance.last_seen_at:type_name -> google.protobuf.Timestamp
+	64,  // 10: fleetward.v1.Instance.labels:type_name -> fleetward.v1.Instance.LabelsEntry
+	72,  // 11: fleetward.v1.Instance.created_at:type_name -> google.protobuf.Timestamp
+	16,  // 12: fleetward.v1.Instance.backup_summary:type_name -> fleetward.v1.BackupSummary
+	72,  // 13: fleetward.v1.BackupSummary.last_backup_at:type_name -> google.protobuf.Timestamp
+	2,   // 14: fleetward.v1.BackupSummary.last_backup_state:type_name -> fleetward.v1.BackupState
+	72,  // 15: fleetward.v1.BackupSummary.last_verification_at:type_name -> google.protobuf.Timestamp
+	74,  // 16: fleetward.v1.BackupSummary.last_verification_status:type_name -> fleetward.v1.VerificationStatus
+	14,  // 17: fleetward.v1.ListEnvironmentsResponse.environments:type_name -> fleetward.v1.Environment
+	14,  // 18: fleetward.v1.CreateEnvironmentResponse.environment:type_name -> fleetward.v1.Environment
+	15,  // 19: fleetward.v1.ListInstancesResponse.instances:type_name -> fleetward.v1.Instance
+	15,  // 20: fleetward.v1.GetInstanceResponse.instance:type_name -> fleetward.v1.Instance
+	71,  // 21: fleetward.v1.GetInstanceResponse.capabilities:type_name -> fleetward.v1.Capabilities
+	75,  // 22: fleetward.v1.GetInstanceResponse.server:type_name -> fleetward.v1.ServerInfo
+	76,  // 23: fleetward.v1.GetInstanceResponse.databases:type_name -> fleetward.v1.DatabaseInfo
+	77,  // 24: fleetward.v1.GetInstanceResponse.topology:type_name -> fleetward.v1.Topology
+	26,  // 25: fleetward.v1.CreateInstanceRequest.connection:type_name -> fleetward.v1.ConnectionSpec
+	65,  // 26: fleetward.v1.CreateInstanceRequest.labels:type_name -> fleetward.v1.CreateInstanceRequest.LabelsEntry
+	78,  // 27: fleetward.v1.ConnectionSpec.tls:type_name -> fleetward.v1.TLSSettings
+	66,  // 28: fleetward.v1.ConnectionSpec.options:type_name -> fleetward.v1.ConnectionSpec.OptionsEntry
+	15,  // 29: fleetward.v1.CreateInstanceResponse.instance:type_name -> fleetward.v1.Instance
+	26,  // 30: fleetward.v1.TestConnectionRequest.connection:type_name -> fleetward.v1.ConnectionSpec
+	79,  // 31: fleetward.v1.TestConnectionResponse.health:type_name -> fleetward.v1.HealthStatus
+	75,  // 32: fleetward.v1.DiscoverInstanceResponse.server:type_name -> fleetward.v1.ServerInfo
+	76,  // 33: fleetward.v1.DiscoverInstanceResponse.databases:type_name -> fleetward.v1.DatabaseInfo
+	77,  // 34: fleetward.v1.DiscoverInstanceResponse.topology:type_name -> fleetward.v1.Topology
+	80,  // 35: fleetward.v1.ListPrincipalsForInstanceResponse.principals:type_name -> fleetward.v1.Principal
+	81,  // 36: fleetward.v1.ListPrincipalsForInstanceResponse.model:type_name -> fleetward.v1.PrincipalModel
+	2,   // 37: fleetward.v1.Backup.state:type_name -> fleetward.v1.BackupState
+	82,  // 38: fleetward.v1.Backup.checksum:type_name -> fleetward.v1.Checksum
+	72,  // 39: fleetward.v1.Backup.started_at:type_name -> google.protobuf.Timestamp
+	72,  // 40: fleetward.v1.Backup.completed_at:type_name -> google.protobuf.Timestamp
+	70,  // 41: fleetward.v1.Backup.duration:type_name -> google.protobuf.Duration
+	72,  // 42: fleetward.v1.Backup.consistency_point:type_name -> google.protobuf.Timestamp
+	72,  // 43: fleetward.v1.Backup.expires_at:type_name -> google.protobuf.Timestamp
+	83,  // 44: fleetward.v1.Backup.artifact:type_name -> fleetward.v1.ObjectRef
+	37,  // 45: fleetward.v1.Backup.verification:type_name -> fleetward.v1.Verification
+	74,  // 46: fleetward.v1.Verification.status:type_name -> fleetward.v1.VerificationStatus
+	84,  // 47: fleetward.v1.Verification.checks:type_name -> fleetward.v1.CheckResult
+	72,  // 48: fleetward.v1.Verification.started_at:type_name -> google.protobuf.Timestamp
+	72,  // 49: fleetward.v1.Verification.completed_at:type_name -> google.protobuf.Timestamp
+	70,  // 50: fleetward.v1.Verification.duration:type_name -> google.protobuf.Duration
+	85,  // 51: fleetward.v1.ListBackupsRequest.within:type_name -> fleetward.v1.TimeRange
+	2,   // 52: fleetward.v1.ListBackupsRequest.state:type_name -> fleetward.v1.BackupState
+	36,  // 53: fleetward.v1.ListBackupsResponse.backups:type_name -> fleetward.v1.Backup
+	36,  // 54: fleetward.v1.GetBackupResponse.backup:type_name -> fleetward.v1.Backup
+	86,  // 55: fleetward.v1.GetBackupResponse.manifest:type_name -> fleetward.v1.SourceManifest
+	67,  // 56: fleetward.v1.RunBackupRequest.options:type_name -> fleetward.v1.RunBackupRequest.OptionsEntry
+	87,  // 57: fleetward.v1.RunVerificationRequest.checks:type_name -> fleetward.v1.VerificationCheck
+	37,  // 58: fleetward.v1.GetVerificationResponse.verification:type_name -> fleetward.v1.Verification
+	88,  // 59: fleetward.v1.GetPITRWindowResponse.window:type_name -> fleetward.v1.PITRWindow
+	4,   // 60: fleetward.v1.Schedule.kind:type_name -> fleetward.v1.JobKind
+	68,  // 61: fleetward.v1.Schedule.options:type_name -> fleetward.v1.Schedule.OptionsEntry
+	3,   // 62: fleetward.v1.Schedule.verify_policy:type_name -> fleetward.v1.VerifyPolicy
+	72,  // 63: fleetward.v1.Schedule.next_run_at:type_name -> google.protobuf.Timestamp
+	72,  // 64: fleetward.v1.Schedule.last_run_at:type_name -> google.protobuf.Timestamp
+	72,  // 65: fleetward.v1.Schedule.created_at:type_name -> google.protobuf.Timestamp
+	4,   // 66: fleetward.v1.Job.kind:type_name -> fleetward.v1.JobKind
+	5,   // 67: fleetward.v1.Job.state:type_name -> fleetward.v1.JobState
+	72,  // 68: fleetward.v1.Job.scheduled_for:type_name -> google.protobuf.Timestamp
+	72,  // 69: fleetward.v1.Job.lease_expires_at:type_name -> google.protobuf.Timestamp
+	72,  // 70: fleetward.v1.Job.heartbeat_at:type_name -> google.protobuf.Timestamp
+	72,  // 71: fleetward.v1.Job.started_at:type_name -> google.protobuf.Timestamp
+	72,  // 72: fleetward.v1.Job.finished_at:type_name -> google.protobuf.Timestamp
+	72,  // 73: fleetward.v1.Job.created_at:type_name -> google.protobuf.Timestamp
+	50,  // 74: fleetward.v1.ListSchedulesResponse.schedules:type_name -> fleetward.v1.Schedule
+	50,  // 75: fleetward.v1.GetScheduleResponse.schedule:type_name -> fleetward.v1.Schedule
+	4,   // 76: fleetward.v1.CreateScheduleRequest.kind:type_name -> fleetward.v1.JobKind
+	69,  // 77: fleetward.v1.CreateScheduleRequest.options:type_name -> fleetward.v1.CreateScheduleRequest.OptionsEntry
+	3,   // 78: fleetward.v1.CreateScheduleRequest.verify_policy:type_name -> fleetward.v1.VerifyPolicy
+	50,  // 79: fleetward.v1.CreateScheduleResponse.schedule:type_name -> fleetward.v1.Schedule
+	50,  // 80: fleetward.v1.SetScheduleEnabledResponse.schedule:type_name -> fleetward.v1.Schedule
+	5,   // 81: fleetward.v1.ListJobsRequest.state:type_name -> fleetward.v1.JobState
+	51,  // 82: fleetward.v1.ListJobsResponse.jobs:type_name -> fleetward.v1.Job
+	6,   // 83: fleetward.v1.SystemService.GetHealth:input_type -> fleetward.v1.GetHealthRequest
+	9,   // 84: fleetward.v1.SystemService.GetVersion:input_type -> fleetward.v1.GetVersionRequest
+	11,  // 85: fleetward.v1.SystemService.ListPlugins:input_type -> fleetward.v1.ListPluginsRequest
+	17,  // 86: fleetward.v1.InventoryService.ListEnvironments:input_type -> fleetward.v1.ListEnvironmentsRequest
+	19,  // 87: fleetward.v1.InventoryService.CreateEnvironment:input_type -> fleetward.v1.CreateEnvironmentRequest
+	21,  // 88: fleetward.v1.InventoryService.ListInstances:input_type -> fleetward.v1.ListInstancesRequest
+	23,  // 89: fleetward.v1.InventoryService.GetInstance:input_type -> fleetward.v1.GetInstanceRequest
+	25,  // 90: fleetward.v1.InventoryService.CreateInstance:input_type -> fleetward.v1.CreateInstanceRequest
+	28,  // 91: fleetward.v1.InventoryService.DeleteInstance:input_type -> fleetward.v1.DeleteInstanceRequest
+	30,  // 92: fleetward.v1.InventoryService.TestConnection:input_type -> fleetward.v1.TestConnectionRequest
+	32,  // 93: fleetward.v1.InventoryService.DiscoverInstance:input_type -> fleetward.v1.DiscoverInstanceRequest
+	34,  // 94: fleetward.v1.InventoryService.ListPrincipalsForInstance:input_type -> fleetward.v1.ListPrincipalsForInstanceRequest
+	52,  // 95: fleetward.v1.ScheduleService.ListSchedules:input_type -> fleetward.v1.ListSchedulesRequest
+	54,  // 96: fleetward.v1.ScheduleService.GetSchedule:input_type -> fleetward.v1.GetScheduleRequest
+	56,  // 97: fleetward.v1.ScheduleService.CreateSchedule:input_type -> fleetward.v1.CreateScheduleRequest
+	58,  // 98: fleetward.v1.ScheduleService.SetScheduleEnabled:input_type -> fleetward.v1.SetScheduleEnabledRequest
+	60,  // 99: fleetward.v1.ScheduleService.DeleteSchedule:input_type -> fleetward.v1.DeleteScheduleRequest
+	62,  // 100: fleetward.v1.ScheduleService.ListJobs:input_type -> fleetward.v1.ListJobsRequest
+	38,  // 101: fleetward.v1.BackupService.ListBackups:input_type -> fleetward.v1.ListBackupsRequest
+	40,  // 102: fleetward.v1.BackupService.GetBackup:input_type -> fleetward.v1.GetBackupRequest
+	42,  // 103: fleetward.v1.BackupService.RunBackup:input_type -> fleetward.v1.RunBackupRequest
+	44,  // 104: fleetward.v1.BackupService.RunVerification:input_type -> fleetward.v1.RunVerificationRequest
+	46,  // 105: fleetward.v1.BackupService.GetVerification:input_type -> fleetward.v1.GetVerificationRequest
+	48,  // 106: fleetward.v1.BackupService.GetPITRWindow:input_type -> fleetward.v1.GetPITRWindowRequest
+	7,   // 107: fleetward.v1.SystemService.GetHealth:output_type -> fleetward.v1.GetHealthResponse
+	10,  // 108: fleetward.v1.SystemService.GetVersion:output_type -> fleetward.v1.GetVersionResponse
+	12,  // 109: fleetward.v1.SystemService.ListPlugins:output_type -> fleetward.v1.ListPluginsResponse
+	18,  // 110: fleetward.v1.InventoryService.ListEnvironments:output_type -> fleetward.v1.ListEnvironmentsResponse
+	20,  // 111: fleetward.v1.InventoryService.CreateEnvironment:output_type -> fleetward.v1.CreateEnvironmentResponse
+	22,  // 112: fleetward.v1.InventoryService.ListInstances:output_type -> fleetward.v1.ListInstancesResponse
+	24,  // 113: fleetward.v1.InventoryService.GetInstance:output_type -> fleetward.v1.GetInstanceResponse
+	27,  // 114: fleetward.v1.InventoryService.CreateInstance:output_type -> fleetward.v1.CreateInstanceResponse
+	29,  // 115: fleetward.v1.InventoryService.DeleteInstance:output_type -> fleetward.v1.DeleteInstanceResponse
+	31,  // 116: fleetward.v1.InventoryService.TestConnection:output_type -> fleetward.v1.TestConnectionResponse
+	33,  // 117: fleetward.v1.InventoryService.DiscoverInstance:output_type -> fleetward.v1.DiscoverInstanceResponse
+	35,  // 118: fleetward.v1.InventoryService.ListPrincipalsForInstance:output_type -> fleetward.v1.ListPrincipalsForInstanceResponse
+	53,  // 119: fleetward.v1.ScheduleService.ListSchedules:output_type -> fleetward.v1.ListSchedulesResponse
+	55,  // 120: fleetward.v1.ScheduleService.GetSchedule:output_type -> fleetward.v1.GetScheduleResponse
+	57,  // 121: fleetward.v1.ScheduleService.CreateSchedule:output_type -> fleetward.v1.CreateScheduleResponse
+	59,  // 122: fleetward.v1.ScheduleService.SetScheduleEnabled:output_type -> fleetward.v1.SetScheduleEnabledResponse
+	61,  // 123: fleetward.v1.ScheduleService.DeleteSchedule:output_type -> fleetward.v1.DeleteScheduleResponse
+	63,  // 124: fleetward.v1.ScheduleService.ListJobs:output_type -> fleetward.v1.ListJobsResponse
+	39,  // 125: fleetward.v1.BackupService.ListBackups:output_type -> fleetward.v1.ListBackupsResponse
+	41,  // 126: fleetward.v1.BackupService.GetBackup:output_type -> fleetward.v1.GetBackupResponse
+	43,  // 127: fleetward.v1.BackupService.RunBackup:output_type -> fleetward.v1.RunBackupResponse
+	45,  // 128: fleetward.v1.BackupService.RunVerification:output_type -> fleetward.v1.RunVerificationResponse
+	47,  // 129: fleetward.v1.BackupService.GetVerification:output_type -> fleetward.v1.GetVerificationResponse
+	49,  // 130: fleetward.v1.BackupService.GetPITRWindow:output_type -> fleetward.v1.GetPITRWindowResponse
+	107, // [107:131] is the sub-list for method output_type
+	83,  // [83:107] is the sub-list for method input_type
+	83,  // [83:83] is the sub-list for extension type_name
+	83,  // [83:83] is the sub-list for extension extendee
+	0,   // [0:83] is the sub-list for field type_name
 }
 
 func init() { file_fleetward_v1_controlplane_proto_init() }
@@ -3479,10 +4767,10 @@ func file_fleetward_v1_controlplane_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetward_v1_controlplane_proto_rawDesc), len(file_fleetward_v1_controlplane_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   48,
+			NumEnums:      6,
+			NumMessages:   64,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   4,
 		},
 		GoTypes:           file_fleetward_v1_controlplane_proto_goTypes,
 		DependencyIndexes: file_fleetward_v1_controlplane_proto_depIdxs,

@@ -99,7 +99,9 @@ func (s *Service) RunVerification(ctx context.Context, in RunVerificationInput) 
 	s.running.Add(1)
 	go func() {
 		defer s.running.Done()
-		s.verify(client, caps, verifyRequest{
+		// Discarded because verify has already recorded and logged the outcome, and RunVerification
+		// returned as soon as the rows existed.
+		_ = s.verify(s.runCtx, client, caps, verifyRequest{
 			verificationID: verificationID,
 			jobID:          jobID,
 			target:         target,
@@ -110,6 +112,69 @@ func (s *Service) RunVerification(ctx context.Context, in RunVerificationInput) 
 	}()
 
 	return verificationID, jobID, nil
+}
+
+// RunVerificationSync verifies a backup against a job that already exists, and returns once the
+// verdict has been recorded.
+//
+// The scheduler's entry point, and the counterpart of RunBackupSync: no job is created because the
+// caller holds a lease on one, and the work is bound to the caller's context so that a lost lease
+// can stop a restore that is holding a sandbox container open.
+func (s *Service) RunVerificationSync(ctx context.Context, jobID string, in RunVerificationInput) error {
+	if jobID == "" {
+		return fmt.Errorf("%w: a synchronous verification must name the job it belongs to", ErrInvalidArgument)
+	}
+
+	target, err := s.loadVerificationTarget(ctx, in.BackupID)
+	if err != nil {
+		return err
+	}
+
+	conn, err := s.resolver.ResolveConnection(ctx, target.instanceID)
+	if err != nil {
+		return err
+	}
+
+	client, caps, err := s.plugins.Client(conn.EngineType)
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrEngineUnavailable, conn.EngineType, err)
+	}
+	if !caps.GetSupportsSandboxRestore() {
+		return fmt.Errorf("%w: the %s plugin cannot restore into a sandbox", ErrUnsupported, conn.EngineType)
+	}
+	if err := validateChecks(caps, in.Checks); err != nil {
+		return err
+	}
+
+	image, err := sandbox.ImageRef(caps.GetSandboxTemplate(), target.engineVersion)
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrNotVerifiable, conn.EngineType, err)
+	}
+
+	verificationID, err := s.createVerificationRowFor(ctx, jobID, target, image)
+	if err != nil {
+		return err
+	}
+
+	// job_id is not named here: the scheduler put it on the context, and telemetry promotes it.
+	s.log.InfoContext(ctx, "scheduled verification started",
+		slog.String("verification_id", verificationID),
+		slog.String("backup_id", target.backupID),
+		slog.String("instance_id", target.instanceID),
+		slog.String("engine_type", conn.EngineType),
+		slog.String("sandbox_image", image))
+
+	s.running.Add(1)
+	defer s.running.Done()
+
+	return s.verify(ctx, client, caps, verifyRequest{
+		verificationID: verificationID,
+		jobID:          jobID,
+		target:         target,
+		engineType:     conn.EngineType,
+		image:          image,
+		checks:         in.Checks,
+	})
 }
 
 // verificationTarget is everything the run needs from the backup being verified.
@@ -224,8 +289,8 @@ type outcome struct {
 
 // verify performs the run and records its outcome. Like execute, it never returns an error: there
 // is no caller left to receive one.
-func (s *Service) verify(client fwv1.EnginePluginClient, caps *fwv1.Capabilities, req verifyRequest) {
-	ctx, cancel := context.WithTimeout(s.runCtx, verifyTimeout)
+func (s *Service) verify(parent context.Context, client fwv1.EnginePluginClient, caps *fwv1.Capabilities, req verifyRequest) error {
+	ctx, cancel := context.WithTimeout(parent, verifyTimeout)
 	defer cancel()
 
 	log := s.log.With(
@@ -244,7 +309,7 @@ func (s *Service) verify(client fwv1.EnginePluginClient, caps *fwv1.Capabilities
 		log.ErrorContext(recordCtx, "could not record the verification outcome",
 			slog.String("status", result.status.String()),
 			slog.String("error", err.Error()))
-		return
+		return err
 	}
 
 	switch result.status {
@@ -262,6 +327,12 @@ func (s *Service) verify(client fwv1.EnginePluginClient, caps *fwv1.Capabilities
 			slog.String("reason", result.errMsg),
 			slog.Duration("duration", time.Since(started)))
 	}
+
+	// A verification that reached a conclusion is a job that succeeded, including a conclusion of
+	// FAILED. The job is "did we manage to check"; the verification is "was the backup good".
+	// Returning an error for a FAILED verdict would make a proven-bad backup indistinguishable from
+	// a broken control plane in the job table.
+	return nil
 }
 
 // runVerification provisions the sandbox, drives the plugin, and returns what it concluded.
@@ -534,8 +605,8 @@ func (s *Service) createVerificationRows(ctx context.Context, target verificatio
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	err = tx.QueryRow(ctx, `
-		INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at)
-		VALUES ($1, $2, 'verify', 'running', now())
+		INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at, attempts)
+		VALUES ($1, $2, 'verify', 'running', now(), 1)
 		RETURNING id`,
 		s.tenantID, target.instanceID).Scan(&jobID)
 	if metadb.IsUniqueViolation(err) {
@@ -558,6 +629,24 @@ func (s *Service) createVerificationRows(ctx context.Context, target verificatio
 		return "", "", fmt.Errorf("verify: commit: %w", err)
 	}
 	return verificationID, jobID, nil
+}
+
+// createVerificationRowFor inserts the verification for a job the scheduler already leased.
+//
+// No job is created: the scheduler's job is what the lease names, and inserting a second one would
+// collide with idx_jobs_one_active_per_instance_kind and fail a verification that was correctly
+// scheduled.
+func (s *Service) createVerificationRowFor(ctx context.Context, jobID string, target verificationTarget, image string) (string, error) {
+	var verificationID string
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO verifications (tenant_id, backup_id, job_id, status, sandbox_image, started_at)
+		VALUES ($1, $2, $3, 'running', $4, now())
+		RETURNING id`,
+		s.tenantID, target.backupID, jobID, image).Scan(&verificationID)
+	if err != nil {
+		return "", fmt.Errorf("verify: create verification: %w", err)
+	}
+	return verificationID, nil
 }
 
 // recordVerification writes the outcome and closes the job.
@@ -597,9 +686,11 @@ func (s *Service) recordVerification(ctx context.Context, req verifyRequest, res
 	if result.status == fwv1.VerificationStatus_VERIFICATION_STATUS_INCONCLUSIVE {
 		jobState = "failed"
 	}
+	// attempts is left alone for the same reason it is in recordFailure: it counts starts, and this
+	// job was counted when it was claimed or when it was inserted already running.
 	if _, err := tx.Exec(ctx, `
 		UPDATE jobs
-		SET state = $1, error_message = $2, finished_at = now(), attempts = attempts + 1, updated_at = now()
+		SET state = $1, error_message = $2, finished_at = now(), updated_at = now()
 		WHERE id = $3 AND tenant_id = $4`,
 		jobState, result.errMsg, req.jobID, s.tenantID); err != nil {
 		return fmt.Errorf("verify: finish job: %w", err)

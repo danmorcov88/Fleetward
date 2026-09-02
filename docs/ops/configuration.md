@@ -127,7 +127,7 @@ Constructed and health-checked. Nothing writes to it yet.
 
 ## Scheduler
 
-Parsed and cross-validated, and read by nothing — there is no scheduler yet.
+Drives every run that nobody asked for. How these interact — the poll, the lease, the reaper — is [`scheduling.md`](scheduling.md).
 
 | Variable                        | Default |  | Notes |
 | ------------------------------- | ------- | --- | --- |

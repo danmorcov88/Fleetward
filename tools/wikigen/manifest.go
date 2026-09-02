@@ -43,6 +43,7 @@ var explicit = []page{
 	{source: "docs/roadmap.md", wiki: "Roadmap", title: "Roadmap", audience: "evaluate"},
 
 	{source: "docs/ops/configuration.md", wiki: "Configuration-Reference", title: "Configuration reference", audience: "run"},
+	{source: "docs/ops/scheduling.md", wiki: "Scheduling", title: "Scheduling", audience: "run"},
 
 	{source: "docs/dev/writing-an-engine-plugin.md", wiki: "Writing-an-Engine-Plugin", title: "Writing an engine plugin", audience: "extend"},
 	{source: ".github/CONTRIBUTING.md", wiki: "Contributing", title: "Contributing", audience: "extend"},
