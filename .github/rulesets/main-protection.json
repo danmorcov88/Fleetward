@@ -39,6 +39,7 @@
           { "context": "Protobuf contract" },
           { "context": "Lint Go" },
           { "context": "Test Go" },
+          { "context": "Test Go (Windows)" },
           { "context": "Build" },
           { "context": "Conformance" },
           { "context": "Vulnerability scan" },

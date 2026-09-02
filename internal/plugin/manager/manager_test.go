@@ -74,9 +74,9 @@ func TestDiscoverBinaries(t *testing.T) {
 		}
 	}
 
-	write(BinaryPrefix+"postgresql", 0o755)
-	write(BinaryPrefix+"redis", 0o755)
-	write("unrelated-binary", 0o755)
+	write(BinaryPrefix+"postgresql"+binarySuffix, 0o755)
+	write(BinaryPrefix+"redis"+binarySuffix, 0o755)
+	write("unrelated-binary"+binarySuffix, 0o755)
 	write("README.md", 0o644)
 	if err := os.Mkdir(filepath.Join(dir, BinaryPrefix+"adirectory"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -98,11 +98,20 @@ func TestDiscoverBinaries(t *testing.T) {
 }
 
 func TestDiscoverBinariesRejectsNonExecutable(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits are not meaningful on Windows")
-	}
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, BinaryPrefix+"postgresql"), []byte("x"), 0o644); err != nil {
+
+	// What makes a file unlaunchable differs by platform: a cleared executable bit on Unix, a
+	// missing .exe on Windows, where os.Stat reports 0666 for every regular file and exec.Command
+	// resolves through PATHEXT. Both must be refused, so the test asserts the platform's own case
+	// rather than skipping half of them.
+	name := BinaryPrefix + "postgresql" + binarySuffix
+	mode := os.FileMode(0o755)
+	if runtime.GOOS == "windows" {
+		name = BinaryPrefix + "postgresql"
+	} else {
+		mode = 0o644
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), mode); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -231,7 +240,9 @@ func TestManagerLaunchesRealPlugin(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	binary := filepath.Join(dir, BinaryPrefix+"postgresql")
+	// go build -o <path> writes exactly the name it is given, with no GOEXE suffix of its own, so
+	// the suffix has to be added here or the binary is unlaunchable on Windows.
+	binary := filepath.Join(dir, BinaryPrefix+"postgresql"+binarySuffix)
 
 	build := exec.CommandContext(t.Context(), "go", "build", "-o", binary,
 		"github.com/danmorcov88/fleetward/cmd/plugins/postgres")
@@ -298,7 +309,7 @@ func TestManagerRestartsCrashedPlugin(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	binary := filepath.Join(dir, BinaryPrefix+"postgresql")
+	binary := filepath.Join(dir, BinaryPrefix+"postgresql"+binarySuffix)
 	build := exec.CommandContext(t.Context(), "go", "build", "-o", binary,
 		"github.com/danmorcov88/fleetward/cmd/plugins/postgres")
 	build.Env = os.Environ()

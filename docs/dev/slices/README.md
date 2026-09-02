@@ -41,7 +41,7 @@ what is next; the briefs are the authority on how.
 
 ### 2. Branch
 
-`main` is protected: no direct pushes, no force pushes, and all seven CI jobs must pass before a
+`main` is protected: no direct pushes, no force pushes, and all nine CI jobs must pass before a
 pull request can merge.
 
 ```bash

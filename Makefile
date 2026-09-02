@@ -16,6 +16,12 @@ LDFLAGS := -s -w \
 BIN         := bin
 PLUGIN_BIN  := $(BIN)/plugins
 
+# go build -o <path> writes exactly the name it is given and never appends a suffix of its own, so
+# every -o below has to carry GOEXE. On Windows the extension is not cosmetic: os.Stat reports no
+# executable bit for any file, and exec.Command resolves through PATHEXT, so a plugin built without
+# it is undiscoverable and unlaunchable. Empty everywhere else.
+EXE := $(shell go env GOEXE)
+
 # Plugin source directory to engine type. The binary must be named fleetward-plugin-<engine type>,
 # because that is how the plugin manager routes an instance to a plugin.
 PLUGINS := postgres:postgresql mysql:mysql mongodb:mongodb redis:redis
@@ -55,12 +61,12 @@ build: build-server build-cli build-plugins ## Build every binary into ./bin
 .PHONY: build-server
 build-server: ## Build the control plane
 	@mkdir -p $(BIN)
-	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN)/fleetward ./cmd/fleetward
+	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN)/fleetward$(EXE) ./cmd/fleetward
 
 .PHONY: build-cli
 build-cli: ## Build the CLI
 	@mkdir -p $(BIN)
-	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN)/fleetward-cli ./cmd/fleetward-cli
+	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN)/fleetward-cli$(EXE) ./cmd/fleetward-cli
 
 .PHONY: build-plugins
 build-plugins: ## Build every engine plugin binary
@@ -69,7 +75,7 @@ build-plugins: ## Build every engine plugin binary
 		dir=$${pair%%:*}; engine=$${pair##*:}; \
 		echo "  building fleetward-plugin-$$engine"; \
 		go build -trimpath -ldflags "$(LDFLAGS)" \
-			-o $(PLUGIN_BIN)/fleetward-plugin-$$engine ./cmd/plugins/$$dir || exit 1; \
+			-o $(PLUGIN_BIN)/fleetward-plugin-$$engine$(EXE) ./cmd/plugins/$$dir || exit 1; \
 	done
 
 .PHONY: clean

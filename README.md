@@ -512,12 +512,14 @@ contract.
 flowchart LR
     PR["Pull request"] --> P["buf lint<br/>buf breaking<br/>codegen drift"]
     PR --> L["golangci-lint"]
-    PR --> T["go test -race<br/>+ coverage"]
+    PR --> T["go test -race<br/>+ integration + coverage"]
+    PR --> TW["go test on Windows"]
     PR --> B["build all binaries<br/>+ handshake check"]
+    PR --> C["conformance suite<br/>every plugin"]
     PR --> V["govulncheck"]
     PR --> W["web lint + build"]
     PR --> D["docker compose up<br/>readyz must be green"]
-    P & L & T & B & V & W & D --> M["mergeable"]
+    P & L & T & TW & B & C & V & W & D --> M["mergeable"]
 
     style M fill:#1f5c3a,stroke:#2e8b57,color:#fff
 ```
