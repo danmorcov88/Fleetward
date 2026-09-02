@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
 	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
@@ -62,11 +63,52 @@ func (g *GRPCServer) GetBackup(ctx context.Context, req *fwv1.GetBackupRequest) 
 	return &fwv1.GetBackupResponse{Backup: b, Manifest: manifest}, nil
 }
 
-// ListBackups is phase B. Backup history has to account for observed backups and their origin
-// (ADR-0015), and a listing built now without that column would have to be rebuilt then.
-func (g *GRPCServer) ListBackups(context.Context, *fwv1.ListBackupsRequest) (*fwv1.ListBackupsResponse, error) {
-	return nil, status.Error(codes.Unimplemented,
-		"backup history is not implemented yet; it arrives in phase B with observed backups")
+// ListBackups reports backup history across both origins.
+func (g *GRPCServer) ListBackups(ctx context.Context, req *fwv1.ListBackupsRequest) (*fwv1.ListBackupsResponse, error) {
+	backups, err := g.svc.ListBackups(ctx, ListBackupsInput{
+		InstanceID:    req.GetInstanceId(),
+		EnvironmentID: req.GetEnvironmentId(),
+		State:         req.GetState(),
+		Origin:        req.GetOrigin(),
+		PageSize:      req.GetPageSize(),
+	})
+	if err != nil {
+		return nil, g.fail(ctx, "list backups", err)
+	}
+	// The service clamps a page to maxListPageSize, so this is a small number by construction.
+	return &fwv1.ListBackupsResponse{
+		Backups:   backups,
+		TotalSize: int32(len(backups)), //nolint:gosec // G115: bounded by maxListPageSize
+	}, nil
+}
+
+// ObserveBackupHistory reads the engine's own record of backups Fleetward did not take.
+func (g *GRPCServer) ObserveBackupHistory(ctx context.Context, req *fwv1.ObserveBackupHistoryRequest) (*fwv1.ObserveBackupHistoryResponse, error) {
+	result, err := g.svc.ObserveBackupHistory(ctx, ObserveInput{InstanceID: req.GetInstanceId()})
+	if err != nil {
+		return nil, g.fail(ctx, "observe backup history", err)
+	}
+	out := &fwv1.ObserveBackupHistoryResponse{
+		Discovered: result.Discovered,
+		Updated:    result.Updated,
+	}
+	if !result.Watermark.IsZero() {
+		out.Watermark = timestamppb.New(result.Watermark)
+	}
+	return out, nil
+}
+
+// GetBackupAdherence reports the gap between what was declared and what was detected.
+func (g *GRPCServer) GetBackupAdherence(ctx context.Context, req *fwv1.GetBackupAdherenceRequest) (*fwv1.GetBackupAdherenceResponse, error) {
+	instances, err := g.svc.GetBackupAdherence(ctx, GetAdherenceInput{
+		InstanceID:    req.GetInstanceId(),
+		EnvironmentID: req.GetEnvironmentId(),
+		ProblemsOnly:  req.GetProblemsOnly(),
+	})
+	if err != nil {
+		return nil, g.fail(ctx, "get backup adherence", err)
+	}
+	return &fwv1.GetBackupAdherenceResponse{Instances: instances}, nil
 }
 
 // RunVerification restores a backup into a sandbox and smoke-tests it, returning its identifiers.

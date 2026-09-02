@@ -159,6 +159,11 @@ func (s *Scheduler) run(parent context.Context, job *claimedJob) {
 		runErr = s.runBackup(ctx, job, payload, log)
 	case kindVerify:
 		runErr = s.runVerify(ctx, job, payload, log)
+	case kindObserve:
+		runErr = s.runner.RunObservationJob(ctx, ObservationJob{
+			JobID:      job.ID,
+			InstanceID: job.InstanceID,
+		})
 	default:
 		runErr = fmt.Errorf("%w: the scheduler does not run %q jobs", ErrUnsupported, job.Kind)
 	}

@@ -134,6 +134,22 @@ service BackupService {
   rpc GetPITRWindow(GetPITRWindowRequest) returns (GetPITRWindowResponse) {
     option (google.api.http) = {get: "/api/v1/instances/{instance_id}/pitr-window"};
   }
+  // ObserveBackupHistory reads the engine's own record of backups Fleetward did not take and
+  // records what it finds (ADR-0015). It is the on-demand form of what an OBSERVE schedule does on
+  // a cadence, and it changes nothing on the instance it reads.
+  rpc ObserveBackupHistory(ObserveBackupHistoryRequest) returns (ObserveBackupHistoryResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/instances/{instance_id}/observe"
+      body: "*"
+    };
+  }
+  // GetBackupAdherence answers the question this product exists for: did every server's backup run
+  // when it was supposed to, and did it succeed. It compares each instance's declared expectation
+  // against the backups actually recorded, of either origin, and is computed on read — no verdict
+  // is stored, so there is nothing that can go stale.
+  rpc GetBackupAdherence(GetBackupAdherenceRequest) returns (GetBackupAdherenceResponse) {
+    option (google.api.http) = {get: "/api/v1/backup-adherence"};
+  }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -248,6 +264,9 @@ enum BackupState {
   BACKUP_STATE_FAILED = 4;
   BACKUP_STATE_CANCELED = 5;
   BACKUP_STATE_EXPIRED = 6;
+  // Only ever reached by an observed backup whose evidence does not record an outcome: a file
+  // exists, and nothing about it says the dump that wrote it completed. Never rendered as success.
+  BACKUP_STATE_UNKNOWN = 7;
 }
 
 message ListEnvironmentsRequest {
@@ -394,6 +413,41 @@ message Backup {
   // Most recent verification of this backup, if any.
   Verification verification = 15;
   bool triggered_manually = 16;
+  // Who took this backup. Managed backups carry a manifest Fleetward captured and can be verified;
+  // observed ones are evidence about somebody else's backup and cannot (ADR-0015). The two must
+  // never be rendered as the same green tick.
+  BackupOrigin origin = 17;
+  // The identifier the engine gave this backup, where the engine assigns one. Empty otherwise.
+  string external_id = 18;
+  // Where the artifact is, as the engine names it. Set on observed backups, which Fleetward does
+  // not own; managed backups carry `artifact` instead.
+  string external_location = 19;
+  // Only meaningful on an observed backup: what its evidence could and could not establish.
+  ObservedEvidence evidence = 20;
+}
+
+enum BackupOrigin {
+  BACKUP_ORIGIN_UNSPECIFIED = 0;
+  // Fleetward ran it, captured a manifest, and controls the artifact.
+  BACKUP_ORIGIN_MANAGED = 1;
+  // Evidence of a backup somebody else took. Fleetward reports it and owns nothing.
+  BACKUP_ORIGIN_OBSERVED = 2;
+}
+
+// ObservedEvidence is what the source this backup was read from could establish, carried alongside
+// the backup so a reader is never left to assume. A directory listing proves a file arrived; it
+// does not prove the dump that wrote it completed.
+message ObservedEvidence {
+  // The source, in the engine's own vocabulary, e.g. "msdb.dbo.backupset".
+  string source_description = 1;
+  // The source distinguishes success from failure. When false, `state` is UNKNOWN by construction.
+  bool reports_outcome = 2;
+  // The identity came from the engine, so a moved or renamed artifact stays one backup.
+  bool identity_is_engine_assigned = 3;
+  // The finish time could not be converted to UTC with the offset in force on the day, so it may
+  // be out by a daylight-saving transition.
+  bool completed_at_is_approximate = 4;
+  google.protobuf.Timestamp observed_at = 5;
 }
 
 message Verification {
@@ -418,6 +472,9 @@ message ListBackupsRequest {
   bool verification_failed_only = 5;
   int32 page_size = 6;
   string page_token = 7;
+  // Restrict to backups of one origin. Unspecified returns both, which is what an adherence
+  // question wants: it does not care who took the backup (ADR-0015).
+  BackupOrigin origin = 8;
 }
 
 message ListBackupsResponse {
@@ -461,6 +518,76 @@ message RunVerificationResponse {
   string job_id = 2;
 }
 
+message ObserveBackupHistoryRequest {
+  string instance_id = 1;
+}
+
+message ObserveBackupHistoryResponse {
+  // Records the engine reported that Fleetward had not already recorded.
+  int32 discovered = 1;
+  // Records that matched a backup already known, and updated it rather than duplicating it. A
+  // healthy estate settles at discovered = 0 and updated = a handful (ADR-0027).
+  int32 updated = 2;
+  // The instant the newest evidence read in this poll finished at, which is where the next poll
+  // resumes from.
+  google.protobuf.Timestamp watermark = 3;
+}
+
+message GetBackupAdherenceRequest {
+  // Restrict to one instance or one environment. Both empty reports the whole estate, which is the
+  // question a DBA with fifty servers actually asks.
+  string instance_id = 1;
+  string environment_id = 2;
+  // Report only instances that are not adherent.
+  bool problems_only = 3;
+}
+
+message GetBackupAdherenceResponse {
+  repeated InstanceAdherence instances = 1;
+}
+
+// InstanceAdherence is the gap between what was declared and what was detected, for one instance.
+message InstanceAdherence {
+  string instance_id = 1;
+  string instance_name = 2;
+  string environment_id = 3;
+  string engine_type = 4;
+  AdherenceState state = 5;
+  // The declaration, echoed so a reader can see what they are being held to.
+  string expected_cron = 6;
+  string timezone = 7;
+  int32 expected_grace_minutes = 8;
+  // The most recent instant a backup was supposed to have happened by, and the deadline the grace
+  // period put on it.
+  google.protobuf.Timestamp expected_by = 9;
+  google.protobuf.Timestamp deadline = 10;
+  // The backup that satisfied the window, when one did.
+  Backup satisfied_by = 11;
+  // The most recent backup of any kind, satisfying or not. Populated even when state is MISSED,
+  // because "the last one was nine days ago" is the useful part of a miss.
+  Backup latest_backup = 12;
+  // What weakens this answer, in a sentence a human can act on: evidence that cannot report an
+  // outcome, an identity that will not survive a rename, a timestamp that may be out by an hour.
+  // Empty when the answer rests on nothing weaker than a backup Fleetward took itself.
+  repeated string caveats = 13;
+}
+
+enum AdherenceState {
+  ADHERENCE_STATE_UNSPECIFIED = 0;
+  // A backup was expected, and one succeeded inside the window.
+  ADHERENCE_STATE_ADHERENT = 1;
+  // A backup was expected and none arrived inside the window.
+  ADHERENCE_STATE_MISSED = 2;
+  // A backup arrived inside the window and the evidence cannot say whether it succeeded. Distinct
+  // from ADHERENT on purpose: a file that arrived is not a backup that worked.
+  ADHERENCE_STATE_UNPROVEN = 3;
+  // A backup arrived inside the window and the evidence says it failed.
+  ADHERENCE_STATE_FAILED = 4;
+  // Nothing was declared for this instance, so there is no window to be inside. Not a problem, and
+  // not an achievement.
+  ADHERENCE_STATE_NOT_DECLARED = 5;
+}
+
 message GetVerificationRequest {
   string verification_id = 1;
 }
@@ -500,6 +627,14 @@ message Schedule {
   // Only consulted when verify_policy is SAMPLED.
   int32 verify_sample_percent = 10;
   int32 retention_days = 11;
+  // What a backup of this instance is supposed to look like, declared rather than inferred.
+  //
+  // On an OBSERVE schedule `cron_expression` says how often to go and look; this says how often a
+  // backup is supposed to have happened, and how late is still acceptable. Inferring the second
+  // from the observed rhythm would answer "is this normal for you" instead of "is this what you
+  // asked for", and the second question is the product.
+  string expected_cron = 16;
+  int32 expected_grace_minutes = 17;
   bool is_enabled = 12;
   // The clock. Always UTC on the wire and in storage, computed in `timezone`.
   google.protobuf.Timestamp next_run_at = 13;
@@ -550,6 +685,8 @@ enum JobKind {
   JOB_KIND_RESTORE = 3;
   JOB_KIND_DISCOVERY = 4;
   JOB_KIND_METRICS = 5;
+  // Read the engine's own record of backups Fleetward did not take (ADR-0015).
+  JOB_KIND_OBSERVE = 6;
 }
 
 enum JobState {
@@ -588,6 +725,10 @@ message CreateScheduleRequest {
   VerifyPolicy verify_policy = 7;
   int32 verify_sample_percent = 8;
   int32 retention_days = 9;
+  // See Schedule.expected_cron. Optional: a schedule with no expectation still collects history,
+  // and adherence reports that nothing was declared rather than guessing.
+  string expected_cron = 10;
+  int32 expected_grace_minutes = 11;
 }
 
 message CreateScheduleResponse {

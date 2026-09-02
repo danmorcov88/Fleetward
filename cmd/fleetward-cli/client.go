@@ -236,6 +236,52 @@ type backupRow struct {
 	// Verification is the second half of the two-part status: a backup that succeeded and a
 	// verification that failed is the loudest thing this product can report.
 	Verification *verification `json:"verification"`
+	// Origin says who took this backup. It is never omitted from a listing: an observed backup
+	// carries no manifest and can never be verified, and showing it beside a managed one without
+	// saying which is which is the false confidence this product exists to eliminate (ADR-0015).
+	Origin           string            `json:"origin"`
+	ExternalID       string            `json:"external_id"`
+	ExternalLocation string            `json:"external_location"`
+	Evidence         *observedEvidence `json:"evidence"`
+}
+
+// observedEvidence is what the source an observed backup was read from could establish.
+type observedEvidence struct {
+	SourceDescription        string     `json:"source_description"`
+	ReportsOutcome           bool       `json:"reports_outcome"`
+	IdentityIsEngineAssigned bool       `json:"identity_is_engine_assigned"`
+	CompletedAtIsApproximate bool       `json:"completed_at_is_approximate"`
+	ObservedAt               *time.Time `json:"observed_at"`
+}
+
+type backupListResponse struct {
+	Backups []backupRow `json:"backups"`
+}
+
+type observeResponse struct {
+	Discovered int32      `json:"discovered"`
+	Updated    int32      `json:"updated"`
+	Watermark  *time.Time `json:"watermark"`
+}
+
+// instanceAdherence is one instance's answer to "did the backup run when it was supposed to".
+type instanceAdherence struct {
+	InstanceID           string     `json:"instance_id"`
+	InstanceName         string     `json:"instance_name"`
+	EngineType           string     `json:"engine_type"`
+	State                string     `json:"state"`
+	ExpectedCron         string     `json:"expected_cron"`
+	Timezone             string     `json:"timezone"`
+	ExpectedGraceMinutes int32      `json:"expected_grace_minutes"`
+	ExpectedBy           *time.Time `json:"expected_by"`
+	Deadline             *time.Time `json:"deadline"`
+	SatisfiedBy          *backupRow `json:"satisfied_by"`
+	LatestBackup         *backupRow `json:"latest_backup"`
+	Caveats              []string   `json:"caveats"`
+}
+
+type adherenceResponse struct {
+	Instances []instanceAdherence `json:"instances"`
 }
 
 type manifestEntry struct {

@@ -276,6 +276,53 @@ atomic `UPDATE`, so exactly one of them gets it.
 
 ---
 
+### Report on the backups you already take
+
+Everything above assumes Fleetward takes the backup. On an estate that already backs itself up — by
+cron, by scripts, by tooling that predates Fleetward — that is the wrong place to start, because it
+demands the riskiest possible change to production before delivering anything.
+
+So point Fleetward at a server, declare when its backup is supposed to happen, and change nothing:
+
+```bash
+bin/fleetward-cli schedule create --instance prod-2 --kind observe   --cron "*/30 * * * *" --expect-cron "0 2 * * *" --expect-grace 2h
+bin/fleetward-cli backup adherence
+```
+
+```
+INSTANCE  ENGINE      EXPECTED     GRACE  LAST BACKUP (UTC)    ADHERENCE
+prod-1    sqlserver   0 2 * * *    2h     2026-09-02 02:07:11  adherent
+prod-2    postgresql  0 2 * * *    2h     2026-08-24 02:03:55  missed
+prod-3    postgresql  —            —      2026-09-02 02:01:02  not_declared
+```
+
+Nothing was installed on those servers, no credential was created, and no backup arrangement was
+migrated. Fleetward read the record the engine already keeps — SQL Server's own backup history, or
+the directory a `pg_dump` cron job writes into — and compared it to what you declared.
+
+**The two origins are never shown as the same thing.** A backup Fleetward took carries a manifest
+captured at backup time, so it can be restored into a container and proven. A backup it merely
+observed carries none, so it can be reported and never verified, and the history says so:
+
+```bash
+bin/fleetward-cli backup history --instance prod-2
+```
+
+```
+ID     ORIGIN    STATE      METHOD    FINISHED (UTC)       SIZE     VERIFIED
+b41c…  observed  unknown    file      2026-09-02 02:03:55  1.4 GiB  n/a — not ours
+9ab3…  managed   succeeded  pg_dump   2026-09-01 00:00:29  1.4 GiB  verified
+```
+
+`unknown` is not a hedge, it is the honest ceiling of a directory listing: a truncated dump leaves a
+file behind exactly as a complete one does. An engine that keeps its own backup record can prove
+more, and says so. What each engine can and cannot establish is in
+[docs/engines.md](docs/engines.md#what-each-engine-can-see-of-backups-it-did-not-take).
+
+**More:** [observed and managed backups](docs/adr/0015-observed-and-managed-backups.md).
+
+---
+
 ## Where to go next
 
 | If you want to | Read |
@@ -284,7 +331,7 @@ atomic `UPDATE`, so exactly one of them gets it.
 | See how it is built, and the one rule that shapes it | [docs/architecture.md](docs/architecture.md) |
 | Know which engines are supported, and what "supported" means | [docs/engines.md](docs/engines.md) |
 | Configure it — every setting, with its default | [docs/ops/configuration.md](docs/ops/configuration.md) |
-| Schedule backups, and know what a crash or a DST change does | [docs/ops/scheduling.md](docs/ops/scheduling.md) |
+| Schedule backups and observation, and know what a crash or a DST change does | [docs/ops/scheduling.md](docs/ops/scheduling.md) |
 | See the metadata schema | [docs/dev/data-model.md](docs/dev/data-model.md) |
 | Write a plugin for your own engine | [docs/dev/writing-an-engine-plugin.md](docs/dev/writing-an-engine-plugin.md) |
 | Know what is built and what is not | [docs/dev/STATUS.md](docs/dev/STATUS.md) |
@@ -373,9 +420,10 @@ it cannot quietly rot between releases.
 **Pre-alpha.** Phase A is complete: the verification loop is closed and proven on PostgreSQL, in
 both directions — a corrupted artifact returns `FAILED`, and a sandbox that never answered returns
 `INCONCLUSIVE`. Phase B turns that proven loop into something installable. Backups and their
-verifications now run on a schedule, without anyone asking; and SQL Server passes the same
-conformance suite as PostgreSQL, unmodified, which is the first evidence rather than assertion that
-adding an engine does not mean modifying core.
+verifications now run on a schedule, without anyone asking; SQL Server passes the same conformance
+suite as PostgreSQL, unmodified, which is the first evidence rather than assertion that adding an
+engine does not mean modifying core; and Fleetward now reports on backups it did not take, so an
+estate that already backs itself up gets an answer on the day it is installed.
 
 Not yet built, stated plainly because a reference document should not imply otherwise: there is no
 authentication, so every API route is open to anyone who can reach the port; artifacts are never

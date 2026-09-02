@@ -17,8 +17,9 @@ import (
 
 // Job kinds and verification policies, as the CHECK constraints spell them.
 const (
-	kindBackup = "backup"
-	kindVerify = "verify"
+	kindBackup  = "backup"
+	kindVerify  = "verify"
+	kindObserve = "observe"
 
 	verifyAlways  = "always"
 	verifySampled = "sampled"
@@ -40,6 +41,9 @@ type Runner interface {
 	RunBackupJob(ctx context.Context, in BackupJob) (backupID string, err error)
 	// RunVerificationJob restores a backup into a sandbox and records the verdict.
 	RunVerificationJob(ctx context.Context, in VerificationJob) error
+	// RunObservationJob reads the engine's own record of backups Fleetward did not take, and
+	// records what it finds (ADR-0015). It touches nothing on the instance it reads.
+	RunObservationJob(ctx context.Context, in ObservationJob) error
 }
 
 // BackupJob is one scheduled backup, assembled from the job row alone.
@@ -55,6 +59,12 @@ type BackupJob struct {
 type VerificationJob struct {
 	JobID    string
 	BackupID string
+}
+
+// ObservationJob is one scheduled read of an instance's backup history.
+type ObservationJob struct {
+	JobID      string
+	InstanceID string
 }
 
 // Scheduler materializes due schedules into jobs, leases them, and runs them.

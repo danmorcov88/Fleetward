@@ -933,12 +933,14 @@ var ScheduleService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	BackupService_ListBackups_FullMethodName     = "/fleetward.v1.BackupService/ListBackups"
-	BackupService_GetBackup_FullMethodName       = "/fleetward.v1.BackupService/GetBackup"
-	BackupService_RunBackup_FullMethodName       = "/fleetward.v1.BackupService/RunBackup"
-	BackupService_RunVerification_FullMethodName = "/fleetward.v1.BackupService/RunVerification"
-	BackupService_GetVerification_FullMethodName = "/fleetward.v1.BackupService/GetVerification"
-	BackupService_GetPITRWindow_FullMethodName   = "/fleetward.v1.BackupService/GetPITRWindow"
+	BackupService_ListBackups_FullMethodName          = "/fleetward.v1.BackupService/ListBackups"
+	BackupService_GetBackup_FullMethodName            = "/fleetward.v1.BackupService/GetBackup"
+	BackupService_RunBackup_FullMethodName            = "/fleetward.v1.BackupService/RunBackup"
+	BackupService_RunVerification_FullMethodName      = "/fleetward.v1.BackupService/RunVerification"
+	BackupService_GetVerification_FullMethodName      = "/fleetward.v1.BackupService/GetVerification"
+	BackupService_GetPITRWindow_FullMethodName        = "/fleetward.v1.BackupService/GetPITRWindow"
+	BackupService_ObserveBackupHistory_FullMethodName = "/fleetward.v1.BackupService/ObserveBackupHistory"
+	BackupService_GetBackupAdherence_FullMethodName   = "/fleetward.v1.BackupService/GetBackupAdherence"
 )
 
 // BackupServiceClient is the client API for BackupService service.
@@ -956,6 +958,15 @@ type BackupServiceClient interface {
 	RunVerification(ctx context.Context, in *RunVerificationRequest, opts ...grpc.CallOption) (*RunVerificationResponse, error)
 	GetVerification(ctx context.Context, in *GetVerificationRequest, opts ...grpc.CallOption) (*GetVerificationResponse, error)
 	GetPITRWindow(ctx context.Context, in *GetPITRWindowRequest, opts ...grpc.CallOption) (*GetPITRWindowResponse, error)
+	// ObserveBackupHistory reads the engine's own record of backups Fleetward did not take and
+	// records what it finds (ADR-0015). It is the on-demand form of what an OBSERVE schedule does on
+	// a cadence, and it changes nothing on the instance it reads.
+	ObserveBackupHistory(ctx context.Context, in *ObserveBackupHistoryRequest, opts ...grpc.CallOption) (*ObserveBackupHistoryResponse, error)
+	// GetBackupAdherence answers the question this product exists for: did every server's backup run
+	// when it was supposed to, and did it succeed. It compares each instance's declared expectation
+	// against the backups actually recorded, of either origin, and is computed on read — no verdict
+	// is stored, so there is nothing that can go stale.
+	GetBackupAdherence(ctx context.Context, in *GetBackupAdherenceRequest, opts ...grpc.CallOption) (*GetBackupAdherenceResponse, error)
 }
 
 type backupServiceClient struct {
@@ -1026,6 +1037,26 @@ func (c *backupServiceClient) GetPITRWindow(ctx context.Context, in *GetPITRWind
 	return out, nil
 }
 
+func (c *backupServiceClient) ObserveBackupHistory(ctx context.Context, in *ObserveBackupHistoryRequest, opts ...grpc.CallOption) (*ObserveBackupHistoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ObserveBackupHistoryResponse)
+	err := c.cc.Invoke(ctx, BackupService_ObserveBackupHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *backupServiceClient) GetBackupAdherence(ctx context.Context, in *GetBackupAdherenceRequest, opts ...grpc.CallOption) (*GetBackupAdherenceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBackupAdherenceResponse)
+	err := c.cc.Invoke(ctx, BackupService_GetBackupAdherence_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BackupServiceServer is the server API for BackupService service.
 // All implementations must embed UnimplementedBackupServiceServer
 // for forward compatibility.
@@ -1041,6 +1072,15 @@ type BackupServiceServer interface {
 	RunVerification(context.Context, *RunVerificationRequest) (*RunVerificationResponse, error)
 	GetVerification(context.Context, *GetVerificationRequest) (*GetVerificationResponse, error)
 	GetPITRWindow(context.Context, *GetPITRWindowRequest) (*GetPITRWindowResponse, error)
+	// ObserveBackupHistory reads the engine's own record of backups Fleetward did not take and
+	// records what it finds (ADR-0015). It is the on-demand form of what an OBSERVE schedule does on
+	// a cadence, and it changes nothing on the instance it reads.
+	ObserveBackupHistory(context.Context, *ObserveBackupHistoryRequest) (*ObserveBackupHistoryResponse, error)
+	// GetBackupAdherence answers the question this product exists for: did every server's backup run
+	// when it was supposed to, and did it succeed. It compares each instance's declared expectation
+	// against the backups actually recorded, of either origin, and is computed on read — no verdict
+	// is stored, so there is nothing that can go stale.
+	GetBackupAdherence(context.Context, *GetBackupAdherenceRequest) (*GetBackupAdherenceResponse, error)
 	mustEmbedUnimplementedBackupServiceServer()
 }
 
@@ -1068,6 +1108,12 @@ func (UnimplementedBackupServiceServer) GetVerification(context.Context, *GetVer
 }
 func (UnimplementedBackupServiceServer) GetPITRWindow(context.Context, *GetPITRWindowRequest) (*GetPITRWindowResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetPITRWindow not implemented")
+}
+func (UnimplementedBackupServiceServer) ObserveBackupHistory(context.Context, *ObserveBackupHistoryRequest) (*ObserveBackupHistoryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ObserveBackupHistory not implemented")
+}
+func (UnimplementedBackupServiceServer) GetBackupAdherence(context.Context, *GetBackupAdherenceRequest) (*GetBackupAdherenceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetBackupAdherence not implemented")
 }
 func (UnimplementedBackupServiceServer) mustEmbedUnimplementedBackupServiceServer() {}
 func (UnimplementedBackupServiceServer) testEmbeddedByValue()                       {}
@@ -1198,6 +1244,42 @@ func _BackupService_GetPITRWindow_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BackupService_ObserveBackupHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ObserveBackupHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BackupServiceServer).ObserveBackupHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BackupService_ObserveBackupHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BackupServiceServer).ObserveBackupHistory(ctx, req.(*ObserveBackupHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BackupService_GetBackupAdherence_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBackupAdherenceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BackupServiceServer).GetBackupAdherence(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BackupService_GetBackupAdherence_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BackupServiceServer).GetBackupAdherence(ctx, req.(*GetBackupAdherenceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BackupService_ServiceDesc is the grpc.ServiceDesc for BackupService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1228,6 +1310,14 @@ var BackupService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetPITRWindow",
 			Handler:    _BackupService_GetPITRWindow_Handler,
+		},
+		{
+			MethodName: "ObserveBackupHistory",
+			Handler:    _BackupService_ObserveBackupHistory_Handler,
+		},
+		{
+			MethodName: "GetBackupAdherence",
+			Handler:    _BackupService_GetBackupAdherence_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

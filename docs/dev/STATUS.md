@@ -12,26 +12,35 @@ and everything with a longer lifetime lives elsewhere: rationale in the
 
 ## Current position
 
-**Slice B2 is complete. Next is B3 — observed backups.**
+**Slice B3 is complete. Next is B4 — the Estate Overview screen and a generated API client.**
 
-The architecture's central claim is no longer an intention. SQL Server passes the shared conformance
-suite — all five end-to-end cases, including the four that are supposed to fail — and the suite is
-unchanged: the slice added a fixture beside the plugin and the one line that registers it, and
-nothing else under `test/conformance/`. No line of executable code in `internal/` or `web/src/`
-names the engine — the only four mentions anywhere in core are a comment explaining why the password
-policy field exists and a unit test that uses the real image name as its fixture data:
+Fleetward now reports on backups it did not take. Point it at an instance, declare when a backup is
+supposed to happen, and it answers — with nothing installed on that server, no credential created,
+and no backup arrangement migrated:
 
-```bash
-grep -rniE "sqlserver|mssql|sql server" internal/ web/src/ | grep -v "_test\.go:" | grep -vE ":[0-9]+:\s*//"
+```
+fleetward-cli backup adherence
+INSTANCE  ENGINE      EXPECTED   GRACE  LAST BACKUP (UTC)    ADHERENCE
+prod-1    sqlserver   0 2 * * *  2h     2026-09-02 02:07:11  adherent
+prod-2    postgresql  0 2 * * *  2h     2026-08-24 02:03:55  missed
+prod-3    postgresql  —          —      2026-09-02 02:01:02  not_declared
 ```
 
-It cost the contract four fields, all additive, and none of them an engine-specific escape hatch: an
-image's fixed administrative account, its password policy, a directory an engine and a plugin can
-both see ([ADR-0026](../adr/0026-a-shared-directory-carries-a-file-based-artifact.md)), and a
-manifest entry admitting a count it could not pin to the artifact. Each is a declaration core acts on
-without learning which engine made it. That is what the slice was for.
+That is the first pillar of the product thesis, answerable on the day of installation, for an entire
+estate, without owning a single artifact.
 
-Session protocol: [`slices/README.md`](slices/README.md). B3's brief is not written yet; briefs are
+The two origins are never rendered as the same thing. A backup Fleetward took carries a manifest and
+can be proven restorable; one it observed carries none and never can, and both the API and the CLI
+say so rather than leaving a blank. A window satisfied only by evidence that cannot report an
+outcome — a file in a directory — reads `unproven`, never `adherent`.
+
+It cost the contract one RPC and six additive fields, and the schema its first migration since the
+initial one. Two decisions came out of it:
+[ADR-0027](../adr/0027-an-observed-backup-is-identified-by-what-the-engine-calls-it.md) on identity,
+and [ADR-0028](../adr/0028-observation-is-a-schedule-kind-and-an-expectation-is-declared.md) on how
+observation runs and where the declaration lives.
+
+Session protocol: [`slices/README.md`](slices/README.md). B4's brief is not written yet; briefs are
 written when the slice starts.
 
 ## Phases
@@ -40,7 +49,7 @@ written when the slice starts.
 |---|---|
 | Foundation — contract, control plane, dev stack | ✅ [journal](journal/00-foundation.md) |
 | A — prove the loop (PostgreSQL), A1–A6 | ✅ [journal](journal/README.md) |
-| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B2 done, B3 next |
+| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B3 done, B4 next |
 | Access compliance, structural drift, query editor | deferred — see [roadmap](../roadmap.md#deferred-deliberately) |
 
 There is no Phase F. Production readiness is a property of every slice
@@ -51,12 +60,26 @@ There is no Phase F. Production readiness is a property of every slice
 Listed so that no session has to re-derive them, and so that no document has to imply otherwise.
 
 - **There is no authentication or authorization.** Every route under `/api/v1/` is open to anyone
-  who can reach the port, including the ones that add an instance, create a schedule, and trigger a
-  backup. `cfg.Auth` is parsed and validated and read by no file outside `internal/config`. The
-  tenant is the constant `metadb.DefaultTenantID`. **B6.**
+  who can reach the port, including the ones that add an instance, create a schedule, trigger a
+  backup, and poll an instance's backup history. `cfg.Auth` is parsed and validated and read by no
+  file outside `internal/config`. The tenant is the constant `metadb.DefaultTenantID`. **B6.**
 - **Five of the eight engines are still binaries that only handshake.** MySQL, MongoDB, and Redis
   declare no capabilities; Oracle, ClickHouse, and Cassandra have no binary at all. PostgreSQL and
   SQL Server are real. **B11–B16.**
+- **A renamed backup file is a second backup.** PostgreSQL's observation reads a directory, which
+  assigns no identity, so the plugin derives one from the file name and declares that it did. Core
+  reports the caveat on every answer that rests on it rather than inventing a matching heuristic
+  ([ADR-0027](../adr/0027-an-observed-backup-is-identified-by-what-the-engine-calls-it.md)).
+- **An observed backup's finish time is approximate on SQL Server 2019 and older.**
+  `CURRENT_TIMEZONE_ID()` arrived in 2022, and it is the only function that returns something
+  `AT TIME ZONE` accepts — `CURRENT_TIMEZONE()` returns a display name the engine then rejects. An
+  older instance can offer only its current offset, which is wrong by one daylight-saving transition
+  for a backup on the other side of one. Those records carry a flag, the compliance window is widened
+  by an hour to match, and the answer says so.
+- **The observation horizon and overlap are constants rather than configuration.** A first poll of an
+  instance reads thirty days back; every poll re-reads six hours before its watermark. Both are named
+  and reasoned about in `internal/controlplane/backup/observe.go`. Deliberate, and written down
+  because it is a choice rather than an oversight.
 - **A backup file left on a shared directory is not swept.** The plugin removes it on every path out
   of a backup or a restore, including failure, but a plugin killed between the two leaks an
   artifact-sized file on the share. A sandbox's own directory is removed with the sandbox; a real
@@ -67,12 +90,14 @@ Listed so that no session has to re-derive them, and so that no document has to 
   instance. The plugin brackets the counting pass and flags an object that changed underneath it, and
   a mismatch on a flagged object is `INCONCLUSIVE` rather than `FAILED`. So a busy database verifies
   more weakly than a quiet one, and says so in its report.
-- **Artifacts accumulate forever, and the scheduler now fills the bucket faster.**
+- **Artifacts accumulate forever, and nothing expires an observed one on purpose.**
   `backups.expires_at`, `schedules.retention_days`, the `expired` state, and `idx_backups_expiring`
-  all exist; `retention_days` is stored on every schedule and read by nothing. **B5.**
+  all exist; `retention_days` is stored on every schedule and read by nothing. An observed backup is
+  somebody else's file and Fleetward must never delete it, which is a distinction B5 has to carry.
+  **B5.**
 - **Nothing is delivered anywhere.** `alert_rules`, `alerts`, and `notifiers` exist in the schema
-  and no Go code touches them. A failed verification, and a schedule that has silently stopped
-  firing, are both visible only by polling the API. **B7.**
+  and no Go code touches them. A failed verification, a missed backup window, and a schedule that has
+  silently stopped firing are all visible only by polling the API. **B7.**
 - **Fleetward cannot be observed.** OpenTelemetry is wired in `internal/telemetry/otel.go` with
   zero call sites: no span is started and no meter obtained. There is no `/metrics`. The scheduler
   emits log lines and a readiness component, and nothing else. **B8.**
@@ -80,7 +105,8 @@ Listed so that no session has to re-derive them, and so that no document has to 
   `release.yml` installs cosign and never invokes it. `docker-compose.yml` is a development
   configuration by its own declaration. **B9.**
 - **The web UI is a shell.** Two routes; `Estate.tsx` is a placeholder and `lib/api.ts` speaks two
-  endpoints with hand-written types. Schedules and jobs have no screen. **B4.**
+  endpoints with hand-written types. Schedules, jobs, backup history and adherence have no screen.
+  **B4.**
 - **A manually triggered verification is not bounded.** `SCHEDULER_MAX_CONCURRENT_JOBS` bounds
   scheduled work, which is the case that matters on an estate of fifty. A human calling the verify
   endpoint in a loop can still start a sandbox per call.
@@ -88,8 +114,8 @@ Listed so that no session has to re-derive them, and so that no document has to 
   failed run waits for its schedule's next occurrence. That is deliberate for now — see the
   alternatives in [ADR-0025](../adr/0025-an-expired-lease-fails-its-job.md) — and a real retry
   policy needs backoff and a window rather than a counter.
-- **Only `backup` schedules run.** `schedules.kind` also permits `discovery` and `metrics`; both are
-  refused at creation with a message naming the slice that will bring them. **B4.**
+- **Only `backup` and `observe` schedules run.** `schedules.kind` also permits `discovery` and
+  `metrics`; both are refused at creation with a message naming the slice that will bring them. **B4.**
 
 ## Environment notes
 
@@ -105,13 +131,14 @@ Listed so that no session has to re-derive them, and so that no document has to 
 - A Windows checkout with `core.autocrlf=true` makes `gofmt` and `buf format --diff` report every
   file in the tree as unformatted. It is a line-ending artefact, not a finding — check a branch in a
   worktree created with `core.autocrlf=false` before believing it.
-- **The SQL Server conformance cases run on this machine and the PostgreSQL ones do not.** The
-  SQL Server plugin shells out to nothing, so it declares no `required_tools` and nothing is missing;
-  PostgreSQL needs `pg_dump`, `pg_restore`, and `psql` on `PATH` and skips without them. Read the
-  skip reasons rather than the exit code.
+- **Which conformance cases run here depends on what a case needs, not on which engine it is.** The
+  SQL Server plugin shells out to nothing, so every case runs for it. PostgreSQL's backup and restore
+  cases skip for want of `pg_dump`, `pg_restore` and `psql` on `PATH` — but its **backup-history case
+  runs**, because observation shells out to nothing either and the tools gate belongs to the backup
+  path alone. Read the skip reasons rather than the exit code.
 - `mcr.microsoft.com/mssql/server:2022-latest` is 625 MB and becomes ready in about nine seconds
   warm. A full conformance run takes a little under three minutes on this machine with the image
-  already pulled.
+  already pulled — 167 seconds at B3.
 - **Two integration tests fail on this machine for reasons that are the machine's.** Both were
   reproduced on `origin/main` at f0c604f before being blamed on anything.
   `sandbox.TestSandboxLifecycle` connects to its sandbox as `localhost`, which resolves to both

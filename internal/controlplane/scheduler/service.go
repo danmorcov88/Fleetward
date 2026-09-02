@@ -70,6 +70,12 @@ type CreateScheduleInput struct {
 	VerifyPolicy    string
 	VerifySamplePct int32
 	RetentionDays   int32
+	// ExpectedCron and ExpectedGraceMinutes declare what a backup of this instance is supposed to
+	// look like, which is the half of "declare what should be true, detect what actually is" that
+	// no amount of observation can supply. Optional: a schedule without them still collects
+	// history, and adherence reports that nothing was declared rather than guessing.
+	ExpectedCron         string
+	ExpectedGraceMinutes int32
 }
 
 // CreateSchedule validates the intent and computes its first run.
@@ -88,12 +94,12 @@ func (s *Service) CreateSchedule(ctx context.Context, in CreateScheduleInput) (*
 	if kind == "" {
 		kind = kindBackup
 	}
-	// Only backups are scheduled today. `schedules.kind` also permits 'discovery' and 'metrics',
-	// and refusing them with a message that says which slice owns them is more useful than
-	// accepting a schedule that would silently never fire.
-	if kind != kindBackup {
-		return nil, fmt.Errorf("%w: only %q schedules run today; %q schedules arrive with the estate view",
-			ErrUnsupported, kindBackup, kind)
+	// `schedules.kind` also permits 'discovery' and 'metrics', and refusing those with a message
+	// that says which slice owns them is more useful than accepting a schedule that would silently
+	// never fire.
+	if kind != kindBackup && kind != kindObserve {
+		return nil, fmt.Errorf("%w: only %q and %q schedules run today; %q schedules arrive with the estate view",
+			ErrUnsupported, kindBackup, kindObserve, kind)
 	}
 
 	timezone := in.Timezone
@@ -138,14 +144,19 @@ func (s *Service) CreateSchedule(ctx context.Context, in CreateScheduleInput) (*
 		options = map[string]string{}
 	}
 
+	expectedCron, grace, err := validateExpectation(in.ExpectedCron, in.ExpectedGraceMinutes, timezone)
+	if err != nil {
+		return nil, err
+	}
+
 	rows, err := s.pool.Query(ctx, `
 		INSERT INTO schedules (tenant_id, instance_id, kind, cron_expression, timezone,
 		                       method_id, options, verify_policy, verify_sample_percent,
-		                       retention_days, next_run_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		                       retention_days, next_run_at, expected_cron, expected_grace_minutes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING `+scheduleColumns,
 		s.tenantID, instanceID, kind, in.CronExpression, timezone,
-		in.MethodID, options, policy, pct, retention, next)
+		in.MethodID, options, policy, pct, retention, next, expectedCron, grace)
 	// pgx may surface a constraint violation either here or on the first read, depending on when
 	// the round trip completes, so both are checked. Scheduling against an instance that does not
 	// exist is the caller's mistake and reads as 404, not as an internal error.
@@ -394,7 +405,42 @@ func (s *Service) ListJobs(ctx context.Context, f ListJobsFilter) ([]*fwv1.Job, 
 
 const scheduleColumns = `id, tenant_id, instance_id, kind, cron_expression, timezone,
 	method_id, options, verify_policy, verify_sample_percent, retention_days, is_enabled,
-	next_run_at, last_run_at, created_at`
+	next_run_at, last_run_at, created_at, expected_cron, expected_grace_minutes`
+
+// defaultExpectedGraceMinutes is how late a backup may be, when a declaration names a schedule but
+// no tolerance.
+//
+// Zero would be the literal reading and it is useless: it demands a backup complete in the same
+// instant it was due, so every instance on the estate would report as missing one. Two hours is what
+// a nightly window actually needs — it absorbs a run that started on time and took longer than
+// usual, and it absorbs the one hour an engine that records local time without an offset can be
+// wrong by across a daylight-saving change.
+const defaultExpectedGraceMinutes = 120
+
+// validateExpectation checks the declaration before it is stored, so a cron expression that does
+// not parse is a rejected request rather than an instance that silently reports NOT_DECLARED.
+func validateExpectation(expr string, grace int32, timezone string) (string, int32, error) {
+	if expr == "" {
+		if grace != 0 {
+			return "", 0, fmt.Errorf(
+				"%w: expected_grace_minutes means nothing without expected_cron: it says how late a "+
+					"backup may be, and nothing has said when one is due", ErrInvalidArgument)
+		}
+		return "", 0, nil
+	}
+	if grace < 0 {
+		return "", 0, fmt.Errorf("%w: expected_grace_minutes cannot be negative", ErrInvalidArgument)
+	}
+	if grace == 0 {
+		grace = defaultExpectedGraceMinutes
+	}
+	// The same parse and the same location lookup the schedule's own cron gets, and for the same
+	// reason: 02:00 for a Bucharest server is a different UTC instant in summer than in winter.
+	if _, err := nextRun(expr, timezone, time.Now()); err != nil {
+		return "", 0, fmt.Errorf("%w (expected_cron)", err)
+	}
+	return expr, grace, nil
+}
 
 func scanSchedules(rows pgx.Rows) ([]*fwv1.Schedule, error) {
 	var out []*fwv1.Schedule
@@ -408,7 +454,7 @@ func scanSchedules(rows pgx.Rows) ([]*fwv1.Schedule, error) {
 		)
 		if err := rows.Scan(&s.Id, &s.TenantId, &s.InstanceId, &kind, &s.CronExpression, &s.Timezone,
 			&s.MethodId, &options, &policy, &s.VerifySamplePercent, &s.RetentionDays, &s.IsEnabled,
-			&nextRunAt, &lastRunAt, &createdAt); err != nil {
+			&nextRunAt, &lastRunAt, &createdAt, &s.ExpectedCron, &s.ExpectedGraceMinutes); err != nil {
 			return nil, fmt.Errorf("scheduler: read a schedule: %w", err)
 		}
 		s.Kind = jobKindFromName(kind)

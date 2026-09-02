@@ -111,6 +111,8 @@ supersedes the old.
 | Verification outcomes | `FAILED` is reserved for evidence about the artifact; every other failure is `INCONCLUSIVE` | [0022](docs/adr/0022-failed-and-inconclusive-are-different-answers.md) |
 | Conformance fixtures | The shared suite carries one per-engine `Fixture` for seeding, and nothing else engine-specific | [0023](docs/adr/0023-conformance-fixtures-seed-what-the-contract-cannot.md) |
 | File-based artifacts | An engine that writes its backup to its own filesystem hands it over through a directory the plugin can also see; no credential ever reaches the engine | [0026](docs/adr/0026-a-shared-directory-carries-a-file-based-artifact.md) |
+| Observed identity | An observed backup is identified by what the engine calls it; core upserts on that and never parses it | [0027](docs/adr/0027-an-observed-backup-is-identified-by-what-the-engine-calls-it.md) |
+| Observation and expectation | Observation is a schedule kind; what a backup should look like is declared, never inferred, and adherence is computed on read | [0028](docs/adr/0028-observation-is-a-schedule-kind-and-an-expectation-is-declared.md) |
 
 ### Product and scope decisions
 
@@ -205,6 +207,7 @@ fleetward/
 | `VerifyRestore` | Smoke-tests a restored instance |
 | `ListPITRTargets` | Point-in-time-recovery window |
 | `ListPrincipals` | Users/roles/privileges, **read-only** |
+| `ListBackupHistory` | Backups Fleetward did not take, read from whatever record the engine keeps |
 | `HealthCheck` | Liveness and health signal |
 
 ### Non-negotiable rules

@@ -4,8 +4,8 @@
 // is written against it (ADR-0012); the other three engines then run that same suite unmodified,
 // which is how contract leaks get found.
 //
-// Slice A5 status: HealthCheck, Discover, Backup, Restore, and VerifyRestore are implemented
-// against a real instance. Only
+// Slice B3 status: HealthCheck, Discover, Backup, Restore, VerifyRestore, and ListBackupHistory
+// are implemented against a real instance. Only
 // the capabilities those RPCs deliver are declared. Capabilities are a promise core relies on when
 // deciding what to do to a production database, so they are turned on in the same change that
 // implements them — never before.
@@ -70,13 +70,18 @@ func (p *Plugin) Capabilities(context.Context) (*fwv1.Capabilities, error) {
 		SandboxTemplate:             sandboxTemplate(),
 		SupportedVerificationChecks: supportedChecks(),
 
+		// Delivered by ListBackupHistory: the backup files somebody else's cron job writes into a
+		// configured directory. PostgreSQL keeps no record of its own backups, so this is the
+		// poorest observable source of any engine — and it says so in what it declares.
+		BackupHistory: backupHistoryCapabilities(),
+
 		// Not yet implemented, so not yet declared. Each is turned on by the slice that builds it:
 		//   B   SupportsPitr, SupportsPointInTimeRestore, the pg_basebackup method
 		//   C   PrincipalModel PRINCIPAL_MODEL_USERS_AND_ROLES
 		//   F   SupportsConfigRead, SupportsStorageMetrics, Metrics
 
 		Metadata: map[string]string{
-			"slice": "A5 — restore into a sandbox and verify",
+			"slice": "B3 — observed backups",
 		},
 	}, nil
 }

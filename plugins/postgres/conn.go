@@ -93,6 +93,10 @@ func connConfig(creds *fwv1.Credentials) (*pgx.ConnConfig, error) {
 		switch key {
 		case "application_name":
 			// Ignored on purpose: identifying our connections is not the operator's to override.
+		case optionBackupFilePattern:
+			// Configures this plugin rather than the connection. Passing it on would make libpq
+			// refuse a runtime parameter it has never heard of, and the whole instance would look
+			// unreachable because somebody configured which files count as a backup.
 		case "connect_timeout":
 			seconds, convErr := strconv.Atoi(value)
 			if convErr != nil || seconds <= 0 {

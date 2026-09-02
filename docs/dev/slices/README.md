@@ -144,6 +144,7 @@ If you write a new one, follow this shape — it is what makes a cold start poss
 | A6 | [Proving verification fails](A6-verification-fails-loudly.md) | [entry](../journal/A6-verification-fails-loudly.md) | ✅ |
 | B1 | [Scheduler and leases](B1-scheduler-and-leases.md) | [entry](../journal/B1-scheduler-and-leases.md) | ✅ |
 | B2 | [SQL Server plugin](B2-sqlserver-plugin.md) | [entry](../journal/B2-sqlserver-plugin.md) | ✅ |
+| B3 | [Observed backups](B3-observed-backups.md) | [entry](../journal/B3-observed-backups.md) | ✅ |
 
 Phase A is complete and Phase B has started. What comes next is in
 [`../../roadmap.md`](../../roadmap.md). A brief is written when its slice starts — writing them all

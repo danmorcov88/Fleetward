@@ -34,6 +34,7 @@ the decisions with the longest reach and links back to the entries they came fro
 | [A6](A6-verification-fails-loudly.md) — verification fails loudly | 2026-08-31 | [brief](../slices/A6-verification-fails-loudly.md) |
 | [B1](B1-scheduler-and-leases.md) — the scheduler and the job lease | 2026-09-02 | [brief](../slices/B1-scheduler-and-leases.md) |
 | [B2](B2-sqlserver-plugin.md) — SQL Server, and the claim it was written to test | 2026-09-02 | [brief](../slices/B2-sqlserver-plugin.md) |
+| [B3](B3-observed-backups.md) — reporting on backups Fleetward did not take | 2026-09-02 | [brief](../slices/B3-observed-backups.md) |
 
 ## Writing an entry
 

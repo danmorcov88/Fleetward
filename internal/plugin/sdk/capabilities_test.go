@@ -239,6 +239,44 @@ func TestValidateCapabilities(t *testing.T) {
 			wantErr:    true,
 			wantErrHas: "type is required",
 		},
+		{
+			// Every check below refuses a matrix that would let core overstate what somebody else's
+			// backups prove, which is the one failure mode observation has (ADR-0015).
+			name: "backup history declared with a source it will name",
+			caps: func() *fwv1.Capabilities {
+				c := minimal()
+				c.BackupHistory = &fwv1.BackupHistoryCapabilities{
+					Supported:         true,
+					SourceDescription: "the engine's own record of its backups",
+					ReportsOutcome:    true,
+				}
+				return c
+			}(),
+		},
+		{
+			name: "backup history declared without saying what it reads",
+			caps: func() *fwv1.Capabilities {
+				c := minimal()
+				c.BackupHistory = &fwv1.BackupHistoryCapabilities{Supported: true}
+				return c
+			}(),
+			wantErr:    true,
+			wantErrHas: "source_description",
+		},
+		{
+			name: "properties declared for a source that does not exist",
+			caps: func() *fwv1.Capabilities {
+				c := minimal()
+				c.BackupHistory = &fwv1.BackupHistoryCapabilities{ReportsOutcome: true}
+				return c
+			}(),
+			wantErr:    true,
+			wantErrHas: "does not support",
+		},
+		{
+			name: "no backup history at all, which is every plugin's starting point",
+			caps: minimal(),
+		},
 	}
 
 	for _, tc := range tests {

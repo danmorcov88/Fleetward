@@ -200,6 +200,10 @@ func (s *grpcServer) ListPITRTargets(ctx context.Context, req *fwv1.ListPITRTarg
 	return s.impl.ListPITRTargets(ctx, req)
 }
 
+func (s *grpcServer) ListBackupHistory(ctx context.Context, req *fwv1.ListBackupHistoryRequest) (*fwv1.ListBackupHistoryResponse, error) {
+	return s.impl.ListBackupHistory(ctx, req)
+}
+
 func (s *grpcServer) ListPrincipals(ctx context.Context, req *fwv1.ListPrincipalsRequest) (*fwv1.ListPrincipalsResponse, error) {
 	return s.impl.ListPrincipals(ctx, req)
 }

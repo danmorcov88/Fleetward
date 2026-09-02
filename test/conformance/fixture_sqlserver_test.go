@@ -7,6 +7,8 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"fmt"
+	"path"
+	"strings"
 	"time"
 
 	mssql "github.com/microsoft/go-mssqldb"
@@ -103,4 +105,37 @@ func connectSQLServer(creds *fwv1.Credentials) (*sql.DB, error) {
 		TLSConfig:              &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}, //nolint:gosec // G402: a throwaway container's self-signed certificate, on loopback
 	}
 	return sql.OpenDB(mssql.NewConnectorConfig(cfg)), nil
+}
+
+// TakeExternalBackup runs a native backup the way a maintenance plan or a scheduled T-SQL job on
+// this instance would, with Fleetward not involved in it at all.
+//
+// The engine records it in its own history exactly as it records everyone else's, which is what
+// makes this instance indistinguishable from a production one whose backups predate Fleetward. The
+// artifact is written into the directory the sandbox has mounted; nothing ever reads it back.
+func (sqlserverFixture) TakeExternalBackup(ctx context.Context, creds *fwv1.Credentials) error {
+	dir := creds.GetSharedDirectory().GetEnginePath()
+	if dir == "" {
+		return fmt.Errorf("this instance has no directory the engine can write a backup to")
+	}
+
+	db, err := connectSQLServer(creds)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+
+	database := creds.GetDatabase()
+	if database == "" {
+		return fmt.Errorf("no database to back up")
+	}
+	// path.Join rather than filepath.Join: the path is interpreted by the database server, which is
+	// not necessarily running the operating system this test is.
+	target := path.Join(dir, fmt.Sprintf("external-%d.bak", time.Now().UnixNano()))
+	stmt := fmt.Sprintf("BACKUP DATABASE [%s] TO DISK = N'%s' WITH FORMAT, INIT",
+		strings.ReplaceAll(database, "]", "]]"), strings.ReplaceAll(target, "'", "''"))
+	if _, err := db.ExecContext(ctx, stmt); err != nil {
+		return fmt.Errorf("take a backup outside Fleetward: %w", err)
+	}
+	return nil
 }
