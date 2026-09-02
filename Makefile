@@ -133,6 +133,10 @@ lint: lint-go proto-lint lint-web docs-check ## Run every linter
 lint-go: ## Lint Go code
 	golangci-lint run
 
+.PHONY: docs
+docs: ## Regenerate the documentation derived from the code
+	go run ./tools/docsgen
+
 .PHONY: docs-check
 docs-check: ## Check documentation claims against the tree (paths, links, ADRs, CI, vocabulary)
 	go run ./tools/docscheck

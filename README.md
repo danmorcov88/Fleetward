@@ -242,6 +242,8 @@ whole product exists to surface.
 | Understand the problem it solves | [docs/why.md](docs/why.md) |
 | See how it is built, and the one rule that shapes it | [docs/architecture.md](docs/architecture.md) |
 | Know which engines are supported, and what "supported" means | [docs/engines.md](docs/engines.md) |
+| Configure it — every setting, with its default | [docs/ops/configuration.md](docs/ops/configuration.md) |
+| See the metadata schema | [docs/dev/data-model.md](docs/dev/data-model.md) |
 | Write a plugin for your own engine | [docs/dev/writing-an-engine-plugin.md](docs/dev/writing-an-engine-plugin.md) |
 | Know what is built and what is not | [docs/dev/STATUS.md](docs/dev/STATUS.md) |
 | Know what comes next, and why in that order | [docs/roadmap.md](docs/roadmap.md) |
