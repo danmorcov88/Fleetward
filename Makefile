@@ -80,7 +80,7 @@ build-plugins: ## Build every engine plugin binary
 
 .PHONY: clean
 clean: ## Remove build output
-	rm -rf $(BIN) dist coverage.out coverage.html web/dist
+	rm -rf $(BIN) dist coverage.out coverage.html web/dist .wiki
 
 # --- Protobuf ------------------------------------------------------------------------------------
 
@@ -136,6 +136,10 @@ lint-go: ## Lint Go code
 .PHONY: docs
 docs: ## Regenerate the documentation derived from the code
 	go run ./tools/docsgen
+
+.PHONY: wiki
+wiki: ## Render the wiki locally into .wiki (published by CI on merge to main)
+	go run ./tools/wikigen -out .wiki
 
 .PHONY: docs-check
 docs-check: ## Check documentation claims against the tree (paths, links, ADRs, CI, vocabulary)

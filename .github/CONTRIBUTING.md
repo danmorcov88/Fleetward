@@ -108,6 +108,17 @@ A path that genuinely cannot exist yet goes in [`docs/.docscheck-allow`](../docs
 scoped to the one file allowed to name it and carrying the reason. An allowance without a reason is
 refused, and one nothing uses any more is reported.
 
+Some documentation is not written at all. [`tools/docsgen`](../tools/docsgen) derives the
+configuration reference, the data-model diagrams, and the decision index from the code and the
+schema; run `make docs` after changing any of their sources, and commit the result. CI regenerates
+and diffs, so a stale generated file fails the same way stale protobuf output does.
+
+**The [wiki](https://github.com/danmorcov88/Fleetward/wiki) is published from `docs/` on every merge
+to `main`** by [`tools/wikigen`](../tools/wikigen), so it is never edited directly — an edit there is
+overwritten by the next merge. Adding a document means adding it to that tool's manifest;
+a file under `docs/` that is neither published nor explicitly excluded fails CI, because a document
+nobody can reach is worse than one that does not exist. `make wiki` renders it locally.
+
 Where a claim cannot be checked — and "this prose is still true" cannot — it is a line in the pull
 request template, and answering it honestly is part of the work.
 

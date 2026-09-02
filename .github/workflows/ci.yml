@@ -180,6 +180,12 @@ jobs:
       - name: Check documentation claims
         run: make docs-check
 
+      # Renders the wiki without publishing it. Catches a document added to docs/ but not to the
+      # wiki manifest — which would simply not appear once published — and any link that would 404
+      # there, at the point where someone can still fix it.
+      - name: Verify the wiki would publish
+        run: go run ./tools/wikigen -out "$(mktemp -d)"
+
   build:
     name: Build
     runs-on: ubuntu-latest

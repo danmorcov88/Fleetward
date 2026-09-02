@@ -31,3 +31,6 @@ web/dist/
 
 # Local dev data volumes
 /.data/
+
+# Local render of the GitHub wiki (make wiki). CI publishes the real one.
+/.wiki/
