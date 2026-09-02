@@ -152,7 +152,7 @@ func runBackup(ctx context.Context, req *fwv1.BackupRequest, emit sdk.Emitter[*f
 		return nil, err
 	}
 
-	uploader, err := newArtifactUploader(req.GetTarget(), func(written int64) error {
+	uploader, err := sdk.NewArtifactUploader(req.GetTarget(), func(written int64) error {
 		return emit(&fwv1.BackupProgress{
 			BackupId:     req.GetBackupId(),
 			Phase:        fwv1.JobPhase_JOB_PHASE_TRANSFERRING,
@@ -266,7 +266,7 @@ type dumpOptions struct {
 // exists only as bytes in flight between the two processes. The checksum is computed from the same
 // pass, because re-reading a multi-gigabyte object afterwards just to hash it would double the
 // transfer for no benefit.
-func streamDump(ctx context.Context, opts dumpOptions, uploader *artifactUploader) ([]*fwv1.UploadedPart, int64, string, error) {
+func streamDump(ctx context.Context, opts dumpOptions, uploader *sdk.ArtifactUploader) ([]*fwv1.UploadedPart, int64, string, error) {
 	tlsDir, tlsFiles, err := writeTLSMaterial(opts.creds.GetTls())
 	if err != nil {
 		return nil, 0, "", err
@@ -295,7 +295,7 @@ func streamDump(ctx context.Context, opts dumpOptions, uploader *artifactUploade
 	}
 
 	hasher := sha256.New()
-	parts, size, uploadErr := uploader.upload(ctx, io.TeeReader(stdout, hasher))
+	parts, size, uploadErr := uploader.Upload(ctx, io.TeeReader(stdout, hasher))
 
 	// pg_dump is waited on whatever happened above: an upload that failed leaves a child process
 	// holding a transaction open on a production server, and only Wait reaps it. The pipe is

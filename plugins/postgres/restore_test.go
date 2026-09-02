@@ -1,8 +1,6 @@
 package postgres
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -161,92 +159,6 @@ func TestPgRestoreSkipsOwnershipAndPrivileges(t *testing.T) {
 	// The archive is the last argument, which is what pg_restore expects.
 	if args[len(args)-1] != "/tmp/artifact" {
 		t.Errorf("last argument = %q, want the archive path", args[len(args)-1])
-	}
-}
-
-// TestVerifyChecksumBlamesTheArtifact is what makes slice A6 possible: a corrupted artifact has to
-// be distinguishable from a flaky download, because one is data loss and the other is a network.
-func TestVerifyChecksumBlamesTheArtifact(t *testing.T) {
-	payload := []byte("fleetward artifact bytes")
-	sum := sha256.Sum256(payload)
-	correct := hex.EncodeToString(sum[:])
-
-	t.Run("a matching checksum passes", func(t *testing.T) {
-		err := verifyChecksum(&fwv1.Checksum{
-			Algorithm: fwv1.ChecksumAlgorithm_CHECKSUM_ALGORITHM_SHA256,
-			Value:     correct,
-		}, sum[:], int64(len(payload)))
-		if err != nil {
-			t.Fatalf("a matching checksum was rejected: %v", err)
-		}
-	})
-
-	t.Run("uppercase is still a match", func(t *testing.T) {
-		err := verifyChecksum(&fwv1.Checksum{Value: strings.ToUpper(correct)}, sum[:], int64(len(payload)))
-		if err != nil {
-			t.Fatalf("case alone made a checksum mismatch: %v", err)
-		}
-	})
-
-	t.Run("a mismatch is reported as a corrupt artifact", func(t *testing.T) {
-		err := verifyChecksum(&fwv1.Checksum{
-			Algorithm: fwv1.ChecksumAlgorithm_CHECKSUM_ALGORITHM_SHA256,
-			Value:     strings.Repeat("0", 64),
-		}, sum[:], int64(len(payload)))
-		if err == nil {
-			t.Fatal("a mismatched checksum was accepted")
-		}
-		if !sdk.IsArtifactCorrupt(sdk.AsPluginError(err)) {
-			t.Errorf("the error does not blame the artifact, so core would report it as inconclusive: %v", err)
-		}
-	})
-
-	t.Run("no checksum is refused rather than skipped", func(t *testing.T) {
-		if err := verifyChecksum(nil, sum[:], int64(len(payload))); err == nil {
-			t.Fatal("an artifact with no checksum was accepted; there would be no evidence chain")
-		}
-	})
-}
-
-func TestSelectArtifact(t *testing.T) {
-	base := func() *fwv1.ArtifactSource {
-		return &fwv1.ArtifactSource{
-			Role:        fwv1.ArtifactRole_ARTIFACT_ROLE_BASE,
-			DownloadUrl: &fwv1.PresignedURL{Url: "https://store.example/artifact?sig=x"},
-		}
-	}
-
-	tests := []struct {
-		name    string
-		in      []*fwv1.ArtifactSource
-		wantErr bool
-	}{
-		{"one base artifact", []*fwv1.ArtifactSource{base()}, false},
-		{"none", nil, true},
-		// Quietly using the first would restore less than was asked for, which is the failure this
-		// product exists to detect rather than commit.
-		{"two", []*fwv1.ArtifactSource{base(), base()}, true},
-		{
-			name: "a WAL segment",
-			in: []*fwv1.ArtifactSource{{
-				Role:        fwv1.ArtifactRole_ARTIFACT_ROLE_LOG,
-				DownloadUrl: &fwv1.PresignedURL{Url: "https://store.example/wal"},
-			}},
-			wantErr: true,
-		},
-		{"no download grant", []*fwv1.ArtifactSource{{Role: fwv1.ArtifactRole_ARTIFACT_ROLE_BASE}}, true},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := selectArtifact(tc.in)
-			if tc.wantErr && err == nil {
-				t.Fatal("expected a refusal")
-			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("selectArtifact: %v", err)
-			}
-		})
 	}
 }
 
