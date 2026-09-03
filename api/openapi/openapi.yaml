@@ -6,6 +6,58 @@ info:
     title: ""
     version: 0.0.1
 paths:
+    /api/v1/audit:
+        get:
+            tags:
+                - IdentityService
+            description: |-
+                ListAuditLog reads the append-only record of who did what. It is the operational surface of
+                 the audit log, which is otherwise only visible by querying the database directly.
+            operationId: IdentityService_ListAuditLog
+            parameters:
+                - name: actor
+                  in: query
+                  schema:
+                    type: string
+                - name: action
+                  in: query
+                  schema:
+                    type: string
+                - name: resource_type
+                  in: query
+                  schema:
+                    type: string
+                - name: resource_id
+                  in: query
+                  schema:
+                    type: string
+                - name: failures_only
+                  in: query
+                  description: Return only refusals, which is the query an investigation starts with.
+                  schema:
+                    type: boolean
+                - name: page_size
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: page_token
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListAuditLogResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
     /api/v1/backup-adherence:
         get:
             tags:
@@ -660,6 +712,27 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+    /api/v1/me:
+        get:
+            tags:
+                - IdentityService
+            description: |-
+                GetMe reports the calling principal and the roles it holds. It is the one authenticated RPC
+                 that never fails on authorization: any principal may ask who it is.
+            operationId: IdentityService_GetMe
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetMeResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
     /api/v1/plugins:
         get:
             tags:
@@ -785,6 +858,81 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+    /api/v1/tokens:
+        get:
+            tags:
+                - IdentityService
+            operationId: IdentityService_ListTokens
+            parameters:
+                - name: include_inactive
+                  in: query
+                  description: Include tokens that have been revoked or have expired.
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListTokensResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        post:
+            tags:
+                - IdentityService
+            description: |-
+                CreateToken mints an API token for a principal, creating the user and the role grant if they
+                 do not exist yet. The secret is returned once and never again: only its hash is stored.
+            operationId: IdentityService_CreateToken
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateTokenRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/CreateTokenResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/tokens/{token_id}:
+        delete:
+            tags:
+                - IdentityService
+            description: RevokeToken stops a token working. The row is kept so the audit log's references resolve.
+            operationId: IdentityService_RevokeToken
+            parameters:
+                - name: token_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/RevokeTokenResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
     /api/v1/verifications/{verification_id}:
         get:
             tags:
@@ -829,6 +977,73 @@ paths:
                                 $ref: '#/components/schemas/Status'
 components:
     schemas:
+        ApiToken:
+            type: object
+            properties:
+                id:
+                    type: string
+                user_id:
+                    type: string
+                description:
+                    type: string
+                created_by:
+                    type: string
+                created_at:
+                    type: string
+                    format: date-time
+                expires_at:
+                    type: string
+                    format: date-time
+                last_used_at:
+                    type: string
+                    format: date-time
+                revoked_at:
+                    type: string
+                    format: date-time
+                grants:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/RoleGrant'
+                    description: The user's grants, so `token list` can answer "what may this credential do".
+                display_name:
+                    type: string
+                email:
+                    type: string
+            description: |-
+                ApiToken is a credential's record. The secret itself appears exactly once, in
+                 CreateTokenResponse, and is stored only as a hash.
+        AuditEntry:
+            type: object
+            properties:
+                id:
+                    type: string
+                actor:
+                    type: string
+                user_id:
+                    type: string
+                action:
+                    type: string
+                resource_type:
+                    type: string
+                resource_id:
+                    type: string
+                details:
+                    type: object
+                    additionalProperties:
+                        type: string
+                    description: Never contains a credential. Assembled from an allow-list per action, never from the request.
+                source_ip:
+                    type: string
+                request_id:
+                    type: string
+                succeeded:
+                    type: boolean
+                occurred_at:
+                    type: string
+                    format: date-time
+            description: |-
+                AuditEntry is one row of the append-only record. `actor` is text beside `user_id` so the record
+                 survives the user being deleted.
         Backup:
             type: object
             properties:
@@ -1025,6 +1240,30 @@ components:
                  the most dangerous state in the product and must never collapse into one indicator.
 
                  Deprecated: see Instance.backup_summary. Superseded by GetBackupAdherence.
+        Caller:
+            type: object
+            properties:
+                kind:
+                    enum:
+                        - CALLER_KIND_UNSPECIFIED
+                        - CALLER_KIND_USER
+                        - CALLER_KIND_SYSTEM
+                        - CALLER_KIND_BOOTSTRAP
+                    type: string
+                    format: enum
+                user_id:
+                    type: string
+                    description: Empty for system and bootstrap callers, which have no row in `users`.
+                actor:
+                    type: string
+                    description: The name that appears in audit_log.actor. Stable, and never a credential.
+                display_name:
+                    type: string
+                email:
+                    type: string
+                tenant_id:
+                    type: string
+            description: Caller is who is making this request.
         Capabilities:
             type: object
             properties:
@@ -1321,6 +1560,38 @@ components:
             properties:
                 schedule:
                     $ref: '#/components/schemas/Schedule'
+        CreateTokenRequest:
+            type: object
+            properties:
+                email:
+                    type: string
+                    description: |-
+                        Identifies the user this token belongs to. Created on first use, so issuing a token to a new
+                         colleague is one command rather than two.
+                display_name:
+                    type: string
+                role:
+                    type: string
+                    description: 'One of the seeded roles: viewer, operator, dba, admin.'
+                environment_id:
+                    type: string
+                    description: The scope of the granted role. At most one may be set; neither means the whole tenant.
+                instance_id:
+                    type: string
+                description:
+                    type: string
+                ttl:
+                    pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
+                    type: string
+                    description: Optional lifetime. Zero means the token does not expire on its own.
+        CreateTokenResponse:
+            type: object
+            properties:
+                token:
+                    $ref: '#/components/schemas/ApiToken'
+                secret:
+                    type: string
+                    description: The only time the secret is ever returned. Storing it is the caller's problem from here.
         DatabaseInfo:
             type: object
             properties:
@@ -1440,6 +1711,20 @@ components:
                         $ref: '#/components/schemas/DatabaseInfo'
                 topology:
                     $ref: '#/components/schemas/Topology'
+        GetMeResponse:
+            type: object
+            properties:
+                caller:
+                    $ref: '#/components/schemas/Caller'
+                grants:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/RoleGrant'
+                highest_role:
+                    type: string
+                    description: |-
+                        The highest role this caller holds anywhere, which is what a UI renders beside a name. It is
+                         not permission to do anything in particular: scope decides that, per request.
         GetPITRWindowResponse:
             type: object
             properties:
@@ -1695,6 +1980,15 @@ components:
             description: |-
                 Job is one unit of work the scheduler leases and runs. Every field after `state` exists to answer
                  a question after the fact, which is the whole reason jobs are rows rather than goroutines.
+        ListAuditLogResponse:
+            type: object
+            properties:
+                entries:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/AuditEntry'
+                next_page_token:
+                    type: string
         ListBackupsResponse:
             type: object
             properties:
@@ -1766,6 +2060,13 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/Schedule'
+        ListTokensResponse:
+            type: object
+            properties:
+                tokens:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ApiToken'
         ManifestEntry:
             type: object
             properties:
@@ -2191,6 +2492,24 @@ components:
             description: |-
                 RetentionPolicy is the configured shape of the sweep, not a per-instance setting. Retention is an
                  estate-wide property; what varies per backup is the expiry stamped on it (ADR-0031).
+        RevokeTokenResponse:
+            type: object
+            properties: {}
+        RoleGrant:
+            type: object
+            properties:
+                role:
+                    type: string
+                rank:
+                    type: integer
+                    format: int32
+                environment_id:
+                    type: string
+                instance_id:
+                    type: string
+            description: |-
+                RoleGrant binds a caller to a role within a scope. Exactly one of environment_id and instance_id
+                 is set, or neither, which means the grant covers the whole tenant.
         RunBackupRequest:
             type: object
             properties:
@@ -2568,6 +2887,15 @@ tags:
       description: |-
         BackupService covers backups, their verifications, and recovery windows. Every mutating RPC here
          requires at least the `dba` role and is recorded in the audit log.
+    - name: IdentityService
+      description: |-
+        IdentityService covers who is calling, the tokens that let them call, and the record of what
+         everyone did.
+
+         Session establishment is deliberately absent: `POST /api/v1/sessions` exchanges a token for an
+         HttpOnly cookie and `DELETE /api/v1/sessions` clears it, both hand-written HTTP handlers on the
+         control plane's own mux. A cookie is a transport concern that this contract cannot express, and
+         the same reasoning already keeps `/readyz` outside it (ADR-0029).
     - name: InventoryService
       description: 'InventoryService manages the estate: environments, instances, and their connections.'
     - name: ScheduleService

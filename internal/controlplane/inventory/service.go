@@ -33,8 +33,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/plugin/sdk"
-	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 	"github.com/danmorcov88/fleetward/internal/storage/secrets"
 )
 
@@ -84,22 +84,23 @@ type Router interface {
 
 // Service is the inventory domain service.
 type Service struct {
-	pool     *pgxpool.Pool
-	secrets  secrets.Provider
-	plugins  Router
-	log      *slog.Logger
-	tenantID string
+	pool    *pgxpool.Pool
+	secrets secrets.Provider
+	plugins Router
+	log     *slog.Logger
 }
 
-// New builds the service. The tenant is fixed for now; when OIDC lands in Phase F it comes from the
-// authenticated principal instead, and every query below is already written to accept it.
+// New builds the service.
+//
+// The tenant is no longer a field. Every query below already took it as a parameter; since B6 that
+// parameter comes from the principal on the request's context, which is what makes ADR-0008's
+// "tenant_id on every table from day one" a claim the code exercises rather than one it asserts.
 func New(pool *pgxpool.Pool, provider secrets.Provider, plugins Router, log *slog.Logger) *Service {
 	return &Service{
-		pool:     pool,
-		secrets:  provider,
-		plugins:  plugins,
-		log:      log.With(slog.String("component", "inventory")),
-		tenantID: metadb.DefaultTenantID,
+		pool:    pool,
+		secrets: provider,
+		plugins: plugins,
+		log:     log.With(slog.String("component", "inventory")),
 	}
 }
 
@@ -155,7 +156,7 @@ func (s *Service) CreateEnvironment(ctx context.Context, in CreateEnvironmentInp
 	}
 
 	env := &fwv1.Environment{
-		TenantId:     s.tenantID,
+		TenantId:     authn.Tenant(ctx),
 		Name:         name,
 		Description:  strings.TrimSpace(in.Description),
 		IsProduction: in.IsProduction,
@@ -166,7 +167,7 @@ func (s *Service) CreateEnvironment(ctx context.Context, in CreateEnvironmentInp
 		INSERT INTO environments (tenant_id, name, description, is_production)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at`,
-		s.tenantID, env.GetName(), env.GetDescription(), env.GetIsProduction()).
+		authn.Tenant(ctx), env.GetName(), env.GetDescription(), env.GetIsProduction()).
 		Scan(&env.Id, &createdAt)
 	if isUniqueViolation(err) {
 		return nil, fmt.Errorf("%w: environment %q", ErrAlreadyExists, name)
@@ -203,7 +204,7 @@ func (s *Service) ListEnvironments(ctx context.Context, pageSize int32, pageToke
 		  AND ($2::timestamptz IS NULL OR (created_at, id) > ($2::timestamptz, $3::uuid))
 		ORDER BY created_at, id
 		LIMIT $4`,
-		s.tenantID, cursor.after(), cursor.afterID(), limit+1)
+		authn.Tenant(ctx), cursor.after(), cursor.afterID(), limit+1)
 	if err != nil {
 		return nil, Page{}, fmt.Errorf("inventory: list environments: %w", err)
 	}
@@ -211,7 +212,7 @@ func (s *Service) ListEnvironments(ctx context.Context, pageSize int32, pageToke
 
 	out := make([]*fwv1.Environment, 0, limit)
 	for rows.Next() {
-		env := &fwv1.Environment{TenantId: s.tenantID}
+		env := &fwv1.Environment{TenantId: authn.Tenant(ctx)}
 		var createdAt time.Time
 		if err := rows.Scan(&env.Id, &env.Name, &env.Description, &env.IsProduction, &createdAt); err != nil {
 			return nil, Page{}, fmt.Errorf("inventory: scan environment: %w", err)
@@ -242,7 +243,7 @@ func (s *Service) ListEnvironments(ctx context.Context, pageSize int32, pageToke
 // hang or fail, and an instance that cannot be reached is exactly the kind a user most needs to
 // have in their inventory. TestConnection exists for checking before committing.
 func (s *Service) CreateInstance(ctx context.Context, in CreateInstanceInput) (*fwv1.Instance, error) {
-	inst, spec, err := s.validateCreateInstance(in)
+	inst, spec, err := s.validateCreateInstance(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +273,7 @@ func (s *Service) CreateInstance(ctx context.Context, in CreateInstanceInput) (*
 		INSERT INTO instances (tenant_id, environment_id, name, engine_type, host, port, labels)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at, health`,
-		s.tenantID, inst.GetEnvironmentId(), inst.GetName(), inst.GetEngineType(),
+		authn.Tenant(ctx), inst.GetEnvironmentId(), inst.GetName(), inst.GetEngineType(),
 		inst.GetHost(), inst.GetPort(), labelsOrEmpty(inst.GetLabels())).
 		Scan(&inst.Id, &createdAt, &health)
 	switch {
@@ -295,7 +296,7 @@ func (s *Service) CreateInstance(ctx context.Context, in CreateInstanceInput) (*
 		                         tls_enabled, options, is_default)
 		VALUES ($1, $2, $3, $4, '', $5, $6, TRUE)
 		RETURNING id`,
-		s.tenantID, inst.GetId(), spec.GetUsername(), spec.GetDatabase(),
+		authn.Tenant(ctx), inst.GetId(), spec.GetUsername(), spec.GetDatabase(),
 		spec.GetTls().GetEnabled(), optionsJSON).
 		Scan(&connectionID)
 	if isUniqueViolation(err) {
@@ -309,7 +310,7 @@ func (s *Service) CreateInstance(ctx context.Context, in CreateInstanceInput) (*
 	secretName := secretNamePrefix + connectionID
 	if _, err := tx.Exec(ctx,
 		`UPDATE connections SET secret_name = $1 WHERE id = $2 AND tenant_id = $3`,
-		secretName, connectionID, s.tenantID); err != nil {
+		secretName, connectionID, authn.Tenant(ctx)); err != nil {
 		return nil, fmt.Errorf("inventory: link connection secret: %w", err)
 	}
 
@@ -317,7 +318,7 @@ func (s *Service) CreateInstance(ctx context.Context, in CreateInstanceInput) (*
 	// the next implementation), so it cannot join the transaction. Writing before the commit means
 	// a failed commit leaves an unreferenced secret rather than an instance whose credentials are
 	// missing; the compensating delete below closes that window in the normal case.
-	ref := secrets.Ref{TenantID: s.tenantID, Name: secretName}
+	ref := secrets.Ref{TenantID: authn.Tenant(ctx), Name: secretName}
 	if err := s.secrets.Put(ctx, ref, payload); err != nil {
 		return nil, fmt.Errorf("inventory: store credentials: %w", err)
 	}
@@ -341,7 +342,7 @@ func (s *Service) CreateInstance(ctx context.Context, in CreateInstanceInput) (*
 }
 
 // validateCreateInstance checks the request and returns the instance skeleton it describes.
-func (s *Service) validateCreateInstance(in CreateInstanceInput) (*fwv1.Instance, *fwv1.ConnectionSpec, error) {
+func (s *Service) validateCreateInstance(ctx context.Context, in CreateInstanceInput) (*fwv1.Instance, *fwv1.ConnectionSpec, error) {
 	name := strings.TrimSpace(in.Name)
 	host := strings.TrimSpace(in.Host)
 	engineType := strings.ToLower(strings.TrimSpace(in.EngineType))
@@ -382,7 +383,7 @@ func (s *Service) validateCreateInstance(in CreateInstanceInput) (*fwv1.Instance
 	}
 
 	return &fwv1.Instance{
-		TenantId:      s.tenantID,
+		TenantId:      authn.Tenant(ctx),
 		EnvironmentId: environmentID,
 		Name:          name,
 		EngineType:    engineType,
@@ -439,7 +440,7 @@ func (s *Service) ListInstances(ctx context.Context, filter ListInstancesFilter)
 		WHERE tenant_id = $1
 		  AND ($2::uuid IS NULL OR environment_id = $2::uuid)
 		  AND ($3::text IS NULL OR engine_type = $3::text)`,
-		s.tenantID, environmentID, engineType).Scan(&total); err != nil {
+		authn.Tenant(ctx), environmentID, engineType).Scan(&total); err != nil {
 		return nil, Page{}, fmt.Errorf("inventory: count instances: %w", err)
 	}
 
@@ -453,7 +454,7 @@ func (s *Service) ListInstances(ctx context.Context, filter ListInstancesFilter)
 		  AND ($4::timestamptz IS NULL OR (created_at, id) > ($4::timestamptz, $5::uuid))
 		ORDER BY created_at, id
 		LIMIT $6`,
-		s.tenantID, environmentID, engineType, cursor.after(), cursor.afterID(), limit+1)
+		authn.Tenant(ctx), environmentID, engineType, cursor.after(), cursor.afterID(), limit+1)
 	if err != nil {
 		return nil, Page{}, fmt.Errorf("inventory: list instances: %w", err)
 	}
@@ -461,7 +462,7 @@ func (s *Service) ListInstances(ctx context.Context, filter ListInstancesFilter)
 
 	out := make([]*fwv1.Instance, 0, limit)
 	for rows.Next() {
-		inst, err := scanInstance(rows, s.tenantID)
+		inst, err := scanInstance(rows, authn.Tenant(ctx))
 		if err != nil {
 			return nil, Page{}, err
 		}
@@ -491,7 +492,7 @@ func (s *Service) DeleteInstance(ctx context.Context, instanceID string, deleteA
 	// there is nothing left pointing at the credentials.
 	rows, err := s.pool.Query(ctx,
 		`SELECT secret_name FROM connections WHERE instance_id = $1 AND tenant_id = $2`,
-		id, s.tenantID)
+		id, authn.Tenant(ctx))
 	if err != nil {
 		return fmt.Errorf("inventory: list connections: %w", err)
 	}
@@ -510,7 +511,7 @@ func (s *Service) DeleteInstance(ctx context.Context, instanceID string, deleteA
 	}
 
 	tag, err := s.pool.Exec(ctx,
-		`DELETE FROM instances WHERE id = $1 AND tenant_id = $2`, id, s.tenantID)
+		`DELETE FROM instances WHERE id = $1 AND tenant_id = $2`, id, authn.Tenant(ctx))
 	if err != nil {
 		return fmt.Errorf("inventory: delete instance: %w", err)
 	}
@@ -523,7 +524,7 @@ func (s *Service) DeleteInstance(ctx context.Context, instanceID string, deleteA
 	// up, so they are deleted here explicitly. Rows are gone by now, so a failure here leaves an
 	// unusable orphan rather than a live instance without credentials.
 	for _, name := range secretNames {
-		ref := secrets.Ref{TenantID: s.tenantID, Name: name}
+		ref := secrets.Ref{TenantID: authn.Tenant(ctx), Name: name}
 		if err := s.secrets.Delete(ctx, ref); err != nil {
 			s.log.ErrorContext(ctx, "credentials survived instance deletion; delete them by hand",
 				slog.String("secret_ref", ref.String()),
@@ -729,7 +730,7 @@ func (s *Service) resolveTarget(ctx context.Context, req *fwv1.TestConnectionReq
 	return &target{
 		instanceID: instanceID,
 		engineType: engineType,
-		ref:        &fwv1.ConnectionRef{TenantId: s.tenantID, InstanceId: instanceID},
+		ref:        &fwv1.ConnectionRef{TenantId: authn.Tenant(ctx), InstanceId: instanceID},
 		credentials: &fwv1.Credentials{
 			Host:            host,
 			Port:            port,
@@ -770,7 +771,7 @@ func (s *Service) resolveStored(ctx context.Context, instanceID string) (*target
 		FROM instances i
 		JOIN connections c ON c.instance_id = i.id AND c.tenant_id = i.tenant_id AND c.is_default
 		WHERE i.id = $1 AND i.tenant_id = $2`,
-		id, s.tenantID).
+		id, authn.Tenant(ctx)).
 		Scan(&engineType, &host, &port, &connID, &username, &database, &secretName, &tlsEnabled, &optionsJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// A missing default connection is indistinguishable from a missing instance to a caller,
@@ -796,7 +797,7 @@ func (s *Service) resolveStored(ctx context.Context, instanceID string) (*target
 		engineType: engineType,
 		ref: &fwv1.ConnectionRef{
 			ConnectionId: connID,
-			TenantId:     s.tenantID,
+			TenantId:     authn.Tenant(ctx),
 			InstanceId:   id,
 		},
 		credentials: &fwv1.Credentials{
@@ -813,7 +814,7 @@ func (s *Service) resolveStored(ctx context.Context, instanceID string) (*target
 }
 
 func (s *Service) loadCredentialSecret(ctx context.Context, secretName string) (*credentialSecret, error) {
-	plaintext, err := s.secrets.Get(ctx, secrets.Ref{TenantID: s.tenantID, Name: secretName})
+	plaintext, err := s.secrets.Get(ctx, secrets.Ref{TenantID: authn.Tenant(ctx), Name: secretName})
 	if errors.Is(err, secrets.ErrNotFound) {
 		return nil, fmt.Errorf("%w: credentials for %s are missing from the secret store", ErrNotFound, secretName)
 	}
@@ -849,7 +850,7 @@ func (s *Service) recordHealth(ctx context.Context, instanceID string, health *f
 		    updated_at     = now()
 		WHERE id = $5 AND tenant_id = $6`,
 		health.GetState().String(), health.GetMessage(), lastSeen, health.GetEngineVersion(),
-		instanceID, s.tenantID)
+		instanceID, authn.Tenant(ctx))
 	if err != nil {
 		return fmt.Errorf("inventory: record health: %w", err)
 	}
@@ -869,7 +870,7 @@ func (s *Service) recordDiscovery(ctx context.Context, instanceID string, resp *
 		    engine_version = COALESCE(NULLIF($2, ''), engine_version),
 		    updated_at     = now()
 		WHERE id = $3 AND tenant_id = $4`,
-		encoded, resp.GetServer().GetVersion(), instanceID, s.tenantID)
+		encoded, resp.GetServer().GetVersion(), instanceID, authn.Tenant(ctx))
 	if err != nil {
 		return fmt.Errorf("inventory: record discovery: %w", err)
 	}
@@ -887,10 +888,10 @@ func (s *Service) loadInstance(ctx context.Context, instanceID string) (*fwv1.In
 		SELECT id, environment_id, name, engine_type, engine_version, host, port,
 		       labels, health, last_seen_at, created_at, discovery
 		FROM instances
-		WHERE id = $1 AND tenant_id = $2`, id, s.tenantID)
+		WHERE id = $1 AND tenant_id = $2`, id, authn.Tenant(ctx))
 
 	var (
-		inst         = &fwv1.Instance{TenantId: s.tenantID}
+		inst         = &fwv1.Instance{TenantId: authn.Tenant(ctx)}
 		health       string
 		lastSeen     *time.Time
 		createdAt    time.Time

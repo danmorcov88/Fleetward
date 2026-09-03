@@ -179,7 +179,7 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
+	ctx, cancel := context.WithTimeout(testTenantCtx(), startTimeout)
 	defer cancel()
 
 	container, err := postgres.Run(ctx, metaImage,
@@ -228,7 +228,7 @@ func (h *harness) newInstance(t *testing.T, name string) string {
 	t.Helper()
 
 	var envID string
-	err := h.pool.QueryRow(context.Background(), `
+	err := h.pool.QueryRow(testTenantCtx(), `
 		INSERT INTO environments (tenant_id, name) VALUES ($1, $2)
 		ON CONFLICT (tenant_id, name) DO UPDATE SET name = EXCLUDED.name
 		RETURNING id`, h.tenantID, "production").Scan(&envID)
@@ -237,7 +237,7 @@ func (h *harness) newInstance(t *testing.T, name string) string {
 	}
 
 	var instanceID string
-	err = h.pool.QueryRow(context.Background(), `
+	err = h.pool.QueryRow(testTenantCtx(), `
 		INSERT INTO instances (tenant_id, environment_id, name, engine_type, host, port)
 		VALUES ($1, $2, $3, 'testengine', 'db.example.internal', 5432)
 		RETURNING id`, h.tenantID, envID, name).Scan(&instanceID)
@@ -257,7 +257,7 @@ func (h *harness) newJob(t *testing.T, kind string) string {
 	}
 
 	var jobID string
-	if err := h.pool.QueryRow(context.Background(), `
+	if err := h.pool.QueryRow(testTenantCtx(), `
 		INSERT INTO jobs (tenant_id, instance_id, kind, state, payload, scheduled_for)
 		VALUES ($1, $2, $3, 'pending', $4, now())
 		RETURNING id`, h.tenantID, h.instanceID, kind, payload).Scan(&jobID); err != nil {
@@ -268,7 +268,7 @@ func (h *harness) newJob(t *testing.T, kind string) string {
 
 func (h *harness) jobRow(t *testing.T, jobID string) (state, owner, errorMessage string) {
 	t.Helper()
-	if err := h.pool.QueryRow(context.Background(), `
+	if err := h.pool.QueryRow(testTenantCtx(), `
 		SELECT state, COALESCE(lease_owner, ''), error_message FROM jobs WHERE id = $1`, jobID).
 		Scan(&state, &owner, &errorMessage); err != nil {
 		t.Fatalf("read job %s: %v", jobID, err)
@@ -279,7 +279,7 @@ func (h *harness) jobRow(t *testing.T, jobID string) (state, owner, errorMessage
 func (h *harness) attempts(t *testing.T, jobID string) int32 {
 	t.Helper()
 	var n int32
-	if err := h.pool.QueryRow(context.Background(),
+	if err := h.pool.QueryRow(testTenantCtx(),
 		`SELECT attempts FROM jobs WHERE id = $1`, jobID).Scan(&n); err != nil {
 		t.Fatalf("read attempts for job %s: %v", jobID, err)
 	}
@@ -301,7 +301,7 @@ func (h *harness) scheduler(runner Runner, cfg config.SchedulerConfig) *Schedule
 // unrecorded in the process that claimed it.
 func TestClaimTakesAJobExactlyOnce(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	jobID := h.newJob(t, kindBackup)
 
 	ownerA, ownerB := newOwnerID(), newOwnerID()
@@ -339,7 +339,7 @@ func TestClaimTakesAJobExactlyOnce(t *testing.T) {
 // job must be claimed by exactly one, and no claimer may receive a job twice.
 func TestClaimIsRaceFreeUnderContention(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	// One job per instance, because idx_jobs_one_active_per_instance_kind allows exactly that.
 	const jobCount = 8
@@ -395,7 +395,7 @@ func TestClaimIsRaceFreeUnderContention(t *testing.T) {
 // already written this job's outcome, and the runner still holding it is a ghost.
 func TestHeartbeatReportsALostLease(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	jobID := h.newJob(t, kindBackup)
 
 	owner := newOwnerID()
@@ -430,7 +430,7 @@ func TestHeartbeatReportsALostLease(t *testing.T) {
 // (ADR-0025).
 func TestReapClosesAbandonedWork(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	jobID := h.newJob(t, kindBackup)
 
 	owner := newOwnerID()
@@ -504,7 +504,7 @@ func TestReapClosesAbandonedWork(t *testing.T) {
 // and FAILED is the product's one critical alert.
 func TestReapReportsAnInterruptedVerificationAsInconclusive(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	backupJobID := h.newJob(t, kindBackup)
 	var backupID string
@@ -553,7 +553,7 @@ func TestReapReportsAnInterruptedVerificationAsInconclusive(t *testing.T) {
 // turned into a job, and not turned into a second one on the next tick.
 func TestMaterializeCreatesOneJobPerDueSchedule(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	svc := NewService(h.pool, h.log)
 	created, err := svc.CreateSchedule(ctx, CreateScheduleInput{
@@ -611,7 +611,7 @@ func TestMaterializeCreatesOneJobPerDueSchedule(t *testing.T) {
 // exists afterwards.
 func TestMaterializeIsSafeWithTwoSchedulers(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	svc := NewService(h.pool, h.log)
 	created, err := svc.CreateSchedule(ctx, CreateScheduleInput{
@@ -659,7 +659,7 @@ func TestMaterializeIsSafeWithTwoSchedulers(t *testing.T) {
 // the other process's verdict standing.
 func TestRunnerAbandonsAJobWhoseLeaseWasTaken(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	jobID := h.newJob(t, kindBackup)
 
 	runner := newStubRunner()
@@ -720,7 +720,7 @@ func TestRunnerAbandonsAJobWhoseLeaseWasTaken(t *testing.T) {
 // its own row rather than chained in-process.
 func TestSchedulerRunsAndQueuesVerification(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	svc := NewService(h.pool, h.log)
 	created, err := svc.CreateSchedule(ctx, CreateScheduleInput{
@@ -785,7 +785,7 @@ func TestSchedulerRunsAndQueuesVerification(t *testing.T) {
 // runs.
 func TestCloseCancelsInFlightWorkAndWaitsForItToUnwind(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h.newJob(t, kindBackup)
 
 	runner := newStubRunner()
@@ -840,7 +840,7 @@ func TestCloseCancelsInFlightWorkAndWaitsForItToUnwind(t *testing.T) {
 // skipped: the polling stops, silently, and the estate keeps reporting whatever it last saw.
 func TestSchedulerRunsAndClosesAnObservation(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	svc := NewService(h.pool, h.log)
 	created, err := svc.CreateSchedule(ctx, CreateScheduleInput{
@@ -910,7 +910,7 @@ func TestSchedulerRunsAndClosesAnObservation(t *testing.T) {
 // timestamp that never advances, which is worse than rendering nothing.
 func TestSchedulerRunsAndClosesAHealthProbe(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	svc := NewService(h.pool, h.log)
 	created, err := svc.CreateSchedule(ctx, CreateScheduleInput{

@@ -30,6 +30,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
 	"github.com/danmorcov88/fleetward/internal/controlplane/sandbox"
 	"github.com/danmorcov88/fleetward/internal/plugin/sdk"
@@ -120,7 +121,6 @@ type Service struct {
 	// than none, since it would be believed.
 	retention RetentionPolicy
 	log       *slog.Logger
-	tenantID  string
 
 	// runCtx outlives the request that started a backup: an HTTP request cannot stay open for the
 	// hours a real backup takes, so RunBackup returns as soon as the rows exist and the work
@@ -131,7 +131,11 @@ type Service struct {
 	running   sync.WaitGroup
 }
 
-// New builds the service. The tenant is fixed until OIDC lands in phase F, exactly as in inventory.
+// New builds the service.
+//
+// There is no tenant here any more. It used to be a field holding metadb.DefaultTenantID; since B6
+// it comes from the principal on each call's context, so a query can no longer read a tenant that
+// nobody asked about (ADR-0008).
 func New(pool *pgxpool.Pool, store objstore.ObjectStore, plugins Router, resolver Resolver, sandboxes sandbox.Provider, retention RetentionPolicy, log *slog.Logger) *Service {
 	runCtx, cancel := context.WithCancel(context.Background())
 	return &Service{
@@ -142,10 +146,25 @@ func New(pool *pgxpool.Pool, store objstore.ObjectStore, plugins Router, resolve
 		sandboxes: sandboxes,
 		retention: retention,
 		log:       log.With(slog.String("component", "backup")),
-		tenantID:  metadb.DefaultTenantID,
 		runCtx:    runCtx,
 		cancelRun: cancel,
 	}
+}
+
+// background derives the context a run continues on after its request has returned.
+//
+// It takes its *lifetime* from s.runCtx, which Close cancels, and its *tenant* from the caller —
+// which is the half that would be a bug if it came from anywhere else. Since B6 the tenant comes
+// from a principal rather than from a constant, and a background run that inherited a hardcoded
+// default would write one tenant's backup rows under another's.
+//
+// The principal itself is a system one rather than a copy of the caller's, and the distinction is
+// deliberate. The human who pressed the button is recorded once, in `backups.triggered_by` and in
+// the audit row the API layer already wrote; the hours of work that follow are Fleetward's own, and
+// attributing a failure at 04:00 to whoever happened to click at 21:00 would be a worse record
+// rather than a better one (ADR-0036).
+func (s *Service) background(ctx context.Context) context.Context {
+	return authn.WithPrincipal(s.runCtx, authn.System("backup", authn.Tenant(ctx)))
 }
 
 // Close cancels every running backup and verification and waits for them to record their outcome.
@@ -269,7 +288,7 @@ func (s *Service) RunBackup(ctx context.Context, in RunBackupInput) (backupID, j
 		defer s.running.Done()
 		// The error is discarded because execute has already recorded and logged it, and there is
 		// no caller left: RunBackup returned as soon as the rows existed.
-		_ = s.execute(s.runCtx, p.client, runRequest{
+		_ = s.execute(s.background(ctx), p.client, runRequest{
 			backupID:   backupID,
 			jobID:      jobID,
 			connection: p.conn,
@@ -428,7 +447,7 @@ func (s *Service) execute(parent context.Context, client fwv1.EnginePluginClient
 // panic — the parts already written are discarded and no object appears. A partial artifact that
 // reported success would be a backup believed good and proven bad only at restore time.
 func (s *Service) transfer(ctx context.Context, client fwv1.EnginePluginClient, req runRequest, log *slog.Logger) (*fwv1.BackupResult, error) {
-	key := artifactKeyFor(s.tenantID, req.connection.InstanceID, req.backupID)
+	key := artifactKeyFor(authn.Tenant(ctx), req.connection.InstanceID, req.backupID)
 
 	upload, err := s.store.CreateMultipartUpload(ctx, key, uploadParts, 0)
 	if err != nil {
@@ -676,7 +695,7 @@ func (s *Service) createRows(ctx context.Context, instanceID, methodID string, i
 			INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at, attempts)
 			VALUES ($1, $2, 'backup', 'running', now(), 1)
 			RETURNING id`,
-			s.tenantID, instanceID).Scan(&jobID)
+			authn.Tenant(ctx), instanceID).Scan(&jobID)
 		if metadb.IsUniqueViolation(err) {
 			return "", "", fmt.Errorf("%w: %s", ErrAlreadyRunning, instanceID)
 		}
@@ -697,7 +716,7 @@ func (s *Service) createRows(ctx context.Context, instanceID, methodID string, i
 		                     started_at, triggered_manually)
 		VALUES ($1, $2, $3, $4, $5, 'running', now(), $6)
 		RETURNING id`,
-		s.tenantID, instanceID, jobID, scheduleID, methodID, in.TriggeredManually).Scan(&backupID)
+		authn.Tenant(ctx), instanceID, jobID, scheduleID, methodID, in.TriggeredManually).Scan(&backupID)
 	if err != nil {
 		return "", "", fmt.Errorf("backup: create backup: %w", err)
 	}
@@ -775,14 +794,14 @@ func (s *Service) recordSuccess(ctx context.Context, req runRequest, result *fwv
 		metadataOrEmpty(result.GetMetadata()),
 		externalID,
 		result.GetDuration().AsDuration().Milliseconds(),
-		req.backupID, s.tenantID, expiresAt)
+		req.backupID, authn.Tenant(ctx), expiresAt)
 	if err != nil {
 		return fmt.Errorf("backup: record success: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx, `
 		UPDATE jobs SET state = 'succeeded', finished_at = now(), updated_at = now()
-		WHERE id = $1 AND tenant_id = $2`, req.jobID, s.tenantID); err != nil {
+		WHERE id = $1 AND tenant_id = $2`, req.jobID, authn.Tenant(ctx)); err != nil {
 		return fmt.Errorf("backup: finish job: %w", err)
 	}
 
@@ -801,7 +820,7 @@ func (s *Service) recordFailure(ctx context.Context, req runRequest, cause error
 	if _, err := tx.Exec(ctx, `
 		UPDATE backups
 		SET state = 'failed', error_message = $1, completed_at = now(), updated_at = now()
-		WHERE id = $2 AND tenant_id = $3`, message, req.backupID, s.tenantID); err != nil {
+		WHERE id = $2 AND tenant_id = $3`, message, req.backupID, authn.Tenant(ctx)); err != nil {
 		return fmt.Errorf("backup: record failure: %w", err)
 	}
 
@@ -811,7 +830,7 @@ func (s *Service) recordFailure(ctx context.Context, req runRequest, cause error
 	if _, err := tx.Exec(ctx, `
 		UPDATE jobs
 		SET state = 'failed', error_message = $1, finished_at = now(), updated_at = now()
-		WHERE id = $2 AND tenant_id = $3`, message, req.jobID, s.tenantID); err != nil {
+		WHERE id = $2 AND tenant_id = $3`, message, req.jobID, authn.Tenant(ctx)); err != nil {
 		return fmt.Errorf("backup: fail job: %w", err)
 	}
 
@@ -826,10 +845,10 @@ func (s *Service) GetBackup(ctx context.Context, backupID string) (*fwv1.Backup,
 	}
 
 	var manifestRaw []byte
-	out, err := s.scanBackup(s.pool.QueryRow(ctx, `
+	out, err := s.scanBackup(ctx, s.pool.QueryRow(ctx, `
 		SELECT `+backupColumns+`, manifest
 		FROM backups
-		WHERE id = $1 AND tenant_id = $2`, id, s.tenantID), &manifestRaw)
+		WHERE id = $1 AND tenant_id = $2`, id, authn.Tenant(ctx)), &manifestRaw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, fmt.Errorf("%w: backup %s", ErrNotFound, backupID)
 	}
@@ -884,7 +903,7 @@ func (s *Service) ListBackups(ctx context.Context, in ListBackupsInput) ([]*fwv1
 		size = maxListPageSize
 	}
 
-	args := []any{s.tenantID}
+	args := []any{authn.Tenant(ctx)}
 	filters := ""
 	add := func(clause, suffix string, value any) {
 		args = append(args, value)
@@ -935,7 +954,7 @@ func (s *Service) ListBackups(ctx context.Context, in ListBackupsInput) ([]*fwv1
 
 	var out []*fwv1.Backup
 	for rows.Next() {
-		b, err := s.scanBackup(rows, nil)
+		b, err := s.scanBackup(ctx, rows, nil)
 		if err != nil {
 			return nil, fmt.Errorf("backup: read a backup row: %w", err)
 		}
@@ -970,9 +989,9 @@ type scanner interface {
 
 // scanBackup reads backupColumns into a contract message. manifestRaw, when non-nil, appends the
 // manifest column, which the caller must have selected.
-func (s *Service) scanBackup(row scanner, manifestRaw *[]byte) (*fwv1.Backup, error) {
+func (s *Service) scanBackup(ctx context.Context, row scanner, manifestRaw *[]byte) (*fwv1.Backup, error) {
 	var (
-		out               = &fwv1.Backup{TenantId: s.tenantID}
+		out               = &fwv1.Backup{TenantId: authn.Tenant(ctx)}
 		state             string
 		origin            string
 		externalID        *string

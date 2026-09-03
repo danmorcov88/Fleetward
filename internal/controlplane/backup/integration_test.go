@@ -67,7 +67,7 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
+	ctx, cancel := context.WithTimeout(testTenantCtx(), startTimeout)
 	defer cancel()
 
 	pool := startMetaDB(t, ctx)
@@ -232,7 +232,7 @@ func (h *harness) waitForState(t *testing.T, backupID string) *fwv1.Backup {
 
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		b, _, err := h.svc.GetBackup(context.Background(), backupID)
+		b, _, err := h.svc.GetBackup(testTenantCtx(), backupID)
 		if err != nil {
 			t.Fatalf("GetBackup: %v", err)
 		}
@@ -250,7 +250,7 @@ func (h *harness) waitForState(t *testing.T, backupID string) *fwv1.Backup {
 // TestRunBackupPersistsTheArtifactAndItsManifest is the orchestration this slice exists to deliver.
 func TestRunBackupPersistsTheArtifactAndItsManifest(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	// 12 MiB over a 5 MiB part size: three parts, the last one short. Multipart assembly is the
 	// riskiest new path in this slice, so the test exercises it against a real store rather than
@@ -341,7 +341,7 @@ func TestRunBackupPersistsTheArtifactAndItsManifest(t *testing.T) {
 // partial artifact reporting success is a backup believed good and proven bad only at restore time.
 func TestFailedBackupLeavesNoArtifact(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	h.plugin.payload = []byte(strings.Repeat("partial-", 12<<20/8))
 	h.plugin.failAfterUpload = &fwv1.PluginError{
@@ -381,7 +381,7 @@ func TestFailedBackupLeavesNoArtifact(t *testing.T) {
 // only safe reading is failure.
 func TestStreamWithoutATerminalMessageIsAFailure(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	h.plugin.payload = []byte("some bytes")
 	h.plugin.endWithoutTerminal = true
@@ -405,7 +405,7 @@ func TestStreamWithoutATerminalMessageIsAFailure(t *testing.T) {
 // than by careful code.
 func TestSecondBackupOfOneInstanceIsRefused(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	h.plugin.payload = []byte("slow artifact")
 	h.plugin.block = make(chan struct{})
@@ -428,10 +428,10 @@ func TestSecondBackupOfOneInstanceIsRefused(t *testing.T) {
 // TestGetBackupRejectsAMalformedIdentifier keeps a typo in a URL from reaching a query.
 func TestGetBackupRejectsAMalformedIdentifier(t *testing.T) {
 	h := newHarness(t)
-	if _, _, err := h.svc.GetBackup(context.Background(), "not-a-uuid"); !errors.Is(err, ErrInvalidArgument) {
+	if _, _, err := h.svc.GetBackup(testTenantCtx(), "not-a-uuid"); !errors.Is(err, ErrInvalidArgument) {
 		t.Errorf("GetBackup error = %v, want ErrInvalidArgument", err)
 	}
-	if _, _, err := h.svc.GetBackup(context.Background(), "3f2504e0-4f89-11d3-9a0c-0305e82c3301"); !errors.Is(err, ErrNotFound) {
+	if _, _, err := h.svc.GetBackup(testTenantCtx(), "3f2504e0-4f89-11d3-9a0c-0305e82c3301"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("GetBackup error = %v, want ErrNotFound", err)
 	}
 }

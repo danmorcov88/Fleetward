@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/storage/objstore"
 )
 
@@ -229,7 +230,7 @@ func (s *Service) expireOutlivedBackups(ctx context.Context, policy RetentionPol
 		    LIMIT  $3
 		)
 		RETURNING id`,
-		s.tenantID, policy.MinKeep, policy.MaxPerSweep)
+		authn.Tenant(ctx), policy.MinKeep, policy.MaxPerSweep)
 	if err != nil {
 		return 0, fmt.Errorf("backup: expire outlived backups: %w", err)
 	}
@@ -273,7 +274,7 @@ func (s *Service) deleteExpiredArtifacts(ctx context.Context, policy RetentionPo
 		  AND  artifact_deleted_at IS NULL
 		  AND  object_key <> ''
 		ORDER  BY updated_at
-		LIMIT  $2`, s.tenantID, policy.MaxPerSweep)
+		LIMIT  $2`, authn.Tenant(ctx), policy.MaxPerSweep)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("backup: find artifacts to delete: %w", err)
 	}
@@ -322,7 +323,7 @@ func (s *Service) deleteExpiredArtifacts(ctx context.Context, policy RetentionPo
 			SET    artifact_deleted_at = now(),
 			       updated_at          = now()
 			WHERE  id = $1 AND tenant_id = $2 AND artifact_deleted_at IS NULL`,
-			p.backupID, s.tenantID); markErr != nil {
+			p.backupID, authn.Tenant(ctx)); markErr != nil {
 			// The object is gone and the row does not know it. Harmless and self-correcting: the
 			// next sweep tries to delete an object that is already absent, which is not an error,
 			// and marks the row then.
@@ -359,7 +360,7 @@ func (s *Service) PreviewRetention(ctx context.Context, in PreviewRetentionInput
 		minKeep = 1
 	}
 
-	args := []any{s.tenantID, minKeep}
+	args := []any{authn.Tenant(ctx), minKeep}
 	filter := ""
 	if in.InstanceID != "" {
 		id, err := requireUUID("instance_id", in.InstanceID)
@@ -463,7 +464,7 @@ func recentPhrase(minKeep int) string {
 // previewPendingDeletion lists artifacts already expired whose objects are still there — what a
 // sweep interrupted between its two steps leaves behind, and what the next sweep will finish.
 func (s *Service) previewPendingDeletion(ctx context.Context, instanceID string) ([]*fwv1.RetentionCandidate, error) {
-	args := []any{s.tenantID}
+	args := []any{authn.Tenant(ctx)}
 	filter := ""
 	if instanceID != "" {
 		id, err := requireUUID("instance_id", instanceID)

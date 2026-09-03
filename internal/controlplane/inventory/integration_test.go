@@ -61,7 +61,7 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
+	ctx, cancel := context.WithTimeout(testTenantCtx(), startTimeout)
 	defer cancel()
 
 	container, err := postgres.Run(ctx, metaImage,
@@ -126,7 +126,7 @@ func newHarness(t *testing.T) *harness {
 // environment creates an environment and returns its identifier.
 func (h *harness) environment(t *testing.T, name string) string {
 	t.Helper()
-	env, err := h.svc.CreateEnvironment(context.Background(), CreateEnvironmentInput{
+	env, err := h.svc.CreateEnvironment(testTenantCtx(), CreateEnvironmentInput{
 		Name:         name,
 		IsProduction: true,
 	})
@@ -139,7 +139,7 @@ func (h *harness) environment(t *testing.T, name string) string {
 // instance adds an instance with the standard stored password.
 func (h *harness) instance(t *testing.T, environmentID, name string) *fwv1.Instance {
 	t.Helper()
-	inst, err := h.svc.CreateInstance(context.Background(), CreateInstanceInput{
+	inst, err := h.svc.CreateInstance(testTenantCtx(), CreateInstanceInput{
 		EnvironmentID: environmentID,
 		Name:          name,
 		EngineType:    engine,
@@ -168,7 +168,7 @@ func (h *harness) instance(t *testing.T, environmentID, name string) *fwv1.Insta
 // against every column that could plausibly hold one rather than only against the one we wrote.
 func TestStoredPasswordIsCiphertextEverywhere(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h.instance(t, h.environment(t, "production"), "prod-1")
 
 	var secretCount, cipherLen int
@@ -227,7 +227,7 @@ func TestStoredPasswordIsCiphertextEverywhere(t *testing.T) {
 // what the plugin is handed, for exactly one call.
 func TestResolvedCredentialsReachThePluginIntact(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	inst := h.instance(t, h.environment(t, "production"), "prod-1")
 
 	if _, err := h.svc.TestConnection(ctx, &fwv1.TestConnectionRequest{InstanceId: inst.GetId()}); err != nil {
@@ -269,7 +269,7 @@ func TestResolvedCredentialsReachThePluginIntact(t *testing.T) {
 
 func TestTLSMaterialIsReassembledFromBothStores(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	environmentID := h.environment(t, "production")
 
 	inst, err := h.svc.CreateInstance(ctx, CreateInstanceInput{
@@ -359,7 +359,7 @@ func TestDuplicateNamesAreRejectedPerEnvironment(t *testing.T) {
 
 	h.instance(t, production, "prod-1")
 
-	if _, err := h.svc.CreateInstance(context.Background(), CreateInstanceInput{
+	if _, err := h.svc.CreateInstance(testTenantCtx(), CreateInstanceInput{
 		EnvironmentID: production,
 		Name:          "prod-1",
 		EngineType:    engine,
@@ -377,7 +377,7 @@ func TestDuplicateNamesAreRejectedPerEnvironment(t *testing.T) {
 func TestCreateInstanceRejectsAnUnknownEnvironment(t *testing.T) {
 	h := newHarness(t)
 
-	_, err := h.svc.CreateInstance(context.Background(), CreateInstanceInput{
+	_, err := h.svc.CreateInstance(testTenantCtx(), CreateInstanceInput{
 		EnvironmentID: "0f2d1c3e-4a5b-4c7d-8e9f-0a1b2c3d4e5f",
 		Name:          "prod-1",
 		EngineType:    engine,
@@ -391,7 +391,7 @@ func TestCreateInstanceRejectsAnUnknownEnvironment(t *testing.T) {
 
 	// A failed create must leave nothing behind — least of all a credential.
 	var secretCount int
-	if err := h.pool.QueryRow(context.Background(), `SELECT count(*)::int FROM secrets`).Scan(&secretCount); err != nil {
+	if err := h.pool.QueryRow(testTenantCtx(), `SELECT count(*)::int FROM secrets`).Scan(&secretCount); err != nil {
 		t.Fatalf("count secrets: %v", err)
 	}
 	if secretCount != 0 {
@@ -403,7 +403,7 @@ func TestDuplicateEnvironmentNameIsRejected(t *testing.T) {
 	h := newHarness(t)
 	h.environment(t, "production")
 
-	if _, err := h.svc.CreateEnvironment(context.Background(),
+	if _, err := h.svc.CreateEnvironment(testTenantCtx(),
 		CreateEnvironmentInput{Name: "production"}); !errors.Is(err, ErrAlreadyExists) {
 		t.Errorf("error = %v, want ErrAlreadyExists", err)
 	}
@@ -415,7 +415,7 @@ func TestDuplicateEnvironmentNameIsRejected(t *testing.T) {
 
 func TestTestConnectionRecordsHealth(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	inst := h.instance(t, h.environment(t, "production"), "prod-1")
 
 	h.plugin.health = &fwv1.HealthStatus{
@@ -458,7 +458,7 @@ func TestTestConnectionRecordsHealth(t *testing.T) {
 // means "the last time we actually talked to it".
 func TestDownProbeIsRecordedWithoutMovingLastSeen(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	inst := h.instance(t, h.environment(t, "production"), "prod-1")
 
 	h.plugin.health = &fwv1.HealthStatus{State: fwv1.HealthState_HEALTH_STATE_UP, EngineVersion: "16.2"}
@@ -503,7 +503,7 @@ func TestDownProbeIsRecordedWithoutMovingLastSeen(t *testing.T) {
 // The wizard's case: check credentials that have not been stored, and store nothing.
 func TestTestConnectionWithAnUnsavedConnection(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	h.plugin.health = &fwv1.HealthStatus{State: fwv1.HealthState_HEALTH_STATE_UP}
 	resp, err := h.svc.TestConnection(ctx, &fwv1.TestConnectionRequest{
@@ -544,7 +544,7 @@ func TestTestConnectionToleratesAPlaceholderInstanceID(t *testing.T) {
 		"00000000-0000-0000-0000-000000000000",
 		"-",
 	} {
-		resp, err := h.svc.TestConnection(context.Background(), &fwv1.TestConnectionRequest{
+		resp, err := h.svc.TestConnection(testTenantCtx(), &fwv1.TestConnectionRequest{
 			InstanceId: placeholder,
 			EngineType: engine,
 			Host:       "new.example.internal",
@@ -560,7 +560,7 @@ func TestTestConnectionToleratesAPlaceholderInstanceID(t *testing.T) {
 	}
 
 	// A request that names nothing usable is still a bad request.
-	if _, err := h.svc.TestConnection(context.Background(), &fwv1.TestConnectionRequest{
+	if _, err := h.svc.TestConnection(testTenantCtx(), &fwv1.TestConnectionRequest{
 		InstanceId: "00000000-0000-0000-0000-000000000000",
 		Connection: &fwv1.ConnectionSpec{Username: "candidate"},
 	}); !errors.Is(err, ErrInvalidArgument) {
@@ -570,7 +570,7 @@ func TestTestConnectionToleratesAPlaceholderInstanceID(t *testing.T) {
 
 func TestDiscoverInstanceCachesItsResult(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	inst := h.instance(t, h.environment(t, "production"), "prod-1")
 
 	h.plugin.discovery = &fwv1.DiscoverResponse{
@@ -630,7 +630,7 @@ func TestPluginFailureIsClassified(t *testing.T) {
 	inst := h.instance(t, h.environment(t, "production"), "prod-1")
 
 	h.plugin.err = fmt.Errorf("discover failed")
-	_, err := h.svc.DiscoverInstance(context.Background(), inst.GetId())
+	_, err := h.svc.DiscoverInstance(testTenantCtx(), inst.GetId())
 	if !errors.Is(err, ErrPluginFailed) {
 		t.Errorf("error = %v, want ErrPluginFailed", err)
 	}
@@ -642,7 +642,7 @@ func TestPluginFailureIsClassified(t *testing.T) {
 
 func TestListInstancesFiltersAndPaginates(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	production := h.environment(t, "production")
 	staging := h.environment(t, "staging")
 
@@ -699,7 +699,7 @@ func TestListInstancesRejectsAMalformedFilter(t *testing.T) {
 
 	// A typo in a query parameter is the caller's mistake and must not surface as a 500 from a
 	// failed UUID cast.
-	if _, _, err := h.svc.ListInstances(context.Background(),
+	if _, _, err := h.svc.ListInstances(testTenantCtx(),
 		ListInstancesFilter{EnvironmentID: "production"}); !errors.Is(err, ErrInvalidArgument) {
 		t.Errorf("error = %v, want ErrInvalidArgument", err)
 	}
@@ -709,7 +709,7 @@ func TestListInstancesRejectsAMalformedFilter(t *testing.T) {
 // project once a second tenant exists.
 func TestListingIsScopedToTheTenant(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h.instance(t, h.environment(t, "production"), "prod-1")
 
 	const otherTenant = "00000000-0000-0000-0000-0000000000ff"
@@ -754,10 +754,10 @@ func TestListingIsScopedToTheTenant(t *testing.T) {
 func TestGetInstanceRejectsAMalformedIdentifier(t *testing.T) {
 	h := newHarness(t)
 
-	if _, err := h.svc.GetInstance(context.Background(), "not-a-uuid"); !errors.Is(err, ErrInvalidArgument) {
+	if _, err := h.svc.GetInstance(testTenantCtx(), "not-a-uuid"); !errors.Is(err, ErrInvalidArgument) {
 		t.Errorf("error = %v, want ErrInvalidArgument", err)
 	}
-	if _, err := h.svc.GetInstance(context.Background(),
+	if _, err := h.svc.GetInstance(testTenantCtx(),
 		"0f2d1c3e-4a5b-4c7d-8e9f-0a1b2c3d4e5f"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("error = %v, want ErrNotFound", err)
 	}
@@ -771,7 +771,7 @@ func TestGetInstanceRejectsAMalformedIdentifier(t *testing.T) {
 // independent of the schema around it. Nothing but this code path will ever clean it up.
 func TestDeleteInstanceRemovesItsCredentials(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	inst := h.instance(t, h.environment(t, "production"), "prod-1")
 
 	var secretName string
@@ -813,7 +813,7 @@ func TestDeleteInstanceRemovesItsCredentials(t *testing.T) {
 func TestDeleteMissingInstance(t *testing.T) {
 	h := newHarness(t)
 
-	if err := h.svc.DeleteInstance(context.Background(),
+	if err := h.svc.DeleteInstance(testTenantCtx(),
 		"0f2d1c3e-4a5b-4c7d-8e9f-0a1b2c3d4e5f", false); !errors.Is(err, ErrNotFound) {
 		t.Errorf("error = %v, want ErrNotFound", err)
 	}

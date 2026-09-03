@@ -78,7 +78,7 @@ func (h *harness) waitForVerification(t *testing.T, verificationID string) *fwv1
 
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		v, err := h.svc.GetVerification(context.Background(), verificationID)
+		v, err := h.svc.GetVerification(testTenantCtx(), verificationID)
 		if err != nil {
 			t.Fatalf("GetVerification: %v", err)
 		}
@@ -95,7 +95,7 @@ func (h *harness) waitForVerification(t *testing.T, verificationID string) *fwv1
 // sandbox, compared against its manifest, and written down as proven.
 func TestRunVerificationRecordsAVerifiedBackup(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	backupID := seedBackup(t, ctx, h, nil)
 	h.plugin.verifyResult = &fwv1.VerifyRestoreResult{
@@ -189,7 +189,7 @@ func TestRunVerificationRecordsAVerifiedBackup(t *testing.T) {
 // a backup that is missing, and the per-table numbers are the only actionable part.
 func TestAFailedVerificationIsRecordedWithItsDiscrepancies(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	backupID := seedBackup(t, ctx, h, nil)
 	h.plugin.verifyResult = &fwv1.VerifyRestoreResult{
@@ -253,7 +253,7 @@ func TestAFailedVerificationIsRecordedWithItsDiscrepancies(t *testing.T) {
 // machinery trouble.
 func TestACorruptArtifactFailsRatherThanBeingInconclusive(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	backupID := seedBackup(t, ctx, h, nil)
 	h.plugin.restoreError = sdkArtifactCorrupt("the artifact does not match its checksum")
@@ -307,7 +307,7 @@ func TestInfrastructureFailuresAreInconclusive(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
-			ctx := context.Background()
+			ctx := testTenantCtx()
 			backupID := seedBackup(t, ctx, h, nil)
 			tc.arrange(h)
 
@@ -333,7 +333,7 @@ func TestInfrastructureFailuresAreInconclusive(t *testing.T) {
 // sandbox at all.
 func TestAManifestlessBackupIsInconclusiveWithoutASandbox(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	backupID := seedBackup(t, ctx, h, func(b *seededBackup) { b.manifest = "{}" })
 
@@ -355,7 +355,7 @@ func TestAManifestlessBackupIsInconclusiveWithoutASandbox(t *testing.T) {
 // any row exists.
 func TestVerificationRefusesABackupItCannotProve(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	tests := []struct {
 		name    string
@@ -397,7 +397,7 @@ func TestVerificationRefusesABackupItCannotProve(t *testing.T) {
 // backup that succeeds is followed by its own proof, as a separate job with its own row.
 func TestVerifyOnCompletionChainsAVerification(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	h.plugin.payload = []byte(strings.Repeat("verified-artifact-bytes ", 1024))
 	h.plugin.manifest = &fwv1.SourceManifest{

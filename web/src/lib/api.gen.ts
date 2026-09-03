@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/v1/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ListAuditLog reads the append-only record of who did what. It is the operational surface of
+         *      the audit log, which is otherwise only visible by querying the database directly.
+         */
+        get: operations["IdentityService_ListAuditLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backup-adherence": {
         parameters: {
             query?: never;
@@ -309,6 +329,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GetMe reports the calling principal and the roles it holds. It is the one authenticated RPC
+         *      that never fails on authorization: any principal may ask who it is.
+         */
+        get: operations["IdentityService_GetMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plugins": {
         parameters: {
             query?: never;
@@ -382,6 +422,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["IdentityService_ListTokens"];
+        put?: never;
+        /**
+         * @description CreateToken mints an API token for a principal, creating the user and the role grant if they
+         *      do not exist yet. The secret is returned once and never again: only its hash is stored.
+         */
+        post: operations["IdentityService_CreateToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tokens/{token_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description RevokeToken stops a token working. The row is kept so the audit log's references resolve. */
+        delete: operations["IdentityService_RevokeToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/verifications/{verification_id}": {
         parameters: {
             query?: never;
@@ -418,6 +495,49 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description ApiToken is a credential's record. The secret itself appears exactly once, in
+         *      CreateTokenResponse, and is stored only as a hash.
+         */
+        ApiToken: {
+            id?: string;
+            user_id?: string;
+            description?: string;
+            created_by?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            expires_at?: string;
+            /** Format: date-time */
+            last_used_at?: string;
+            /** Format: date-time */
+            revoked_at?: string;
+            /** @description The user's grants, so `token list` can answer "what may this credential do". */
+            grants?: components["schemas"]["RoleGrant"][];
+            display_name?: string;
+            email?: string;
+        };
+        /**
+         * @description AuditEntry is one row of the append-only record. `actor` is text beside `user_id` so the record
+         *      survives the user being deleted.
+         */
+        AuditEntry: {
+            id?: string;
+            actor?: string;
+            user_id?: string;
+            action?: string;
+            resource_type?: string;
+            resource_id?: string;
+            /** @description Never contains a credential. Assembled from an allow-list per action, never from the request. */
+            details?: {
+                [key: string]: string;
+            };
+            source_ip?: string;
+            request_id?: string;
+            succeeded?: boolean;
+            /** Format: date-time */
+            occurred_at?: string;
+        };
         Backup: {
             id?: string;
             tenant_id?: string;
@@ -549,6 +669,21 @@ export interface components {
              */
             last_verification_status?: "VERIFICATION_STATUS_UNSPECIFIED" | "VERIFICATION_STATUS_VERIFIED" | "VERIFICATION_STATUS_FAILED" | "VERIFICATION_STATUS_INCONCLUSIVE";
             last_backup_id?: string;
+        };
+        /** @description Caller is who is making this request. */
+        Caller: {
+            /**
+             * Format: enum
+             * @enum {string}
+             */
+            kind?: "CALLER_KIND_UNSPECIFIED" | "CALLER_KIND_USER" | "CALLER_KIND_SYSTEM" | "CALLER_KIND_BOOTSTRAP";
+            /** @description Empty for system and bootstrap callers, which have no row in `users`. */
+            user_id?: string;
+            /** @description The name that appears in audit_log.actor. Stable, and never a credential. */
+            actor?: string;
+            display_name?: string;
+            email?: string;
+            tenant_id?: string;
         };
         /**
          * @description Capabilities is the typed feature matrix that core and the UI branch on. Declaring a capability
@@ -735,6 +870,27 @@ export interface components {
         CreateScheduleResponse: {
             schedule?: components["schemas"]["Schedule"];
         };
+        CreateTokenRequest: {
+            /**
+             * @description Identifies the user this token belongs to. Created on first use, so issuing a token to a new
+             *      colleague is one command rather than two.
+             */
+            email?: string;
+            display_name?: string;
+            /** @description One of the seeded roles: viewer, operator, dba, admin. */
+            role?: string;
+            /** @description The scope of the granted role. At most one may be set; neither means the whole tenant. */
+            environment_id?: string;
+            instance_id?: string;
+            description?: string;
+            /** @description Optional lifetime. Zero means the token does not expire on its own. */
+            ttl?: string;
+        };
+        CreateTokenResponse: {
+            token?: components["schemas"]["ApiToken"];
+            /** @description The only time the secret is ever returned. Storing it is the caller's problem from here. */
+            secret?: string;
+        };
         DatabaseInfo: {
             name?: string;
             size_bytes?: string;
@@ -798,6 +954,15 @@ export interface components {
             server?: components["schemas"]["ServerInfo"];
             databases?: components["schemas"]["DatabaseInfo"][];
             topology?: components["schemas"]["Topology"];
+        };
+        GetMeResponse: {
+            caller?: components["schemas"]["Caller"];
+            grants?: components["schemas"]["RoleGrant"][];
+            /**
+             * @description The highest role this caller holds anywhere, which is what a UI renders beside a name. It is
+             *      not permission to do anything in particular: scope decides that, per request.
+             */
+            highest_role?: string;
         };
         GetPITRWindowResponse: {
             window?: components["schemas"]["PITRWindow"];
@@ -961,6 +1126,10 @@ export interface components {
             /** Format: date-time */
             created_at?: string;
         };
+        ListAuditLogResponse: {
+            entries?: components["schemas"]["AuditEntry"][];
+            next_page_token?: string;
+        };
         ListBackupsResponse: {
             backups?: components["schemas"]["Backup"][];
             next_page_token?: string;
@@ -993,6 +1162,9 @@ export interface components {
         };
         ListSchedulesResponse: {
             schedules?: components["schemas"]["Schedule"][];
+        };
+        ListTokensResponse: {
+            tokens?: components["schemas"]["ApiToken"][];
         };
         ManifestEntry: {
             database?: string;
@@ -1282,6 +1454,18 @@ export interface components {
             /** Format: int32 */
             max_per_sweep?: number;
         };
+        RevokeTokenResponse: Record<string, never>;
+        /**
+         * @description RoleGrant binds a caller to a role within a scope. Exactly one of environment_id and instance_id
+         *      is set, or neither, which means the grant covers the whole tenant.
+         */
+        RoleGrant: {
+            role?: string;
+            /** Format: int32 */
+            rank?: number;
+            environment_id?: string;
+            instance_id?: string;
+        };
         RunBackupRequest: {
             instance_id?: string;
             /** @description Empty selects the plugin's default method. */
@@ -1535,6 +1719,44 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    IdentityService_ListAuditLog: {
+        parameters: {
+            query?: {
+                actor?: string;
+                action?: string;
+                resource_type?: string;
+                resource_id?: string;
+                /** @description Return only refusals, which is the query an investigation starts with. */
+                failures_only?: boolean;
+                page_size?: number;
+                page_token?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListAuditLogResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
     BackupService_GetBackupAdherence: {
         parameters: {
             query?: {
@@ -2225,6 +2447,35 @@ export interface operations {
             };
         };
     };
+    IdentityService_GetMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GetMeResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
     SystemService_ListPlugins: {
         parameters: {
             query?: never;
@@ -2369,6 +2620,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SetScheduleEnabledResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    IdentityService_ListTokens: {
+        parameters: {
+            query?: {
+                /** @description Include tokens that have been revoked or have expired. */
+                include_inactive?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListTokensResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    IdentityService_CreateToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateTokenResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    IdentityService_RevokeToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeTokenResponse"];
                 };
             };
             /** @description Default error response */

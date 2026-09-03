@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/danmorcov88/fleetward/internal/config"
+	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 )
 
@@ -115,12 +116,11 @@ type DiscoveryJob struct {
 // It owns no timers that decide anything. The tick is a dumb poll; every decision is a row, which
 // is what lets a restart resume mid-stream and two replicas share one estate (ADR-0013).
 type Scheduler struct {
-	pool    *pgxpool.Pool
-	runner  Runner
-	log     *slog.Logger
-	cfg     config.SchedulerConfig
-	owner   string
-	tenetID string
+	pool   *pgxpool.Pool
+	runner Runner
+	log    *slog.Logger
+	cfg    config.SchedulerConfig
+	owner  string
 
 	// retention paces the one estate-wide thing on the tick that is not a job. Only Enabled and
 	// Interval are read here; what a sweep may actually delete is the runner's business, and the two
@@ -165,7 +165,6 @@ func New(pool *pgxpool.Pool, runner Runner, cfg config.SchedulerConfig, retentio
 		cfg:       cfg,
 		owner:     owner,
 		retention: retention,
-		tenetID:   metadb.DefaultTenantID,
 		slots:     make(chan struct{}, slots),
 		stopped:   make(chan struct{}),
 	}
@@ -179,7 +178,18 @@ func (s *Scheduler) Start(ctx context.Context) {
 		return
 	}
 
-	loopCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	// Everything the scheduler does from here on carries a system principal. Two things follow
+	// from it, and both are the point (ADR-0036).
+	//
+	// The tenant comes from a principal now rather than from a constant, so a tick that carried no
+	// principal would fail its first query instead of quietly reading the default tenant — which
+	// is exactly the failure mode the refactor in this slice was meant to make impossible.
+	//
+	// And every row the scheduler writes to the audit log names `system:scheduler` rather than
+	// nobody. A system principal has no credential and is constructed here, in-process, so nothing
+	// that parses an HTTP request can ever produce one.
+	loopCtx, cancel := context.WithCancel(
+		authn.WithPrincipal(context.WithoutCancel(ctx), authn.System("scheduler", metadb.DefaultTenantID)))
 	s.cancel = cancel
 	s.lastTick.Store(time.Now().UnixNano())
 
@@ -271,13 +281,18 @@ func (s *Scheduler) maybeSweepRetention(ctx context.Context) {
 	}
 	s.lastSweep.Store(time.Now().UnixNano())
 
+	// The sweep is the scheduler's, but it is not the scheduler. "Who deleted this artifact" has to
+	// answer `system:retention` rather than `system:scheduler`, because those are different facts
+	// and an audit log that spells them the same way cannot tell them apart afterwards.
+	sweepCtx := authn.WithPrincipal(ctx, authn.System("retention", authn.Tenant(ctx)))
+
 	s.running.Add(1)
 	go func() {
 		defer s.running.Done()
 		defer s.sweeping.Store(false)
 
 		started := time.Now()
-		outcome, err := s.runner.SweepRetention(ctx)
+		outcome, err := s.runner.SweepRetention(sweepCtx)
 		if err != nil {
 			s.log.ErrorContext(ctx, "the retention sweep did not finish",
 				slog.String("error", err.Error()),

@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -176,12 +175,12 @@ func TestHealthCheckReportsAStalledLoop(t *testing.T) {
 	s := New(nil, nil, cfg, config.RetentionConfig{}, discardLogger())
 
 	s.lastTick.Store(time.Now().UnixNano())
-	if err := s.HealthCheck(context.Background()); err != nil {
+	if err := s.HealthCheck(testTenantCtx()); err != nil {
 		t.Fatalf("a scheduler that has just ticked is healthy; got %v", err)
 	}
 
 	s.lastTick.Store(time.Now().Add(-5 * time.Minute).UnixNano())
-	err := s.HealthCheck(context.Background())
+	err := s.HealthCheck(testTenantCtx())
 	if err == nil {
 		t.Fatal("a scheduler that has not ticked in five minutes reported itself healthy")
 	}
@@ -192,7 +191,7 @@ func TestHealthCheckReportsAStalledLoop(t *testing.T) {
 	// A scheduler that was deliberately switched off is not unhealthy, it is off.
 	off := New(nil, nil, config.SchedulerConfig{Enabled: false}, config.RetentionConfig{}, discardLogger())
 	off.lastTick.Store(time.Now().Add(-24 * time.Hour).UnixNano())
-	if err := off.HealthCheck(context.Background()); err != nil {
+	if err := off.HealthCheck(testTenantCtx()); err != nil {
 		t.Fatalf("a disabled scheduler must not degrade readiness; got %v", err)
 	}
 }
@@ -203,7 +202,7 @@ func TestCloseIsSafeWhenDisabled(t *testing.T) {
 	t.Parallel()
 
 	s := New(nil, nil, config.SchedulerConfig{Enabled: false}, config.RetentionConfig{}, discardLogger())
-	s.Start(context.Background())
+	s.Start(testTenantCtx())
 
 	done := make(chan error, 1)
 	go func() { done <- s.Close() }()

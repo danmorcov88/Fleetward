@@ -213,11 +213,11 @@ func TestValidateCreateInstance(t *testing.T) {
 		},
 	}
 
-	svc := &Service{plugins: &fakeRouter{engines: []string{"postgresql"}}, tenantID: "tenant"}
+	svc := &Service{plugins: &fakeRouter{engines: []string{"postgresql"}}}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			inst, _, err := svc.validateCreateInstance(tt.input)
+			inst, _, err := svc.validateCreateInstance(testTenantCtx(), tt.input)
 
 			if tt.wantErr == nil {
 				if err != nil {
@@ -244,9 +244,9 @@ func TestValidateCreateInstance(t *testing.T) {
 
 // The engine type is a routing key, so it is normalized once here rather than at every comparison.
 func TestValidateCreateInstanceNormalizesInput(t *testing.T) {
-	svc := &Service{plugins: &fakeRouter{engines: []string{"postgresql"}}, tenantID: "tenant"}
+	svc := &Service{plugins: &fakeRouter{engines: []string{"postgresql"}}}
 
-	inst, _, err := svc.validateCreateInstance(CreateInstanceInput{
+	inst, _, err := svc.validateCreateInstance(testTenantCtx(), CreateInstanceInput{
 		EnvironmentID: "0f2d1c3e-4a5b-4c7d-8e9f-0a1b2c3d4e5f",
 		Name:          "  prod-1  ",
 		EngineType:    "  PostgreSQL  ",

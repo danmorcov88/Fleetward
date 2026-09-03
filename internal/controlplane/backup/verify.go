@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/controlplane/sandbox"
 	"github.com/danmorcov88/fleetward/internal/plugin/sdk"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
@@ -101,7 +102,7 @@ func (s *Service) RunVerification(ctx context.Context, in RunVerificationInput) 
 		defer s.running.Done()
 		// Discarded because verify has already recorded and logged the outcome, and RunVerification
 		// returned as soon as the rows existed.
-		_ = s.verify(s.runCtx, client, caps, verifyRequest{
+		_ = s.verify(s.background(ctx), client, caps, verifyRequest{
 			verificationID: verificationID,
 			jobID:          jobID,
 			target:         target,
@@ -225,7 +226,7 @@ func (s *Service) loadVerificationTarget(ctx context.Context, backupID string) (
 		SELECT instance_id, method_id, state, origin, bucket, object_key, size_bytes,
 		       checksum_algorithm, checksum_value, engine_version, manifest, metadata
 		FROM backups
-		WHERE id = $1 AND tenant_id = $2`, id, s.tenantID).
+		WHERE id = $1 AND tenant_id = $2`, id, authn.Tenant(ctx)).
 		Scan(&out.instanceID, &out.methodID, &state, &origin, &out.bucket, &out.objectKey, &out.sizeBytes,
 			&checksumAlgorithm, &checksumValue, &out.engineVersion, &manifestRaw, &metadataRaw)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -626,7 +627,7 @@ func (s *Service) createVerificationRows(ctx context.Context, target verificatio
 		INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at, attempts)
 		VALUES ($1, $2, 'verify', 'running', now(), 1)
 		RETURNING id`,
-		s.tenantID, target.instanceID).Scan(&jobID)
+		authn.Tenant(ctx), target.instanceID).Scan(&jobID)
 	if metadb.IsUniqueViolation(err) {
 		return "", "", fmt.Errorf("%w: a verification is already running for %s", ErrAlreadyRunning, target.instanceID)
 	}
@@ -638,7 +639,7 @@ func (s *Service) createVerificationRows(ctx context.Context, target verificatio
 		INSERT INTO verifications (tenant_id, backup_id, job_id, status, sandbox_image, started_at)
 		VALUES ($1, $2, $3, 'running', $4, now())
 		RETURNING id`,
-		s.tenantID, target.backupID, jobID, image).Scan(&verificationID)
+		authn.Tenant(ctx), target.backupID, jobID, image).Scan(&verificationID)
 	if err != nil {
 		return "", "", fmt.Errorf("verify: create verification: %w", err)
 	}
@@ -660,7 +661,7 @@ func (s *Service) createVerificationRowFor(ctx context.Context, jobID string, ta
 		INSERT INTO verifications (tenant_id, backup_id, job_id, status, sandbox_image, started_at)
 		VALUES ($1, $2, $3, 'running', $4, now())
 		RETURNING id`,
-		s.tenantID, target.backupID, jobID, image).Scan(&verificationID)
+		authn.Tenant(ctx), target.backupID, jobID, image).Scan(&verificationID)
 	if err != nil {
 		return "", fmt.Errorf("verify: create verification: %w", err)
 	}
@@ -696,7 +697,7 @@ func (s *Service) recordVerification(ctx context.Context, req verifyRequest, res
 		    updated_at    = now()
 		WHERE id = $7 AND tenant_id = $8`,
 		verificationStateName(result.status), checks, result.report, result.sandboxID, result.errMsg,
-		elapsed.Milliseconds(), req.verificationID, s.tenantID); err != nil {
+		elapsed.Milliseconds(), req.verificationID, authn.Tenant(ctx)); err != nil {
 		return fmt.Errorf("verify: record outcome: %w", err)
 	}
 
@@ -710,7 +711,7 @@ func (s *Service) recordVerification(ctx context.Context, req verifyRequest, res
 		UPDATE jobs
 		SET state = $1, error_message = $2, finished_at = now(), updated_at = now()
 		WHERE id = $3 AND tenant_id = $4`,
-		jobState, result.errMsg, req.jobID, s.tenantID); err != nil {
+		jobState, result.errMsg, req.jobID, authn.Tenant(ctx)); err != nil {
 		return fmt.Errorf("verify: finish job: %w", err)
 	}
 
@@ -736,7 +737,7 @@ func (s *Service) GetVerification(ctx context.Context, verificationID string) (*
 	err = s.pool.QueryRow(ctx, `
 		SELECT backup_id, status, checks, report, error_message, started_at, completed_at, duration_ms
 		FROM verifications
-		WHERE id = $1 AND tenant_id = $2`, id, s.tenantID).
+		WHERE id = $1 AND tenant_id = $2`, id, authn.Tenant(ctx)).
 		Scan(&out.BackupId, &status, &checksRaw, &out.Report, &out.ErrorMessage,
 			&startedAt, &completedAt, &durationMS)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -776,7 +777,7 @@ func (s *Service) latestVerification(ctx context.Context, backupID string) (*fwv
 		FROM verifications
 		WHERE backup_id = $1 AND tenant_id = $2
 		ORDER BY created_at DESC
-		LIMIT 1`, backupID, s.tenantID).
+		LIMIT 1`, backupID, authn.Tenant(ctx)).
 		Scan(&out.Id, &status, &checksRaw, &out.Report, &out.ErrorMessage,
 			&startedAt, &completedAt, &durationMS)
 	if errors.Is(err, pgx.ErrNoRows) {

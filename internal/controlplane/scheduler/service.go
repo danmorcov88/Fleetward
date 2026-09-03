@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 )
 
@@ -157,7 +158,7 @@ func (s *Service) CreateSchedule(ctx context.Context, in CreateScheduleInput) (*
 		                       retention_days, next_run_at, expected_cron, expected_grace_minutes)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING `+scheduleColumns,
-		s.tenantID, instanceID, kind, in.CronExpression, timezone,
+		authn.Tenant(ctx), instanceID, kind, in.CronExpression, timezone,
 		in.MethodID, options, policy, pct, retention, next, expectedCron, grace)
 	// pgx may surface a constraint violation either here or on the first read, depending on when
 	// the round trip completes, so both are checked. Scheduling against an instance that does not
@@ -194,7 +195,7 @@ func (s *Service) ListSchedules(ctx context.Context, instanceID string) ([]*fwv1
 		}
 		rows, err := s.pool.Query(ctx, `SELECT `+scheduleColumns+`
 			FROM schedules WHERE tenant_id = $1 AND instance_id = $2 ORDER BY created_at`,
-			s.tenantID, id)
+			authn.Tenant(ctx), id)
 		if err != nil {
 			return nil, fmt.Errorf("scheduler: list schedules: %w", err)
 		}
@@ -203,7 +204,7 @@ func (s *Service) ListSchedules(ctx context.Context, instanceID string) ([]*fwv1
 	}
 
 	rows, err := s.pool.Query(ctx, `SELECT `+scheduleColumns+`
-		FROM schedules WHERE tenant_id = $1 ORDER BY created_at`, s.tenantID)
+		FROM schedules WHERE tenant_id = $1 ORDER BY created_at`, authn.Tenant(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("scheduler: list schedules: %w", err)
 	}
@@ -218,7 +219,7 @@ func (s *Service) GetSchedule(ctx context.Context, scheduleID string) (*fwv1.Sch
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `SELECT `+scheduleColumns+`
-		FROM schedules WHERE id = $1 AND tenant_id = $2`, id, s.tenantID)
+		FROM schedules WHERE id = $1 AND tenant_id = $2`, id, authn.Tenant(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("scheduler: get schedule: %w", err)
 	}
@@ -262,7 +263,7 @@ func (s *Service) SetScheduleEnabled(ctx context.Context, scheduleID string, ena
 		UPDATE schedules SET is_enabled = $3, next_run_at = $4, updated_at = now()
 		WHERE id = $1 AND tenant_id = $2
 		RETURNING `+scheduleColumns,
-		current.GetId(), s.tenantID, enabled, next)
+		current.GetId(), authn.Tenant(ctx), enabled, next)
 	if err != nil {
 		return nil, fmt.Errorf("scheduler: set schedule enabled: %w", err)
 	}
@@ -290,7 +291,7 @@ func (s *Service) DeleteSchedule(ctx context.Context, scheduleID string) error {
 		return err
 	}
 	tag, err := s.pool.Exec(ctx,
-		`DELETE FROM schedules WHERE id = $1 AND tenant_id = $2`, id, s.tenantID)
+		`DELETE FROM schedules WHERE id = $1 AND tenant_id = $2`, id, authn.Tenant(ctx))
 	if err != nil {
 		return fmt.Errorf("scheduler: delete schedule: %w", err)
 	}
@@ -355,7 +356,7 @@ func (s *Service) ListJobs(ctx context.Context, f ListJobsFilter) ([]*fwv1.Job, 
 		  AND  ($4::text IS NULL OR state = $4)
 		ORDER  BY created_at DESC
 		LIMIT  $5`,
-		s.tenantID, instanceID, scheduleID, state, limit)
+		authn.Tenant(ctx), instanceID, scheduleID, state, limit)
 	if err != nil {
 		return nil, fmt.Errorf("scheduler: list jobs: %w", err)
 	}
