@@ -159,16 +159,15 @@ func New(pool *pgxpool.Pool, runner Runner, cfg config.SchedulerConfig, retentio
 		slots = 1
 	}
 	return &Scheduler{
-		pool:    pool,
-		runner:  runner,
-		log:     log.With(slog.String("component", "scheduler"), slog.String("lease_owner", owner)),
-		cfg:     cfg,
-		owner:   owner,
-
+		pool:      pool,
+		runner:    runner,
+		log:       log.With(slog.String("component", "scheduler"), slog.String("lease_owner", owner)),
+		cfg:       cfg,
+		owner:     owner,
 		retention: retention,
-		tenetID: metadb.DefaultTenantID,
-		slots:   make(chan struct{}, slots),
-		stopped: make(chan struct{}),
+		tenetID:   metadb.DefaultTenantID,
+		slots:     make(chan struct{}, slots),
+		stopped:   make(chan struct{}),
 	}
 }
 
