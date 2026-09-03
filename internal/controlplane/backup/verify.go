@@ -624,10 +624,10 @@ func (s *Service) createVerificationRows(ctx context.Context, target verificatio
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	err = tx.QueryRow(ctx, `
-		INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at, attempts)
-		VALUES ($1, $2, 'verify', 'running', now(), 1)
+		INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at, attempts, triggered_by)
+		VALUES ($1, $2, 'verify', 'running', now(), 1, $3)
 		RETURNING id`,
-		authn.Tenant(ctx), target.instanceID).Scan(&jobID)
+		authn.Tenant(ctx), target.instanceID, triggeringUser(ctx)).Scan(&jobID)
 	if metadb.IsUniqueViolation(err) {
 		return "", "", fmt.Errorf("%w: a verification is already running for %s", ErrAlreadyRunning, target.instanceID)
 	}
@@ -636,10 +636,11 @@ func (s *Service) createVerificationRows(ctx context.Context, target verificatio
 	}
 
 	err = tx.QueryRow(ctx, `
-		INSERT INTO verifications (tenant_id, backup_id, job_id, status, sandbox_image, started_at)
-		VALUES ($1, $2, $3, 'running', $4, now())
+		INSERT INTO verifications (tenant_id, backup_id, job_id, status, sandbox_image, started_at,
+		                           triggered_by)
+		VALUES ($1, $2, $3, 'running', $4, now(), $5)
 		RETURNING id`,
-		authn.Tenant(ctx), target.backupID, jobID, image).Scan(&verificationID)
+		authn.Tenant(ctx), target.backupID, jobID, image, triggeringUser(ctx)).Scan(&verificationID)
 	if err != nil {
 		return "", "", fmt.Errorf("verify: create verification: %w", err)
 	}
@@ -658,10 +659,11 @@ func (s *Service) createVerificationRows(ctx context.Context, target verificatio
 func (s *Service) createVerificationRowFor(ctx context.Context, jobID string, target verificationTarget, image string) (string, error) {
 	var verificationID string
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO verifications (tenant_id, backup_id, job_id, status, sandbox_image, started_at)
-		VALUES ($1, $2, $3, 'running', $4, now())
+		INSERT INTO verifications (tenant_id, backup_id, job_id, status, sandbox_image, started_at,
+		                           triggered_by)
+		VALUES ($1, $2, $3, 'running', $4, now(), $5)
 		RETURNING id`,
-		authn.Tenant(ctx), target.backupID, jobID, image).Scan(&verificationID)
+		authn.Tenant(ctx), target.backupID, jobID, image, triggeringUser(ctx)).Scan(&verificationID)
 	if err != nil {
 		return "", fmt.Errorf("verify: create verification: %w", err)
 	}

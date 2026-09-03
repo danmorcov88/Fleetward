@@ -158,7 +158,27 @@ type AuthConfig struct {
 	// SkipIssuerVerification tolerates a development IdP whose external and internal issuer URLs
 	// differ, as Dex does in docker-compose.
 	SkipIssuerVerification bool
-	SessionTTL             time.Duration
+	// SessionTTL bounds the cookie the UI holds after exchanging a token for one.
+	SessionTTL time.Duration
+
+	// BootstrapToken is the break-glass credential that gets the first real token out of a fresh
+	// installation. It is configuration and never a database row, so removing the setting removes
+	// the access and leaves nothing behind to find later (ADR-0033). The file form is preferred for
+	// the reason `fleetward-cli keygen` already gives about the master key.
+	BootstrapToken     string
+	BootstrapTokenFile string
+
+	// SessionKey signs the session cookie. When neither form is set the control plane generates one
+	// at startup, which means a restart signs everybody out — the right default for a single node,
+	// and the reason a multi-replica installation configures it.
+	SessionKey     string
+	SessionKeyFile string
+
+	// PrincipalCacheTTL bounds how long a verified credential is reused without going back to the
+	// database, and therefore how long a revoked one keeps working on a replica that did not
+	// perform the revocation. Deliberately short rather than convenient: the alternative is a join
+	// across three tables on every request of a dashboard that refetches every thirty seconds.
+	PrincipalCacheTTL time.Duration
 }
 
 // TelemetryConfig configures Fleetward's own observability (ADR-0011).
@@ -313,6 +333,11 @@ func Load() (*Config, error) {
 			GroupsClaim:            env("AUTH_GROUPS_CLAIM", "groups"),
 			SkipIssuerVerification: envBool("AUTH_SKIP_ISSUER_VERIFICATION", false),
 			SessionTTL:             envDuration("AUTH_SESSION_TTL", 12*time.Hour),
+			BootstrapToken:         env("AUTH_BOOTSTRAP_TOKEN", ""),
+			BootstrapTokenFile:     env("AUTH_BOOTSTRAP_TOKEN_FILE", ""),
+			SessionKey:             env("AUTH_SESSION_KEY", ""),
+			SessionKeyFile:         env("AUTH_SESSION_KEY_FILE", ""),
+			PrincipalCacheTTL:      envDuration("AUTH_PRINCIPAL_CACHE_TTL", 15*time.Second),
 		},
 		Telemetry: TelemetryConfig{
 			Enabled:      envBool("TELEMETRY_ENABLED", false),
@@ -444,8 +469,24 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if c.Auth.Enabled && c.Auth.IssuerURL == "" {
-		errs = append(errs, fmt.Errorf("%sAUTH_ISSUER_URL: required when authentication is enabled", envPrefix))
+	// AUTH_ISSUER_URL is required only once there is an identity provider to talk to. Until B10
+	// swaps OIDC in behind the spine, authentication is bearer tokens and sessions, and demanding an
+	// issuer URL for those would be demanding configuration for a component that does not run.
+	if c.Auth.Enabled && c.Auth.IssuerURL == "" && c.Environment == EnvProduction {
+		errs = append(errs, fmt.Errorf(
+			"%sAUTH_ISSUER_URL: required in production; until OIDC lands it may be a placeholder, "+
+				"but an installation with no configured issuer has nothing to point at", envPrefix))
+	}
+
+	if c.Auth.PrincipalCacheTTL < 0 {
+		errs = append(errs, fmt.Errorf("%sAUTH_PRINCIPAL_CACHE_TTL: cannot be negative", envPrefix))
+	}
+	// A cache longer than the session is a revoked credential that outlives the session it could
+	// have been used to create, which is the wrong way round.
+	if c.Auth.PrincipalCacheTTL > 5*time.Minute {
+		errs = append(errs, fmt.Errorf(
+			"%sAUTH_PRINCIPAL_CACHE_TTL: %s is longer than five minutes, which is how long a "+
+				"revoked credential would keep working", envPrefix, c.Auth.PrincipalCacheTTL))
 	}
 
 	return errors.Join(errs...)
@@ -487,6 +528,8 @@ func (c *Config) LogValue() slog.Value {
 		slog.String("plugins_dir", c.Plugins.Dir),
 		slog.Bool("auth_enabled", c.Auth.Enabled),
 		slog.String("auth_issuer_url", c.Auth.IssuerURL),
+		// Whether a break-glass credential is configured, never what it is.
+		slog.Bool("auth_bootstrap_token_set", c.Auth.BootstrapToken != "" || c.Auth.BootstrapTokenFile != ""),
 		slog.Bool("scheduler_enabled", c.Scheduler.Enabled),
 		slog.Bool("retention_enabled", c.Retention.Enabled),
 		slog.String("sandbox_provider", c.Sandbox.Provider),

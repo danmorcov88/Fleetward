@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/danmorcov88/fleetward/internal/config"
+	"github.com/danmorcov88/fleetward/internal/controlplane/audit"
+	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/telemetry"
 	"github.com/danmorcov88/fleetward/internal/version"
 )
@@ -24,10 +26,14 @@ type Server struct {
 	health *Health
 	mux    *http.ServeMux
 	http   *http.Server
+	// auth resolves the caller of every request. Nil until B6's spine is wired, which is the state
+	// the tests that predate it run in; a nil authenticator makes every request anonymous, and an
+	// anonymous request is refused by the guard rather than served.
+	auth authn.Authenticator
 }
 
 // NewServer builds the HTTP server.
-func NewServer(cfg config.ServerConfig, log *slog.Logger, health *Health) (*Server, error) {
+func NewServer(cfg config.ServerConfig, log *slog.Logger, health *Health, auth authn.Authenticator) (*Server, error) {
 	mux := http.NewServeMux()
 
 	s := &Server{
@@ -35,6 +41,7 @@ func NewServer(cfg config.ServerConfig, log *slog.Logger, health *Health) (*Serv
 		log:    log.With(slog.String("component", "http")),
 		health: health,
 		mux:    mux,
+		auth:   auth,
 	}
 
 	s.routes()
@@ -145,8 +152,17 @@ func buildTLSConfig(cfg config.ServerConfig) (*tls.Config, error) {
 	return tlsCfg, nil
 }
 
-// middleware wraps the router with request identification, structured access logging, and panic
-// recovery.
+// middleware wraps the router with request identification, authentication, structured access
+// logging, and panic recovery.
+//
+// Authentication happens here and refuses nothing. It resolves the caller, puts it on the context,
+// and lets the request through; the guard in internal/controlplane/authz is what answers 401 and
+// 403, so every refusal is rendered in the same problem-details shape as every other error and
+// `/healthz` and `/readyz` — which this middleware also wraps — keep working without a credential.
+//
+// Nothing about a credential reaches this function's log line. Tokens are read from the
+// Authorization header and the session cookie only, never from a query string, precisely so that
+// the method and path recorded below cannot carry one (ADR-0033).
 func (s *Server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -158,6 +174,14 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Request-Id", requestID)
 
 		ctx := telemetry.WithRequestID(r.Context(), requestID)
+
+		principal := s.authenticate(ctx, r)
+		ctx = authn.WithPrincipal(ctx, principal)
+		ctx = telemetry.WithPrincipal(ctx, principal.Actor)
+		ctx = audit.WithRequestInfo(ctx, audit.RequestInfo{
+			SourceIP:  clientIP(r),
+			UserAgent: r.UserAgent(),
+		})
 		r = r.WithContext(ctx)
 
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
@@ -189,7 +213,11 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 				slog.String("path", r.URL.Path),
 				slog.Int("status", recorder.status),
 				slog.Duration("duration", time.Since(start)),
-				slog.String("remote_addr", clientIP(r)))
+				slog.String("remote_addr", clientIP(r)),
+				// The actor, never the credential. This is also where an unauthenticated request
+				// is recorded: a 401 writes no audit row on purpose, and this line is what replaces
+				// one (ADR-0035).
+				slog.String("actor", principal.Actor))
 		}()
 
 		next.ServeHTTP(recorder, r)
@@ -244,6 +272,30 @@ func writeProblem(w http.ResponseWriter, status int, title, detail, requestID st
 		Detail:    detail,
 		RequestID: requestID,
 	})
+}
+
+// authenticate resolves the caller, or reports nobody.
+//
+// A credential that is presented and rejected produces an anonymous principal rather than an error
+// here, and the guard then answers 401. That keeps one place — the guard — deciding what a client
+// is told, and it keeps `/readyz` answering for a monitoring system that sends a stale token.
+func (s *Server) authenticate(ctx context.Context, r *http.Request) authn.Principal {
+	if s.auth == nil {
+		return authn.Anonymous()
+	}
+	p, err := s.auth.Authenticate(ctx, r)
+	if err != nil {
+		if !errors.Is(err, authn.ErrNoCredential) {
+			// Why a credential was refused is the server's business and not the client's: telling a
+			// caller that a token was "expired" rather than "unknown" confirms it was once real.
+			s.log.WarnContext(ctx, "rejected a credential",
+				slog.String("path", r.URL.Path),
+				slog.String("remote_addr", clientIP(r)),
+				slog.String("error", err.Error()))
+		}
+		return authn.Anonymous()
+	}
+	return p
 }
 
 func clientIP(r *http.Request) string {

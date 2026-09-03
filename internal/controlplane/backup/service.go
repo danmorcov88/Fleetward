@@ -687,15 +687,20 @@ func (s *Service) createRows(ctx context.Context, instanceID, methodID string, i
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Who asked. NULL when nobody did — a scheduled run has no human behind it, which is exactly
+	// what these columns were made nullable for. The audit log carries the same fact under
+	// `system:scheduler`; this is the copy that survives on the row itself (ADR-0036).
+	triggeredBy := triggeringUser(ctx)
+
 	jobID = in.JobID
 	if jobID == "" {
 		// attempts starts at 1 because this job is created already running: nothing will claim it,
 		// so the insert is the only place its one start can be counted.
 		err = tx.QueryRow(ctx, `
-			INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at, attempts)
-			VALUES ($1, $2, 'backup', 'running', now(), 1)
+			INSERT INTO jobs (tenant_id, instance_id, kind, state, started_at, attempts, triggered_by)
+			VALUES ($1, $2, 'backup', 'running', now(), 1, $3)
 			RETURNING id`,
-			authn.Tenant(ctx), instanceID).Scan(&jobID)
+			authn.Tenant(ctx), instanceID, triggeredBy).Scan(&jobID)
 		if metadb.IsUniqueViolation(err) {
 			return "", "", fmt.Errorf("%w: %s", ErrAlreadyRunning, instanceID)
 		}
@@ -713,10 +718,11 @@ func (s *Service) createRows(ctx context.Context, instanceID, methodID string, i
 
 	err = tx.QueryRow(ctx, `
 		INSERT INTO backups (tenant_id, instance_id, job_id, schedule_id, method_id, state,
-		                     started_at, triggered_manually)
-		VALUES ($1, $2, $3, $4, $5, 'running', now(), $6)
+		                     started_at, triggered_manually, triggered_by)
+		VALUES ($1, $2, $3, $4, $5, 'running', now(), $6, $7)
 		RETURNING id`,
-		authn.Tenant(ctx), instanceID, jobID, scheduleID, methodID, in.TriggeredManually).Scan(&backupID)
+		authn.Tenant(ctx), instanceID, jobID, scheduleID, methodID, in.TriggeredManually,
+		triggeredBy).Scan(&backupID)
 	if err != nil {
 		return "", "", fmt.Errorf("backup: create backup: %w", err)
 	}
@@ -1046,6 +1052,19 @@ func (s *Service) scanBackup(ctx context.Context, row scanner, manifestRaw *[]by
 // -----------------------------------------------------------------------------------------------
 
 // artifactKeyFor builds the object key for one backup's artifact.
+// triggeringUser is the id to record in a `triggered_by` column, or NULL.
+//
+// NULL for a scheduled run, for the retention sweep, and for anything else Fleetward does on its
+// own. Those columns have been nullable since migration 000001 for exactly that case, and filling
+// them with a synthetic user would have meant inventing a row that could be granted roles — which
+// is the thing ADR-0036 declines to do.
+func triggeringUser(ctx context.Context) any {
+	if p, ok := authn.From(ctx); ok && p.UserID != "" {
+		return p.UserID
+	}
+	return nil
+}
+
 func artifactKeyFor(tenantID, instanceID, backupID string) string {
 	return objstore.ArtifactKey(tenantID, instanceID, backupID, artifactFilename)
 }
