@@ -39,15 +39,29 @@ than left for you to discover:
 - **The dev stack is not production configuration.** `docker-compose.yml` ships development
   credentials for Postgres, MinIO, and Dex, and runs without TLS. It is for local evaluation only.
   Never expose it to a network you do not fully control.
-- **There is no authentication or authorization yet.** Every route under `/api/v1/` is open to
-  anyone who can reach the port, including the routes that add an instance and trigger a backup.
-  `FLEETWARD_AUTH_*` is parsed and validated but nothing consumes it, and the tenant is a fixed
-  constant, so setting `FLEETWARD_ENV=production` demands `AUTH_ENABLED=true` while enforcing
-  nothing. **Do not expose Fleetward to any network you do not fully control.** Server-side
-  enforcement — a principal per request, role and scope checked at every method, and an audit
-  record per mutation — is the next security slice on the [roadmap](../docs/dev/STATUS.md); when it
-  lands, an endpoint that relies on the UI to restrict access becomes a vulnerability worth
-  reporting.
+- **Authorization is enforced server-side, on every route, and an endpoint that relies on the UI to
+  restrict access is a vulnerability worth reporting.** Every route under `/api/v1/` requires a
+  credential and a role within the scope it acts on; `/healthz`, `/readyz`, `GET /api/v1/version`
+  and `POST /api/v1/sessions` are the deliberate exceptions. A test enumerates every method of every
+  generated service interface by reflection and asserts each one refuses an unauthenticated caller,
+  so the claim in this paragraph is checked by CI rather than written from the architecture — which
+  is what a previous version of this file got wrong
+  ([ADR-0024](../docs/adr/0024-production-readiness-is-a-slice-property.md)).
+  The limits are documented in
+  [`docs/ops/authorization.md`](../docs/ops/authorization.md) and the ones worth knowing here are:
+  most listings need a tenant-wide grant or an explicit instance filter, since only the instance and
+  adherence listings filter their rows per caller; a session cookie outlives the revocation of the
+  token it was minted from until it expires; a revoked token keeps working for up to
+  `AUTH_PRINCIPAL_CACHE_TTL` on a replica that did not revoke it; and there is no rate limiting.
+- **Authentication is API tokens and sessions, not yet an identity provider.** OIDC is a later
+  slice. Until it lands, an administrator issues bearer tokens and the UI exchanges one for an
+  `HttpOnly` session cookie. `FLEETWARD_AUTH_BOOTSTRAP_TOKEN` is a break-glass credential that
+  grants tenant-wide administrator; it is configuration and never a database row, and an
+  installation is expected to remove it after issuing a real token
+  ([ADR-0033](../docs/adr/0033-the-bootstrap-credential-is-configuration-and-never-a-row.md)).
+- **`FLEETWARD_AUTH_ENABLED=false` disables authorization entirely** and makes every request a
+  tenant-wide administrator. The control plane refuses to start with it in production and logs a
+  warning everywhere else. It exists for development, and the development stack does not use it.
 - **The control plane needs the Docker socket, and that is root-equivalent on the host.** Backup
   verification provisions a throwaway container of the matching engine, so `docker-compose.yml`
   mounts `/var/run/docker.sock` into the control plane. Anything able to reach the control plane's

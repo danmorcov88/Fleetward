@@ -12,6 +12,8 @@ import (
 	"time"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/controlplane/audit"
+	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 	"github.com/danmorcov88/fleetward/internal/storage/objstore"
 )
@@ -36,7 +38,7 @@ import (
 //	the sweep declines it — even offered an expiry that ran out a year ago;
 //	the database refuses the transition outright — even when the UPDATE is written by hand.
 func TestRetentionNeverTouchesAnObservedBackup(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	longExpired := time.Now().Add(-365 * 24 * time.Hour)
@@ -106,7 +108,7 @@ func TestRetentionNeverTouchesAnObservedBackup(t *testing.T) {
 // carries, and every manual one, so it is the single property that makes upgrading to this version
 // delete nothing at all (ADR-0031).
 func TestABackupWithNoExpiryIsNeverDeleted(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	ancient := time.Now().Add(-5 * 365 * 24 * time.Hour)
@@ -146,7 +148,7 @@ func TestABackupWithNoExpiryIsNeverDeleted(t *testing.T) {
 // row still names where the artifact was. The last one is the audit record — "what once existed" —
 // and is why retention never issues a DELETE.
 func TestAnOutlivedBackupLosesItsBytesAndKeepsItsRow(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	key := "tenants/t/instances/i/backups/outlived/artifact"
@@ -213,7 +215,7 @@ func TestAnOutlivedBackupLosesItsBytesAndKeepsItsRow(t *testing.T) {
 // all of them and leaves a production server with nothing — which is what a correct reading of
 // "delete anything older than 30 days" actually does (ADR-0032).
 func TestTheFloorKeepsTheLastSuccessfulBackupOfAnInstance(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	var newest string
@@ -248,7 +250,7 @@ func TestTheFloorKeepsTheLastSuccessfulBackupOfAnInstance(t *testing.T) {
 // one keeps the newest backup — which is known to be unrestorable. Rule two keeps the last one that
 // was actually proven good, which is the only artifact on this server worth anything.
 func TestTheFloorKeepsTheLastBackupProvenRestorable(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	past := func(days int) time.Time { return time.Now().Add(-time.Duration(days) * 24 * time.Hour) }
@@ -291,7 +293,7 @@ func TestTheFloorKeepsTheLastBackupProvenRestorable(t *testing.T) {
 
 // TestTheFloorWidensWithMinKeep. One knob, and the sweep honours it.
 func TestTheFloorWidensWithMinKeep(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	for i := range 5 {
@@ -317,7 +319,7 @@ func TestTheFloorWidensWithMinKeep(t *testing.T) {
 // TestTheFloorIsPerInstance. One instance's healthy backup history must not make another instance's
 // last backup deletable.
 func TestTheFloorIsPerInstance(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	second := h.seedSecondInstance(t, ctx, "prod-2")
@@ -356,7 +358,7 @@ func TestTheFloorIsPerInstance(t *testing.T) {
 // before it has a verifications row — so checking only the latter leaves the window open for
 // exactly as long as the job sits pending.
 func TestABackupBeingVerifiedIsNotDeletedUnderneathIt(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	past := time.Now().Add(-40 * 24 * time.Hour)
@@ -435,7 +437,7 @@ func TestABackupBeingVerifiedIsNotDeletedUnderneathIt(t *testing.T) {
 // The interruption is simulated by writing the state the crash would have left, which is the same
 // row a killed process leaves and is deterministic in a way killing a goroutine is not.
 func TestAnInterruptedSweepIsFinishedByTheNextOne(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	key := "tenants/t/instances/i/backups/half-done/artifact"
@@ -481,7 +483,7 @@ func TestAnInterruptedSweepIsFinishedByTheNextOne(t *testing.T) {
 // Deleting an object that is already gone is not an error, so the overlap costs a wasted call and
 // nothing else.
 func TestTwoConcurrentSweepsDeleteEachArtifactOnce(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	past := time.Now().Add(-40 * 24 * time.Hour)
@@ -538,7 +540,7 @@ func TestTwoConcurrentSweepsDeleteEachArtifactOnce(t *testing.T) {
 // TestASweepDeletesNoMoreThanItsCeiling. The bound exists so that a bug is bounded, and a bound
 // nobody tests is a bound somebody removes.
 func TestASweepDeletesNoMoreThanItsCeiling(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	past := time.Now().Add(-40 * 24 * time.Hour)
@@ -588,7 +590,7 @@ func TestASweepDeletesNoMoreThanItsCeiling(t *testing.T) {
 // because it would be believed — so the assertion is not that the preview looks sensible, it is
 // that the sweep does precisely what the preview said.
 func TestThePreviewSaysExactlyWhatTheSweepThenDoes(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	past := func(days int) time.Time { return time.Now().Add(-time.Duration(days) * 24 * time.Hour) }
@@ -665,7 +667,7 @@ func TestThePreviewSaysExactlyWhatTheSweepThenDoes(t *testing.T) {
 // TestThePreviewShowsWhatAnInterruptedSweepLeftBehind. The third list is normally empty, and when it
 // is not it is the only place that state is visible.
 func TestThePreviewShowsWhatAnInterruptedSweepLeftBehind(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	key := "tenants/t/instances/i/backups/left-behind/artifact"
@@ -693,7 +695,7 @@ func TestThePreviewShowsWhatAnInterruptedSweepLeftBehind(t *testing.T) {
 // all, so refusing to answer until it is enabled would withhold the answer from exactly the reader
 // it is for.
 func TestThePreviewIsAvailableWhileRetentionIsDisabled(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	past := time.Now().Add(-40 * 24 * time.Hour)
@@ -736,7 +738,7 @@ func TestThePreviewIsAvailableWhileRetentionIsDisabled(t *testing.T) {
 // The sweep is only correct if something writes expires_at, and a manual run must not get one. Both
 // halves run a real backup through the real service.
 func TestAScheduledBackupIsStampedWithItsSchedulesRetention(t *testing.T) {
-	ctx := context.Background()
+	ctx := testTenantCtx()
 	h := newHarness(t)
 
 	// A real artifact, so this exercises the same recordSuccess path a production backup does.
@@ -915,4 +917,93 @@ func idsOf(candidates []*fwv1.RetentionCandidate) []string {
 		out = append(out, c.GetBackupId())
 	}
 	return out
+}
+
+// TestTheSweepRecordsWhoDeletedTheArtifact is §7.5 for the two thirds of this product's mutating
+// work that nobody asks for.
+//
+// The guard in front of the API records every request, and the retention sweep is not a request: it
+// runs on the scheduler's tick, with no job row and no lease (ADR-0030). Without a record written
+// here, "who deleted this artifact" would have no answer at all — which is the first question an
+// operator staring at a missing backup asks.
+func TestTheSweepRecordsWhoDeletedTheArtifact(t *testing.T) {
+	ctx := authn.WithPrincipal(context.Background(),
+		authn.System("retention", metadb.DefaultTenantID))
+	h := newHarness(t)
+
+	longExpired := time.Now().Add(-365 * 24 * time.Hour)
+	doomed := h.seedRetentionBackup(t, ctx, retentionSeed{
+		origin: originManaged, state: "succeeded", completedAt: longExpired,
+		expiresAt: &longExpired,
+		objectKey: "tenants/t/instances/i/backups/doomed/artifact",
+		sizeBytes: 4096,
+	})
+	// The floor keeps an instance's most recent successful backup, so a newer one has to exist for
+	// the old one to be eligible at all.
+	h.seedRetentionBackup(t, ctx, retentionSeed{
+		origin: originManaged, state: "succeeded", completedAt: time.Now().Add(-time.Hour),
+		objectKey: "tenants/t/instances/i/backups/keeper/artifact",
+	})
+
+	if _, err := h.svc.SweepRetention(ctx); err != nil {
+		t.Fatalf("SweepRetention: %v", err)
+	}
+
+	var expiries []audit.Entry
+	for _, e := range h.auditor.all() {
+		if e.Action == "backup.expire" {
+			expiries = append(expiries, e)
+		}
+	}
+	if len(expiries) != 1 {
+		t.Fatalf("the sweep recorded %d deletions, want exactly 1", len(expiries))
+	}
+	e := expiries[0]
+	switch {
+	case e.ResourceType != "backup":
+		t.Errorf("resource_type = %q, want backup", e.ResourceType)
+	case e.ResourceID != doomed:
+		t.Errorf("resource_id = %q, want the backup whose artifact went (%s)", e.ResourceID, doomed)
+	case !e.Succeeded:
+		t.Error("a completed deletion was recorded as a failure")
+	case e.Details["object_key"] == "":
+		t.Error("the record does not say which object went")
+	}
+}
+
+// TestNothingIsRecordedTwiceForARequest is the other half of the rule.
+//
+// A request that came through the API has already been audited by the guard, with the person behind
+// it. Recording it again in the service would put two rows in an append-only table for one action,
+// and nothing can remove either.
+func TestNothingIsRecordedTwiceForARequest(t *testing.T) {
+	h := newHarness(t)
+
+	// A real user row, because `jobs.triggered_by` is a foreign key into `users`. That constraint
+	// is why `audit_log` keeps `actor` as text beside `user_id`: the audit record survives a user
+	// being deleted, and a job row could not.
+	var userID string
+	if err := h.pool.QueryRow(context.Background(), `
+		INSERT INTO users (tenant_id, subject, email, display_name)
+		VALUES ($1, 'dba@example.com', 'dba@example.com', 'Dana DBA') RETURNING id::text`,
+		metadb.DefaultTenantID).Scan(&userID); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	// A user principal is what an API request carries; the scheduler carries a system one.
+	ctx := authn.WithPrincipal(context.Background(), authn.Principal{
+		Kind:     authn.KindUser,
+		UserID:   userID,
+		Actor:    "dba@example.com",
+		TenantID: metadb.DefaultTenantID,
+	})
+
+	if _, _, err := h.svc.RunBackup(ctx, RunBackupInput{InstanceID: h.instance}); err != nil {
+		t.Fatalf("RunBackup: %v", err)
+	}
+	for _, e := range h.auditor.all() {
+		if e.Action == "backup.run" {
+			t.Fatalf("the service recorded backup.run for a request the API guard already records: %+v", e)
+		}
+	}
 }

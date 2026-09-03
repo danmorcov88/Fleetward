@@ -12,37 +12,42 @@ and everything with a longer lifetime lives elsewhere: rationale in the
 
 ## Current position
 
-**Slice B5 is complete. Next is B6 — the authorization spine.**
+**Slice B6 is complete. Next is B7 — alert rules and delivery.**
 
-Fleetward now deletes things, and that is a different kind of product from the one that shipped
-yesterday. Every slice before this one read, reported, or added; from here on the worst a bug can do
-is not report something untrue but destroy a backup.
+Until this slice, every route under `/api/v1/` was open to anyone who could reach the port —
+including the ones that add an instance, store its credentials, trigger a restore, and configure
+what retention deletes. B5 was the slice where a bug could destroy data; this was the slice where a
+stranger could.
 
-A managed backup that has outlived the retention its schedule declared loses its artifact. Nothing
-else does, and the "nothing else" is where the slice went:
+Every request now names a caller, every route decides on that caller's role within the scope it acts
+on, and every mutating action lands in a record that cannot be edited. The schema for all of it had
+existed since migration 000001 and had never held a row.
 
-| The thing | What stops it |
+| The thing | What holds it |
 |---|---|
-| deleting a backup Fleetward did not take | a `CHECK` constraint, not a `WHERE` clause — a query that forgets the filter raises 23514 |
-| deleting an instance's last working backup | a floor of two rows: the newest successful one, and the newest proven restorable |
-| deleting a year of history the first time somebody upgrades | expiries are stamped at backup time, so every backup that already exists carries none |
-| leaving a row that claims an artifact which is gone | the row is expired and committed *first*; the object goes second; the row is never deleted |
-| deleting an artifact something is restoring from | a backup with a verification or a restore in flight — or merely queued — is not eligible |
+| a route added and left unguarded | it falls through to the embedded Unimplemented and is refused; the coverage test names the file to edit |
+| a route nobody has decided about | a method with no policy entry is denied to everybody, administrators included |
+| a database password in the audit log | there is no function in the audit package that takes a request message |
+| the first credential becoming a permanent back door | it is configuration and never a row: delete the setting and the access is gone |
+| a grant quietly *removing* permission | grants are additive and the highest rank wins; "most specific" would be a deny mechanism the schema cannot express |
+| a query reading the wrong tenant | the tenant comes from the caller, and a path without one is refused by Postgres rather than served the default |
 
-Three decisions were worth records rather than comments:
-[ADR-0030](../adr/0030-retention-sweeps-the-estate-and-never-deletes-a-row.md) — the sweep is
-estate-wide, runs on the scheduler's tick beside the reaper, and holds **no lease**, because
-retention is idempotent in a way a backup is not;
-[ADR-0031](../adr/0031-an-expiry-is-stamped-when-a-backup-is-taken.md) — an expiry is stamped when
-the backup is taken and never recomputed, so a report may change its mind and a deletion may not;
-[ADR-0032](../adr/0032-retention-never-deletes-the-last-good-backup.md) — the floor, and why
-verification decides it rather than deciding what is eligible.
+Four decisions were worth records:
+[ADR-0033](../adr/0033-the-bootstrap-credential-is-configuration-and-never-a-row.md) — a principal
+is a token, a session is minted from one, and the break-glass credential is configuration;
+[ADR-0034](../adr/0034-grants-are-additive-and-the-highest-rank-wins.md) — grants add up, and why
+the obvious rule would have been worse;
+[ADR-0035](../adr/0035-enforcement-is-a-policy-table-and-a-decorator.md) — a policy table and a
+decorator, scope from the request, and what a refusal records;
+[ADR-0036](../adr/0036-the-scheduler-is-an-actor-and-not-a-user.md) — the scheduler is an actor
+string with no credential, and the tenant stops being a constant.
 
-The operational surface is `fleetward-cli backup retention`, which reads through the same SQL the
-sweep does. It exists because there is no job row per sweep to inspect afterwards, and because this
-is the one feature where seeing the answer before it is acted on matters.
+The operational surface is `fleetward-cli token`, `fleetward-cli audit`, and a sign-in screen that
+asks for a token and then holds none. **The development stack now runs with authorization on**, and
+CI asserts both a 401 and a 200 against it — because enforcement that nothing exercises is exactly
+how a security claim comes to be written from the architecture rather than from the code.
 
-Session protocol: [`slices/README.md`](slices/README.md). B6's brief is not written yet; briefs are
+Session protocol: [`slices/README.md`](slices/README.md). B7's brief is not written yet; briefs are
 written when the slice starts.
 
 ## Phases
@@ -51,7 +56,7 @@ written when the slice starts.
 |---|---|
 | Foundation — contract, control plane, dev stack | ✅ [journal](journal/00-foundation.md) |
 | A — prove the loop (PostgreSQL), A1–A6 | ✅ [journal](journal/README.md) |
-| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B5 done, B6 next |
+| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B6 done, B7 next |
 | Access compliance, structural drift, query editor | deferred — see [roadmap](../roadmap.md#deferred-deliberately) |
 
 There is no Phase F. Production readiness is a property of every slice
@@ -61,20 +66,42 @@ There is no Phase F. Production readiness is a property of every slice
 
 Listed so that no session has to re-derive them, and so that no document has to imply otherwise.
 
-- **There is no authentication or authorization.** Every route under `/api/v1/` is open to anyone
-  who can reach the port, including the ones that add an instance, create a schedule, trigger a
-  backup, and poll an instance's backup history. So is the estate view, which is why it carries no
-  login screen, no account menu and no "signed in as": a UI implying a protection that does not exist
-  is worse than one that says nothing. `cfg.Auth` is parsed and validated and read by no file outside
-  `internal/config`. The tenant is the constant `metadb.DefaultTenantID`. **B6.**
+- **Authentication is an API token, not your identity provider.** OIDC is **B10**, behind the seam
+  B6 built: one more implementation of `authn.Authenticator` and one branch in the session handler.
+  Until then an administrator issues bearer tokens and the UI exchanges one for an `HttpOnly`
+  session cookie. Dex is in the compose stack and nothing talks to it.
+- **Most listings need a tenant-wide grant or an explicit filter.** Scope comes from the request, so
+  a request naming no instance and no environment is asking about the whole estate. Two listings are
+  the exception and filter their own rows — `ListInstances` and `GetBackupAdherence`, which is what
+  makes the CLI and the estate view work for somebody granted three servers. `ListBackups`,
+  `ListSchedules` and `ListJobs` do not: a scoped caller passes `--instance` and gets an answer, or
+  gets a 403 for asking about the estate
+  ([ADR-0035](../adr/0035-enforcement-is-a-policy-table-and-a-decorator.md)).
+- **A session outlives the revocation of the token it was minted from**, until `AUTH_SESSION_TTL`
+  expires it (12 hours by default). The session is a signed statement rather than a row, which is
+  what keeps a table from growing and what makes this true. A revoked token also keeps working for
+  up to `AUTH_PRINCIPAL_CACHE_TTL` — 15 seconds, refused above five minutes — on a replica that did
+  not perform the revocation.
+- **`audit_log` grows and nothing prunes it.** About 150 rows a day on an estate of fifty: roughly
+  55,000 a year, tens of megabytes. `DELETE` is refused by trigger, which is the entire point of the
+  trigger, so pruning needs monthly range partitioning and its own decision record. Migration 000004
+  adds the index that makes the age question cheap, and nothing else about it is built.
+- **There is no rate limiting and no lockout.** A token is 128 bits of entropy, so guessing is not
+  the threat; a flood of 401s is a denial-of-service question and belongs in front of the control
+  plane rather than inside it.
+- **A restart signs everybody out** unless `AUTH_SESSION_KEY_FILE` is configured, because the
+  session signing key is generated per process by default. Right for one node; a second replica has
+  to configure it or watch users bounce between them.
+- **Users, roles and tokens are CLI-only.** There is no administration screen. The UI acquired a
+  sign-in and an identity in the sidebar, and nothing else.
 - **Five of the eight engines are still binaries that only handshake.** MySQL, MongoDB, and Redis
   declare no capabilities; Oracle, ClickHouse, and Cassandra have no binary at all. PostgreSQL and
   SQL Server are real. **B11–B16.**
 - **There is no way to delete one named backup, and no way to reclaim what the retention floor
   pins.** The floor keeps between one and two artifacts per instance forever
   ([ADR-0032](../adr/0032-retention-never-deletes-the-last-good-backup.md)), and the only escape is
-  removing the instance. A `DeleteBackup` action needs confirmation, an audit record and RBAC, so it
-  belongs after **B6**.
+  removing the instance. `DeleteBackup` was waiting on the RBAC and the audit record B6 built; it is
+  still not written.
 - **Deleting an instance orphans its artifacts.** `backups.instance_id` is `ON DELETE CASCADE`, so
   the rows go and the objects stay, and `DeleteInstance(delete_artifacts=true)` is declared in the
   contract and unimplemented. Since B5 this is the only remaining way to orphan an object. Keys are
@@ -113,21 +140,21 @@ Listed so that no session has to re-derive them, and so that no document has to 
   silently stopped firing, and a retention sweep whose object store has been refusing all week are
   all visible only by polling the API or reading the log. **B7.**
 - **Fleetward cannot be observed.** OpenTelemetry is wired in `internal/telemetry/otel.go` with
-  zero call sites: no span is started and no meter obtained. There is no `/metrics`. The scheduler
-  and the retention sweep emit log lines and a readiness component, and nothing else. **B8.**
+  zero call sites: no span is started and no meter obtained. There is no `/metrics`, and a 403 emits
+  no metric either. **B8.**
 - **Nothing has been released.** No tag, no published container image, no signed artifact —
   `release.yml` installs cosign and never invokes it. `docker-compose.yml` is a development
   configuration by its own declaration. **B9.**
-- **The web UI is one screen and a status page.** The Estate Overview reads the estate and reports
-  on it; nothing in it changes anything. Adding or editing an instance, managing schedules and jobs,
-  any view of an individual backup's verification report, and anything at all about retention are
-  CLI-only.
+- **The web UI is one screen, a sign-in, and a status page.** The Estate Overview reads the estate
+  and reports on it; nothing in it changes anything. Adding or editing an instance, managing
+  schedules and jobs, any view of an individual backup's verification report, anything at all about
+  retention, and every user or token operation are CLI-only.
 - **A verification carried on the estate view omits its per-check detail.** `GetBackupAdherence`
   attaches the verdict and when it was reached, in one batched query; the checks and discrepancies
   behind that verdict come from `GetBackup`, one backup at a time. Deliberate — no column renders
   them — and written down because the `Verification` on that response is therefore partial.
 - **A manually triggered verification is not bounded.** `SCHEDULER_MAX_CONCURRENT_JOBS` bounds
-  scheduled work, which is the case that matters on an estate of fifty. A human calling the verify
+  scheduled work, which is the case that matters on an estate of fifty. A `dba` calling the verify
   endpoint in a loop can still start a sandbox per call.
 - **A job left `running` with no lease cannot be reaped.** That state is by definition an orphan —
   nothing is working on it — and the reaper looks for an *expired lease*, which such a row does not
@@ -151,8 +178,8 @@ Listed so that no session has to re-derive them, and so that no document has to 
   `schedules` is the mistake worth naming: the sweep is estate-wide, runs on the scheduler's tick
   beside the reaper, and has no schedule row, no job row and no lease
   ([ADR-0030](../adr/0030-retention-sweeps-the-estate-and-never-deletes-a-row.md)). The consequence
-  is that `job list` cannot answer "did retention run last night"; `backup retention` and the log
-  line can.
+  is that `job list` cannot answer "did retention run last night"; `backup retention`, the audit log
+  under `actor = system:retention`, and the log line can.
 
 ## Environment notes
 
@@ -181,7 +208,12 @@ Listed so that no session has to re-derive them, and so that no document has to 
   path alone. Read the skip reasons rather than the exit code.
 - `mcr.microsoft.com/mssql/server:2022-latest` is 625 MB and becomes ready in about nine seconds
   warm. A full conformance run takes a little under three minutes on this machine with the image
-  already pulled — 164 seconds at B5.
+  already pulled — 164 seconds at B5, 306 seconds at B6 on a cold image cache.
+- **Git Bash rewrites a Unix-looking argument into a Windows path.** `--backup-dir-local /app/share`
+  reaches the CLI as `C:/Program Files/Git/app/share`, and the failure surfaces much later as a
+  plugin that cannot write its backup file. Prefix the command with `MSYS_NO_PATHCONV=1`. It is a
+  shell artefact and not a product defect, and it costs twenty minutes to diagnose from the far
+  end.
 - **The `web` image occasionally fails to build here** with `failed to prepare extraction snapshot …
   parent snapshot does not exist`. It is a Docker Desktop containerd-snapshotter fault, not a
   Dockerfile one; `docker compose up --build <the other services>` works, and a `docker builder

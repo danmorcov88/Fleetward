@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"time"
 
+	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 	"github.com/danmorcov88/fleetward/internal/telemetry"
 )
@@ -26,7 +27,7 @@ func (s *Scheduler) materialize(ctx context.Context) (int, error) {
 		       verify_policy, verify_sample_percent, retention_days, next_run_at
 		FROM   schedules
 		WHERE  tenant_id = $1 AND is_enabled AND next_run_at IS NOT NULL AND next_run_at <= now()
-		ORDER  BY next_run_at`, s.tenetID)
+		ORDER  BY next_run_at`, authn.Tenant(ctx))
 	if err != nil {
 		return 0, fmt.Errorf("scheduler: find due schedules: %w", err)
 	}
@@ -98,7 +99,7 @@ func (s *Scheduler) materialize(ctx context.Context) (int, error) {
 			INSERT INTO jobs (tenant_id, schedule_id, instance_id, kind, state, payload, scheduled_for)
 			VALUES ($1, $2, $3, $4, 'pending', $5, now())
 			RETURNING id`,
-			s.tenetID, d.id, d.instanceID, d.kind, payload).Scan(&jobID)
+			authn.Tenant(ctx), d.id, d.instanceID, d.kind, payload).Scan(&jobID)
 
 		// idx_jobs_one_active_per_instance_kind is a partial unique index, not a check this code
 		// performs: a second pending or running backup for one instance raises 23505 rather than

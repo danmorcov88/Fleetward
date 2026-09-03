@@ -23,7 +23,7 @@ import (
 const passwordEnvVar = "FLEETWARD_DB_PASSWORD" //nolint:gosec // G101: the name of a variable, not a credential
 
 // newInstanceCommand builds the `instance` group.
-func newInstanceCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newInstanceCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "instance",
 		Aliases: []string{"inst"},
@@ -32,17 +32,17 @@ func newInstanceCommand(serverURL *string, timeout *time.Duration) *cobra.Comman
 			"connection details and, separately and encrypted, its credentials.",
 	}
 	cmd.AddCommand(
-		newInstanceAddCommand(serverURL, timeout),
-		newInstanceListCommand(serverURL, timeout),
-		newInstanceGetCommand(serverURL, timeout),
-		newInstanceHealthCommand(serverURL, timeout),
-		newInstanceDiscoverCommand(serverURL, timeout),
-		newInstanceRemoveCommand(serverURL, timeout),
+		newInstanceAddCommand(serverURL, timeout, token),
+		newInstanceListCommand(serverURL, timeout, token),
+		newInstanceGetCommand(serverURL, timeout, token),
+		newInstanceHealthCommand(serverURL, timeout, token),
+		newInstanceDiscoverCommand(serverURL, timeout, token),
+		newInstanceRemoveCommand(serverURL, timeout, token),
 	)
 	return cmd
 }
 
-func newInstanceAddCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newInstanceAddCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var (
 		environmentName string
 		engineType      string
@@ -81,7 +81,7 @@ func newInstanceAddCommand(serverURL *string, timeout *time.Duration) *cobra.Com
 				return err
 			}
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			env, err := resolveEnvironment(ctx, c, environmentName)
 			if err != nil {
 				return err
@@ -165,7 +165,7 @@ func newInstanceAddCommand(serverURL *string, timeout *time.Duration) *cobra.Com
 	return cmd
 }
 
-func newInstanceListCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newInstanceListCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var environmentName, engineType string
 
 	cmd := &cobra.Command{
@@ -176,7 +176,7 @@ func newInstanceListCommand(serverURL *string, timeout *time.Duration) *cobra.Co
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			query := url.Values{}
 			if environmentName != "" {
 				env, err := resolveEnvironment(ctx, c, environmentName)
@@ -219,7 +219,7 @@ func newInstanceListCommand(serverURL *string, timeout *time.Duration) *cobra.Co
 	return cmd
 }
 
-func newInstanceGetCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newInstanceGetCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <name-or-id>",
 		Short: "Show one instance in detail",
@@ -228,7 +228,7 @@ func newInstanceGetCommand(serverURL *string, timeout *time.Duration) *cobra.Com
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			inst, err := resolveInstance(ctx, c, args[0])
 			if err != nil {
 				return err
@@ -266,7 +266,7 @@ func newInstanceGetCommand(serverURL *string, timeout *time.Duration) *cobra.Com
 	}
 }
 
-func newInstanceHealthCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newInstanceHealthCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "health <name-or-id>",
 		Short: "Check whether an instance is reachable and healthy",
@@ -277,7 +277,7 @@ func newInstanceHealthCommand(serverURL *string, timeout *time.Duration) *cobra.
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			inst, err := resolveInstance(ctx, c, args[0])
 			if err != nil {
 				return err
@@ -328,7 +328,7 @@ func newInstanceHealthCommand(serverURL *string, timeout *time.Duration) *cobra.
 	}
 }
 
-func newInstanceDiscoverCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newInstanceDiscoverCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "discover <name-or-id>",
 		Short: "Refresh topology, version, and databases",
@@ -337,7 +337,7 @@ func newInstanceDiscoverCommand(serverURL *string, timeout *time.Duration) *cobr
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			inst, err := resolveInstance(ctx, c, args[0])
 			if err != nil {
 				return err
@@ -359,7 +359,7 @@ func newInstanceDiscoverCommand(serverURL *string, timeout *time.Duration) *cobr
 	}
 }
 
-func newInstanceRemoveCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newInstanceRemoveCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var confirmed bool
 
 	cmd := &cobra.Command{
@@ -374,7 +374,7 @@ func newInstanceRemoveCommand(serverURL *string, timeout *time.Duration) *cobra.
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			inst, err := resolveInstance(ctx, c, args[0])
 			if err != nil {
 				return err

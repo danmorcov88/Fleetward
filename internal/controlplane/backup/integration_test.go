@@ -35,6 +35,7 @@ import (
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
 	"github.com/danmorcov88/fleetward/internal/config"
+	"github.com/danmorcov88/fleetward/internal/controlplane/audit"
 	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 	"github.com/danmorcov88/fleetward/internal/storage/objstore"
@@ -62,12 +63,13 @@ type harness struct {
 	resolver  *stubResolver
 	log       *slog.Logger
 	instance  string
+	auditor   *recordingAuditor
 }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
+	ctx, cancel := context.WithTimeout(testTenantCtx(), startTimeout)
 	defer cancel()
 
 	pool := startMetaDB(t, ctx)
@@ -87,14 +89,17 @@ func newHarness(t *testing.T) *harness {
 	// their production defaults. A test that needs different limits rebuilds the service through
 	// withRetention rather than reaching into the field, so what it changed is visible at the call
 	// site.
+	auditor := &recordingAuditor{}
 	svc := New(pool, store, router, &stubResolver{instanceID: instanceID}, sandboxes,
-		RetentionPolicy{Enabled: true, Interval: time.Hour, MinKeep: 1, MaxPerSweep: 500}, log)
+		RetentionPolicy{Enabled: true, Interval: time.Hour, MinKeep: 1, MaxPerSweep: 500},
+		auditor, log)
 	t.Cleanup(func() { _ = svc.Close() })
 
 	return &harness{
 		svc: svc, pool: pool, store: store, plugin: plugin, router: router,
 		sandboxes: sandboxes, instance: instanceID, log: log,
 		resolver: &stubResolver{instanceID: instanceID},
+		auditor:  auditor,
 	}
 }
 
@@ -103,7 +108,7 @@ func newHarness(t *testing.T) *harness {
 // where it can be read rather than mutating the harness underneath the other tests.
 func (h *harness) withRetention(t *testing.T, policy RetentionPolicy) *Service {
 	t.Helper()
-	svc := New(h.pool, h.store, h.router, h.resolver, h.sandboxes, policy, h.log)
+	svc := New(h.pool, h.store, h.router, h.resolver, h.sandboxes, policy, h.auditor, h.log)
 	t.Cleanup(func() { _ = svc.Close() })
 	return svc
 }
@@ -232,7 +237,7 @@ func (h *harness) waitForState(t *testing.T, backupID string) *fwv1.Backup {
 
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		b, _, err := h.svc.GetBackup(context.Background(), backupID)
+		b, _, err := h.svc.GetBackup(testTenantCtx(), backupID)
 		if err != nil {
 			t.Fatalf("GetBackup: %v", err)
 		}
@@ -250,7 +255,7 @@ func (h *harness) waitForState(t *testing.T, backupID string) *fwv1.Backup {
 // TestRunBackupPersistsTheArtifactAndItsManifest is the orchestration this slice exists to deliver.
 func TestRunBackupPersistsTheArtifactAndItsManifest(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	// 12 MiB over a 5 MiB part size: three parts, the last one short. Multipart assembly is the
 	// riskiest new path in this slice, so the test exercises it against a real store rather than
@@ -341,7 +346,7 @@ func TestRunBackupPersistsTheArtifactAndItsManifest(t *testing.T) {
 // partial artifact reporting success is a backup believed good and proven bad only at restore time.
 func TestFailedBackupLeavesNoArtifact(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	h.plugin.payload = []byte(strings.Repeat("partial-", 12<<20/8))
 	h.plugin.failAfterUpload = &fwv1.PluginError{
@@ -381,7 +386,7 @@ func TestFailedBackupLeavesNoArtifact(t *testing.T) {
 // only safe reading is failure.
 func TestStreamWithoutATerminalMessageIsAFailure(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	h.plugin.payload = []byte("some bytes")
 	h.plugin.endWithoutTerminal = true
@@ -405,7 +410,7 @@ func TestStreamWithoutATerminalMessageIsAFailure(t *testing.T) {
 // than by careful code.
 func TestSecondBackupOfOneInstanceIsRefused(t *testing.T) {
 	h := newHarness(t)
-	ctx := context.Background()
+	ctx := testTenantCtx()
 
 	h.plugin.payload = []byte("slow artifact")
 	h.plugin.block = make(chan struct{})
@@ -428,10 +433,10 @@ func TestSecondBackupOfOneInstanceIsRefused(t *testing.T) {
 // TestGetBackupRejectsAMalformedIdentifier keeps a typo in a URL from reaching a query.
 func TestGetBackupRejectsAMalformedIdentifier(t *testing.T) {
 	h := newHarness(t)
-	if _, _, err := h.svc.GetBackup(context.Background(), "not-a-uuid"); !errors.Is(err, ErrInvalidArgument) {
+	if _, _, err := h.svc.GetBackup(testTenantCtx(), "not-a-uuid"); !errors.Is(err, ErrInvalidArgument) {
 		t.Errorf("GetBackup error = %v, want ErrInvalidArgument", err)
 	}
-	if _, _, err := h.svc.GetBackup(context.Background(), "3f2504e0-4f89-11d3-9a0c-0305e82c3301"); !errors.Is(err, ErrNotFound) {
+	if _, _, err := h.svc.GetBackup(testTenantCtx(), "3f2504e0-4f89-11d3-9a0c-0305e82c3301"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("GetBackup error = %v, want ErrNotFound", err)
 	}
 }
@@ -644,3 +649,23 @@ func (s *stubStream) CloseSend() error             { return nil }
 func (s *stubStream) Context() context.Context     { return s.ctx }
 func (s *stubStream) SendMsg(any) error            { return nil }
 func (s *stubStream) RecvMsg(any) error            { return io.EOF }
+
+// recordingAuditor captures what the service records for work nobody asked for — a scheduled backup
+// and a retention deletion — so a test can assert that the majority of this product's mutating work
+// leaves a trace, which §7.5 requires and which the API guard cannot provide.
+type recordingAuditor struct {
+	mu      sync.Mutex
+	entries []audit.Entry
+}
+
+func (r *recordingAuditor) Record(_ context.Context, entry audit.Entry) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.entries = append(r.entries, entry)
+}
+
+func (r *recordingAuditor) all() []audit.Entry {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]audit.Entry(nil), r.entries...)
+}

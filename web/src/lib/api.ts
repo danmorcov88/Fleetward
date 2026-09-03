@@ -31,6 +31,16 @@ export type GetBackupAdherenceResponse = Schemas["GetBackupAdherenceResponse"];
 export type Backup = Schemas["Backup"];
 export type Verification = Schemas["Verification"];
 export type VersionInfo = Schemas["GetVersionResponse"];
+export type GetMeResponse = Schemas["GetMeResponse"];
+export type RoleGrant = Schemas["RoleGrant"];
+
+/** CreateSessionResponse describes `POST /api/v1/sessions`, which is outside the contract. */
+export interface CreateSessionResponse {
+  actor: string;
+  display_name: string;
+  email: string;
+  expires_in: number;
+}
 
 export type AdherenceState = NonNullable<InstanceAdherence["state"]>;
 export type BackupOrigin = NonNullable<Backup["origin"]>;
@@ -74,6 +84,10 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
+    // The session is an HttpOnly cookie, so this file never touches a credential: it cannot read
+    // one, cannot store one, and cannot leak one to a script that gets onto the page. All it does
+    // is ask the browser to send what it already holds (ADR-0033).
+    credentials: "same-origin",
     headers: { Accept: "application/json", ...init?.headers },
   });
 
@@ -113,4 +127,33 @@ export const api = {
     request<ListInstancesResponse>("/api/v1/instances?page_size=500"),
   backupAdherence: () =>
     request<GetBackupAdherenceResponse>("/api/v1/backup-adherence"),
+
+  /**
+   * Who is looking at this.
+   *
+   * `GetMe` is the one authenticated route that never fails on authorization: any caller may ask
+   * who it is. So a 401 from here means exactly one thing — there is no session — which is what
+   * makes it usable as the gate in front of the whole app.
+   */
+  me: () => request<GetMeResponse>("/api/v1/me"),
+
+  /**
+   * Exchange an API token for a session.
+   *
+   * The response carries no credential back, and this is where the design earns its keep: the
+   * browser is handed an HttpOnly cookie it cannot read, the token is never written to
+   * localStorage or sessionStorage, and there is nothing on the page for an injected script to
+   * steal. When sign-in through an identity provider arrives it posts an authorization code to
+   * this same path and everything below stays as it is.
+   */
+  createSession: (token: string) =>
+    request<CreateSessionResponse>("/api/v1/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    }),
+
+  deleteSession: async () => {
+    await fetch("/api/v1/sessions", { method: "DELETE", credentials: "same-origin" });
+  },
 };

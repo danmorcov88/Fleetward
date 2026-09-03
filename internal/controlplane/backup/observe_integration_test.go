@@ -21,6 +21,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 )
 
 // richHistory is what an engine that keeps its own record of backups declares.
@@ -65,7 +66,7 @@ func TestObservationIsIdempotent(t *testing.T) {
 	h := newHarness(t)
 	h.router.history = richHistory()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(testTenantCtx(), time.Minute)
 	defer cancel()
 
 	finished := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
@@ -107,7 +108,7 @@ func TestObservationConvergesWithAManagedBackup(t *testing.T) {
 	h := newHarness(t)
 	h.router.history = richHistory()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(testTenantCtx(), time.Minute)
 	defer cancel()
 
 	// A backup Fleetward takes, through the real path, with the plugin reporting what the engine
@@ -168,7 +169,7 @@ func TestObservationRecordsWhatTheEvidenceCanProve(t *testing.T) {
 	h := newHarness(t)
 	h.router.history = weakHistory()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(testTenantCtx(), time.Minute)
 	defer cancel()
 
 	record := observed("file:abc", fwv1.ObservedOutcome_OBSERVED_OUTCOME_UNKNOWN, time.Now().UTC())
@@ -225,7 +226,7 @@ func TestAnObservedBackupCannotBeVerified(t *testing.T) {
 	h := newHarness(t)
 	h.router.history = richHistory()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(testTenantCtx(), time.Minute)
 	defer cancel()
 
 	h.plugin.history = []*fwv1.ObservedBackup{
@@ -272,7 +273,7 @@ func TestObservationIsRefusedWhenThePluginCannotSeeAny(t *testing.T) {
 	h := newHarness(t)
 	h.router.history = nil
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(testTenantCtx(), time.Minute)
 	defer cancel()
 
 	_, err := h.svc.ObserveBackupHistory(ctx, ObserveInput{InstanceID: h.instance})
@@ -287,7 +288,7 @@ func TestAdherenceAnswersTheQuestionTheProductExistsFor(t *testing.T) {
 	h := newHarness(t)
 	h.router.history = richHistory()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(testTenantCtx(), time.Minute)
 	defer cancel()
 
 	// Nothing declared. Reported as such rather than as healthy: on an estate of fifty, "nobody has
@@ -308,7 +309,7 @@ func TestAdherenceAnswersTheQuestionTheProductExistsFor(t *testing.T) {
 		INSERT INTO schedules (tenant_id, instance_id, kind, cron_expression, timezone,
 		                       expected_cron, expected_grace_minutes, next_run_at)
 		VALUES ($1, $2, 'observe', '*/30 * * * *', 'UTC', '0 * * * *', 10, now())`,
-		h.svc.tenantID, h.instance); err != nil {
+		metadb.DefaultTenantID, h.instance); err != nil {
 		t.Fatalf("declare an expectation: %v", err)
 	}
 

@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 )
 
 const (
@@ -209,8 +210,16 @@ func caveatsFor(b *fwv1.Backup) []string {
 // what this server's backups should look like" is a finding on an estate of fifty, and dropping the
 // row would hide it.
 func (s *Service) loadExpectations(ctx context.Context, in GetAdherenceInput) ([]*expectation, error) {
-	args := []any{s.tenantID}
-	filters := ""
+	// The estate view is a listing, so it carries the same row-level scope filter that
+	// inventory's does: a caller granted `dba` on three servers sees those three and no others.
+	// Without it the screen would 403 for everybody who is not tenant-wide (ADR-0035).
+	visible := authn.VisibilityFor(ctx, 0)
+	if visible.Empty() {
+		return nil, nil
+	}
+
+	args := []any{authn.Tenant(ctx), visible.All, visible.EnvironmentIDs, visible.InstanceIDs}
+	filters := " AND ($2::boolean OR i.environment_id = ANY($3::uuid[]) OR i.id = ANY($4::uuid[]))"
 	if in.InstanceID != "" {
 		id, err := requireUUID("instance_id", in.InstanceID)
 		if err != nil {
@@ -275,7 +284,7 @@ func (s *Service) loadExpectations(ctx context.Context, in GetAdherenceInput) ([
 // somebody turns the dashboard off.
 func (s *Service) attachWindowBackups(ctx context.Context, expectations []*expectation) error {
 	byID := map[string]*expectation{}
-	args := []any{s.tenantID}
+	args := []any{authn.Tenant(ctx)}
 	var values []string
 	for _, e := range expectations {
 		if e.state == fwv1.AdherenceState_ADHERENCE_STATE_NOT_DECLARED {
@@ -307,7 +316,7 @@ func (s *Service) attachWindowBackups(ctx context.Context, expectations []*expec
 	defer rows.Close()
 
 	for rows.Next() {
-		b, err := s.scanBackup(rows, nil)
+		b, err := s.scanBackup(ctx, rows, nil)
 		if err != nil {
 			return fmt.Errorf("backup: read a backup in an expected window: %w", err)
 		}
@@ -399,14 +408,14 @@ func (s *Service) attachLatestBackups(ctx context.Context, expectations []*expec
 		SELECT DISTINCT ON (b.instance_id) `+prefixed(backupColumns, "b.")+`
 		FROM   backups AS b
 		WHERE  b.tenant_id = $1 AND b.instance_id = ANY($2) AND b.completed_at IS NOT NULL
-		ORDER  BY b.instance_id, b.completed_at DESC`, s.tenantID, ids)
+		ORDER  BY b.instance_id, b.completed_at DESC`, authn.Tenant(ctx), ids)
 	if err != nil {
 		return fmt.Errorf("backup: read the latest backup per instance: %w", err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		b, err := s.scanBackup(rows, nil)
+		b, err := s.scanBackup(ctx, rows, nil)
 		if err != nil {
 			return fmt.Errorf("backup: read the latest backup of an instance: %w", err)
 		}
@@ -461,7 +470,7 @@ func (s *Service) attachVerifications(ctx context.Context, expectations []*expec
 		       backup_id, id, status, report, error_message, started_at, completed_at, duration_ms
 		FROM   verifications
 		WHERE  tenant_id = $1 AND backup_id = ANY($2)
-		ORDER  BY backup_id, created_at DESC`, s.tenantID, ids)
+		ORDER  BY backup_id, created_at DESC`, authn.Tenant(ctx), ids)
 	if err != nil {
 		return fmt.Errorf("backup: read the latest verification per backup: %w", err)
 	}

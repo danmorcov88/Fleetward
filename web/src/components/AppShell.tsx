@@ -1,14 +1,22 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+
+import { useSession } from "@/auth/session";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 
 /**
  * Navigation. Entries whose screens are not built yet are present but disabled, so the shape of the
  * product is visible from the first run rather than appearing a screen at a time.
  *
- * There is deliberately no account menu and no "signed in as". Every route under `/api/v1/` is open
- * to anyone who can reach the port, and a UI that implied otherwise would be claiming a protection
- * that does not exist. Authorization is a later slice, and until it lands this screen says nothing
- * about who is looking at it.
+ * There is an account panel at the bottom, and until B6 there deliberately was not: every route was
+ * open to anyone who could reach the port, and a UI that implied otherwise would have been claiming
+ * a protection that did not exist. It now exists, so the screen says who is looking at it and what
+ * they may do.
+ *
+ * The role shown is the strongest one this person holds *anywhere*. It is not permission to do
+ * anything in particular — scope decides that, per request, on the server — and the panel says
+ * "somewhere" rather than implying otherwise.
  */
 const NAV = [
   { to: "/", label: "Estate", enabled: true },
@@ -19,6 +27,15 @@ const NAV = [
 
 export function AppShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const session = useSession();
+  const queryClient = useQueryClient();
+
+  async function signOut() {
+    await api.deleteSession();
+    // The whole cache, because everything in it was read as somebody.
+    queryClient.clear();
+    await queryClient.invalidateQueries();
+  }
 
   return (
     <div className="min-h-screen flex">
@@ -55,7 +72,23 @@ export function AppShell() {
           )}
         </nav>
 
-        <div className="mt-auto p-3">
+        <div className="mt-auto p-3 flex flex-col gap-3">
+          <div className="px-3 pt-3 border-t border-(--color-border-subtle)">
+            <div className="text-sm truncate" title={session.caller?.actor}>
+              {session.caller?.display_name || session.caller?.actor}
+            </div>
+            <div className="text-xs text-(--color-content-muted) mt-0.5">
+              {session.highest_role ? `${session.highest_role} somewhere` : "no role"}
+            </div>
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="mt-2 text-xs text-(--color-content-muted) hover:text-(--color-content) underline"
+            >
+              Sign out
+            </button>
+          </div>
+
           <Link
             to="/system"
             className={cn(

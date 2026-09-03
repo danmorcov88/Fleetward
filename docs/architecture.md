@@ -13,7 +13,7 @@ flowchart TB
 
     subgraph core["Control plane · Go"]
         API["REST API<br/><i>grpc-gateway · OpenAPI v3</i>"]
-        RBAC["AuthN / AuthZ<br/><i>OIDC · role × scope</i>"]:::planned
+        RBAC["AuthN / AuthZ<br/><i>token · role × scope · audit</i>"]
         INV["Inventory"]
         SCHED["Scheduler<br/><i>cron · lease locking</i>"]
         BACKUP["Backup &amp; verification"]
@@ -24,10 +24,11 @@ flowchart TB
 
     subgraph plugins["Engine plugins · separate processes"]
         PG["postgresql<br/><i>reference</i>"]
+        MS["sqlserver"]
         MY["mysql"]:::planned
         MG["mongodb"]:::planned
         RD["redis"]:::planned
-        FUTURE["sqlserver · oracle<br/>clickhouse · cassandra"]:::planned
+        FUTURE["oracle · clickhouse<br/>cassandra"]:::planned
     end
 
     subgraph storage["Storage"]
@@ -46,11 +47,11 @@ flowchart TB
     RBAC --> INV & SCHED & BACKUP & ALERT
     INV & SCHED & BACKUP --> PM
     BACKUP --> SANDBOX
-    PM -.->|"gRPC over local socket, mutual TLS"| PG & MY & MG & RD & FUTURE
-    PG & MY & MG & RD -->|"native tooling"| DB1
+    PM -.->|"gRPC over local socket, mutual TLS"| PG & MS & MY & MG & RD & FUTURE
+    PG & MS & MY & MG & RD -->|"native tooling"| DB1
     INV & SCHED & BACKUP & ALERT --> META
     BACKUP -->|"presigned URLs"| OBJ
-    PG & MY & MG & RD -.->|"artifacts"| OBJ
+    PG & MS & MY & MG & RD -.->|"artifacts"| OBJ
     ALERT --> TSDB
 
     classDef planned stroke-dasharray:5 4,opacity:0.65
@@ -61,12 +62,17 @@ flowchart TB
     style estate fill:#2a1a1a,stroke:#6a4a4a,color:#fff
 ```
 
-**Dashed boxes are planned, not built.** Today authorization and alerting do not exist, and only
-the PostgreSQL plugin implements anything beyond a handshake — see
-[`dev/STATUS.md`](dev/STATUS.md) for what is actually running and [`roadmap.md`](roadmap.md) for
-when the rest arrives. The diagram is drawn with them because the shape of the system is what the
-contract and the metadata schema were designed against, and a reader deserves to see the target as
-well as the state.
+**Dashed boxes are planned, not built.** Today alerting does not exist, and only the PostgreSQL and
+SQL Server plugins implement anything beyond a handshake — see [`dev/STATUS.md`](dev/STATUS.md) for
+what is actually running and [`roadmap.md`](roadmap.md) for when the rest arrives. The diagram is
+drawn with them because the shape of the system is what the contract and the metadata schema were
+designed against, and a reader deserves to see the target as well as the state.
+
+Authorization is solid rather than dashed since B6: every request names a caller, every route
+decides on that caller's role within the scope it acts on, and every mutating action lands in an
+append-only record. What is not there yet is the identity provider — a caller presents an API token
+or a session minted from one, and OIDC plugs into the same seam later
+([ADR-0033](adr/0033-the-bootstrap-credential-is-configuration-and-never-a-row.md)).
 
 ### The one rule that shapes everything
 
@@ -83,7 +89,7 @@ lookup table of engines. Even the sandbox's credentials keep the rule: core gene
 username, password, and database name, and the plugin's template says where they belong by writing
 `{{ .Password }}` where its engine expects one ([ADR-0020](adr/0020-sandbox-credentials-from-template-placeholders.md)).
 
-Architecture decisions are recorded in [`docs/adr/`](adr/) — <!-- adr-count -->32<!-- /adr-count -->
+Architecture decisions are recorded in [`docs/adr/`](adr/) — <!-- adr-count -->36<!-- /adr-count -->
 of them, each with context, consequences, and the alternatives that were rejected. The metadata
 schema those decisions produced is drawn in [`dev/data-model.md`](dev/data-model.md), and every
 setting the control plane reads is listed in [`ops/configuration.md`](ops/configuration.md). Both

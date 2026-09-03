@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 
+import { AuthGate } from "./auth/AuthGate";
 import { router } from "./router";
 import "./index.css";
 
@@ -26,7 +27,13 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      {/*
+        The gate is inside the query provider and outside the router: it needs react-query to ask
+        who is signed in, and nothing behind it should render for somebody who is not.
+      */}
+      <AuthGate>
+        <RouterProvider router={router} />
+      </AuthGate>
     </QueryClientProvider>
   </StrictMode>,
 );

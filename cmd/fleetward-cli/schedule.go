@@ -48,7 +48,7 @@ type job struct {
 }
 
 // newScheduleCommand builds the `schedule` group.
-func newScheduleCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newScheduleCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "schedule",
 		Short: "Declare when backups run without anyone asking",
@@ -59,16 +59,16 @@ func newScheduleCommand(serverURL *string, timeout *time.Duration) *cobra.Comman
 			"--timezone Europe/Bucharest means 02:00 where the server is, in summer and in winter.",
 	}
 	cmd.AddCommand(
-		newScheduleCreateCommand(serverURL, timeout),
-		newScheduleListCommand(serverURL, timeout),
-		newScheduleEnabledCommand(serverURL, timeout, true),
-		newScheduleEnabledCommand(serverURL, timeout, false),
-		newScheduleDeleteCommand(serverURL, timeout),
+		newScheduleCreateCommand(serverURL, timeout, token),
+		newScheduleListCommand(serverURL, timeout, token),
+		newScheduleEnabledCommand(serverURL, timeout, token, true),
+		newScheduleEnabledCommand(serverURL, timeout, token, false),
+		newScheduleDeleteCommand(serverURL, timeout, token),
 	)
 	return cmd
 }
 
-func newScheduleCreateCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newScheduleCreateCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var (
 		instanceName  string
 		kind          string
@@ -106,7 +106,7 @@ func newScheduleCreateCommand(serverURL *string, timeout *time.Duration) *cobra.
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			inst, err := resolveInstance(ctx, c, instanceName)
 			if err != nil {
 				return err
@@ -201,7 +201,7 @@ func newScheduleCreateCommand(serverURL *string, timeout *time.Duration) *cobra.
 	return cmd
 }
 
-func newScheduleListCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newScheduleListCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var instanceName string
 
 	cmd := &cobra.Command{
@@ -211,7 +211,7 @@ func newScheduleListCommand(serverURL *string, timeout *time.Duration) *cobra.Co
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			query := url.Values{}
 			if instanceName != "" {
 				inst, err := resolveInstance(ctx, c, instanceName)
@@ -265,7 +265,7 @@ func newScheduleListCommand(serverURL *string, timeout *time.Duration) *cobra.Co
 // newScheduleEnabledCommand builds `schedule enable` and `schedule disable`, which are the same
 // call with a different argument. Pausing a schedule during a migration window is routine, and
 // deleting and recreating one to achieve it would lose the history pointing at it.
-func newScheduleEnabledCommand(serverURL *string, timeout *time.Duration, enable bool) *cobra.Command {
+func newScheduleEnabledCommand(serverURL *string, timeout *time.Duration, token *string, enable bool) *cobra.Command {
 	verb, past := "disable", "disabled"
 	if enable {
 		verb, past = "enable", "enabled"
@@ -282,7 +282,7 @@ func newScheduleEnabledCommand(serverURL *string, timeout *time.Duration, enable
 			var resp struct {
 				Schedule schedule `json:"schedule"`
 			}
-			if err := newClient(*serverURL, *timeout).post(ctx,
+			if err := newClient(*serverURL, *timeout, *token).post(ctx,
 				"/api/v1/schedules/"+args[0]+"/enabled",
 				map[string]any{"schedule_id": args[0], "enabled": enable}, &resp); err != nil {
 				return err
@@ -300,7 +300,7 @@ func newScheduleEnabledCommand(serverURL *string, timeout *time.Duration, enable
 	}
 }
 
-func newScheduleDeleteCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newScheduleDeleteCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "delete <schedule-id>",
 		Short: "Delete a schedule, keeping the jobs it already ran",
@@ -309,7 +309,7 @@ func newScheduleDeleteCommand(serverURL *string, timeout *time.Duration) *cobra.
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			if err := newClient(*serverURL, *timeout).
+			if err := newClient(*serverURL, *timeout, *token).
 				delete(ctx, "/api/v1/schedules/"+args[0], nil, nil); err != nil {
 				return err
 			}
@@ -324,16 +324,16 @@ func newScheduleDeleteCommand(serverURL *string, timeout *time.Duration) *cobra.
 // This is the only surface on which the scheduler is visible at all: a run that was skipped because
 // the previous one had not finished, a job another replica leased, or a job the reaper closed after
 // a crash all appear here and nowhere else.
-func newJobCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newJobCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "job",
 		Short: "Inspect what the scheduler did",
 	}
-	cmd.AddCommand(newJobListCommand(serverURL, timeout))
+	cmd.AddCommand(newJobListCommand(serverURL, timeout, token))
 	return cmd
 }
 
-func newJobListCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newJobListCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var (
 		instanceName string
 		state        string
@@ -347,7 +347,7 @@ func newJobListCommand(serverURL *string, timeout *time.Duration) *cobra.Command
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			query := url.Values{}
 			if instanceName != "" {
 				inst, err := resolveInstance(ctx, c, instanceName)

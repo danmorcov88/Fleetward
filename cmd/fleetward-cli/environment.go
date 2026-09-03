@@ -15,7 +15,7 @@ import (
 // Environments exist before instances do, and deliberately so: an instance's environment is what
 // decides whether a destructive operation needs production confirmation, so it is asked for rather
 // than guessed.
-func newEnvironmentCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newEnvironmentCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "environment",
 		Aliases: []string{"env"},
@@ -24,13 +24,13 @@ func newEnvironmentCommand(serverURL *string, timeout *time.Duration) *cobra.Com
 			"Every instance belongs to exactly one.",
 	}
 	cmd.AddCommand(
-		newEnvironmentListCommand(serverURL, timeout),
-		newEnvironmentAddCommand(serverURL, timeout),
+		newEnvironmentListCommand(serverURL, timeout, token),
+		newEnvironmentAddCommand(serverURL, timeout, token),
 	)
 	return cmd
 }
 
-func newEnvironmentListCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newEnvironmentListCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List environments",
@@ -39,7 +39,7 @@ func newEnvironmentListCommand(serverURL *string, timeout *time.Duration) *cobra
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			envs, err := listEnvironments(ctx, newClient(*serverURL, *timeout))
+			envs, err := listEnvironments(ctx, newClient(*serverURL, *timeout, *token))
 			if err != nil {
 				return err
 			}
@@ -60,7 +60,7 @@ func newEnvironmentListCommand(serverURL *string, timeout *time.Duration) *cobra
 	}
 }
 
-func newEnvironmentAddCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newEnvironmentAddCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var (
 		description  string
 		isProduction bool
@@ -82,7 +82,7 @@ func newEnvironmentAddCommand(serverURL *string, timeout *time.Duration) *cobra.
 				"description":   description,
 				"is_production": isProduction,
 			}
-			if err := newClient(*serverURL, *timeout).post(ctx, "/api/v1/environments", body, &resp); err != nil {
+			if err := newClient(*serverURL, *timeout, *token).post(ctx, "/api/v1/environments", body, &resp); err != nil {
 				return err
 			}
 

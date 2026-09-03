@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
 	"github.com/danmorcov88/fleetward/internal/telemetry"
 )
@@ -205,7 +206,7 @@ func (s *Service) observationWatermark(ctx context.Context, instanceID string) (
 		FROM   backups
 		WHERE  tenant_id = $1 AND instance_id = $2
 		  AND  (origin = $3 OR external_id IS NOT NULL)`,
-		s.tenantID, instanceID, originObserved).Scan(&newest)
+		authn.Tenant(ctx), instanceID, originObserved).Scan(&newest)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("backup: read the observation watermark: %w", err)
 	}
@@ -277,7 +278,7 @@ func (s *Service) upsertObserved(
 		              updated_at        = now()
 		WHERE backups.origin = $3
 		RETURNING (xmax = 0)`,
-		s.tenantID, instanceID, originObserved, externalID,
+		authn.Tenant(ctx), instanceID, originObserved, externalID,
 		observedMethod(observed), observedState(observed),
 		observed.GetSizeBytes(), observed.GetLocation(), encoded,
 		started, completed, durationMS).Scan(&inserted)

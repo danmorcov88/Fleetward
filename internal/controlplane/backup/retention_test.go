@@ -1,7 +1,6 @@
 package backup
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -124,7 +123,7 @@ func TestASweepRefusesAPolicyThatRemovesItsOwnLimits(t *testing.T) {
 			t.Parallel()
 
 			svc := &Service{retention: tc.policy}
-			if _, err := svc.SweepRetention(context.Background()); err == nil {
+			if _, err := svc.SweepRetention(testTenantCtx()); err == nil {
 				t.Fatal("the sweep accepted a policy with no limits")
 			}
 		})
@@ -137,7 +136,7 @@ func TestADisabledSweepDoesNothingAndSaysSo(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{retention: RetentionPolicy{Enabled: false, MinKeep: 1, MaxPerSweep: 500}}
-	result, err := svc.SweepRetention(context.Background())
+	result, err := svc.SweepRetention(testTenantCtx())
 	if err != nil {
 		t.Fatalf("a disabled sweep reported an error: %v", err)
 	}

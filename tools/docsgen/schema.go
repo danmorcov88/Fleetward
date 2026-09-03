@@ -45,8 +45,13 @@ var groups = []struct {
 		title: "Identity and tenancy",
 		blurb: "Every tenant-scoped table carries `tenant_id` from the first migration. Retrofitting " +
 			"tenancy would mean a full-schema migration plus an audit of every query, so the column " +
-			"is carried unused rather than added later ([ADR-0008](../adr/0008-oidc-rbac-multitenancy.md)).",
-		tables: []string{"tenants", "users", "roles", "role_grants"},
+			"is carried unused rather than added later ([ADR-0008](../adr/0008-oidc-rbac-multitenancy.md)). " +
+			"`roles` is seeded and ordered by `rank`, so \"at least dba\" is a comparison rather than a " +
+			"list maintained in Go; a grant in `role_grants` covers one instance, one environment, or " +
+			"the whole tenant, and never two of those. `api_tokens` holds only the SHA-256 of a " +
+			"credential’s secret " +
+			"([ADR-0033](../adr/0033-the-bootstrap-credential-is-configuration-and-never-a-row.md)).",
+		tables: []string{"tenants", "users", "roles", "role_grants", "api_tokens"},
 	},
 	{
 		title: "Inventory",

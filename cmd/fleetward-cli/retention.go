@@ -16,7 +16,7 @@ import (
 // It exists because retention is the only thing Fleetward does that cannot be undone, and because
 // there is no job row behind a sweep to read afterwards (ADR-0030). An operator deciding whether to
 // enable retention, or wondering why an artifact is still there, is answered here or not at all.
-func newBackupRetentionCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newBackupRetentionCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var instanceName string
 
 	cmd := &cobra.Command{
@@ -35,7 +35,7 @@ func newBackupRetentionCommand(serverURL *string, timeout *time.Duration) *cobra
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			query := url.Values{}
 			if instanceName != "" {
 				inst, err := resolveInstance(ctx, c, instanceName)
