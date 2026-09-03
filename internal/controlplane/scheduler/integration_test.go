@@ -54,6 +54,7 @@ type stubRunner struct {
 	verified  []string
 	observed  []string
 	probed    []string
+	sweeps    int
 
 	// block, when non-nil, holds RunBackupJob until it is closed or the context is cancelled.
 	block chan struct{}
@@ -131,6 +132,16 @@ func (r *stubRunner) RunDiscoveryJob(_ context.Context, in DiscoveryJob) error {
 	defer r.mu.Unlock()
 	r.probed = append(r.probed, in.InstanceID)
 	return r.err
+}
+
+// SweepRetention is the one Runner method that is not a job. The stub records that it was called
+// and does nothing, which is all the scheduler's own tests need: what a sweep actually deletes is
+// the backup service's business and is tested there, against a real object store.
+func (r *stubRunner) SweepRetention(context.Context) (RetentionOutcome, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sweeps++
+	return RetentionOutcome{}, nil
 }
 
 func (r *stubRunner) probes() []string {
@@ -276,7 +287,10 @@ func (h *harness) attempts(t *testing.T, jobID string) int32 {
 }
 
 func (h *harness) scheduler(runner Runner, cfg config.SchedulerConfig) *Scheduler {
-	return New(h.pool, runner, cfg, h.log)
+	// Retention is off in these tests. What they exercise is claiming, heartbeating, losing a lease
+	// and reaping; a sweep firing on the first tick of every one of them would be unrelated work
+	// deleting unrelated rows. The sweep has its own tests, against a real object store.
+	return New(h.pool, runner, cfg, config.RetentionConfig{}, h.log)
 }
 
 // TestClaimTakesAJobExactlyOnce is the central guarantee. Two runners issue the same statement

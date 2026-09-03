@@ -36,3 +36,16 @@ plugins/postgres/upload.go  docs/dev/slices/A4-backup-and-manifest.md  # written
 web/src/lib/api.gen.ts  docs/dev/slices/B4-estate-overview.md  # the generated TypeScript types B4 introduces, named in prose that says so
 
 internal/controlplane/scheduler/backuprunner.go  docs/dev/slices/B3-observed-backups.md  # written by B3 and correct then; slice B4 renamed it jobrunner.go when the adapter grew a third kind of job that is not a backup, and a brief is left as written
+
+# Slice B5 writes these. Scoped to the brief; each becomes stale the moment the file exists, which
+# is how they get removed: docscheck reports an allowance nothing uses any more.
+internal/storage/metadb/migrations/000003_retention.up.sql            docs/dev/slices/B5-retention-and-expiry.md  # the slice's Files table, listing what B5 will create
+internal/controlplane/backup/retention.go                             docs/dev/slices/B5-retention-and-expiry.md  # the slice's Files table, listing what B5 will create
+internal/controlplane/backup/retention_test.go                        docs/dev/slices/B5-retention-and-expiry.md  # the slice's Files table, listing what B5 will create
+internal/controlplane/backup/retention_integration_test.go            docs/dev/slices/B5-retention-and-expiry.md  # the slice's Files table, listing what B5 will create
+internal/controlplane/scheduler/retentionrunner.go                    docs/dev/slices/B5-retention-and-expiry.md  # the slice's Files table, listing what B5 will create
+docs/adr/0030-retention-sweeps-the-estate-and-never-deletes-a-row.md  docs/dev/slices/B5-retention-and-expiry.md  # the slice's Files table; the ADR numbers are provisional until the decisions are settled
+docs/adr/0031-an-expiry-is-stamped-when-a-backup-is-taken.md          docs/dev/slices/B5-retention-and-expiry.md  # the slice's Files table; the ADR numbers are provisional until the decisions are settled
+docs/adr/0032-retention-never-deletes-the-last-good-backup.md         docs/dev/slices/B5-retention-and-expiry.md  # the slice's Files table; the ADR numbers are provisional until the decisions are settled
+docs/ops/retention.md                                                 docs/dev/slices/B5-retention-and-expiry.md  # the reference page B5 writes, named in the Files table and the scope fence
+docs/dev/journal/B5-retention-and-expiry.md                           docs/dev/slices/B5-retention-and-expiry.md  # the close-out entry B5 writes

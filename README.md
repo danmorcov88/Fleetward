@@ -366,6 +366,53 @@ above has not already collected.
 
 ---
 
+### Stop paying for backups from last spring
+
+A schedule declares how long its backups are kept, and Fleetward now acts on it:
+
+```bash
+bin/fleetward-cli schedule create --instance prod-1 --cron "0 2 * * *" --retention-days 14
+bin/fleetward-cli backup retention
+```
+
+```
+retention runs every 1h0m0s, keeps at least 1 recent backup(s) per instance, and deletes at most 500 artifacts per sweep
+
+WOULD BE DELETED (2, 2.8 GiB)
+INSTANCE  BACKUP    FINISHED (UTC)       EXPIRED (UTC)        SIZE
+prod-1    9f2c…3a1  2026-07-20 02:04:11  2026-08-19 02:04:11  1.4 GiB
+prod-1    a71e…88d  2026-07-21 02:03:55  2026-08-20 02:03:55  1.4 GiB
+
+PAST ITS RETENTION AND KEPT ANYWAY (1)
+INSTANCE  BACKUP    FINISHED (UTC)       EXPIRED (UTC)        SIZE     WHY IT STAYS
+prod-3    2d81…7c4  2026-06-02 02:02:47  2026-07-02 02:02:47  980 MiB  kept: it is the most recent backup of this instance proven restorable, and deleting the last proof is worse than keeping one old artifact
+```
+
+This is the first thing Fleetward does that cannot be undone, so three rules bound it and none of
+them is configurable away.
+
+**A backup Fleetward did not take is never deleted.** Not by default, not by policy, not at all — an
+observed backup is somebody else's file, and the promise that pointing Fleetward at an estate
+changes nothing on it would be worthless with an exception. It is not a filter in a query somebody
+could later forget: the database refuses the transition
+([ADR-0030](docs/adr/0030-retention-sweeps-the-estate-and-never-deletes-a-row.md)).
+
+**An instance's last good backup is never deleted.** Retention that is purely time-based will, on a
+server whose backups have been failing for a month, delete the last one that worked — the ordinary
+result of a correct implementation, and the most damaging thing this product could do. So the floor
+keeps the most recent successful backup *and* the most recent one proven restorable, which on a sick
+instance are not the same row
+([ADR-0032](docs/adr/0032-retention-never-deletes-the-last-good-backup.md)).
+
+**Upgrading deletes nothing.** An expiry is stamped when a backup is taken, from the retention in
+force then, and never recomputed — so every backup that already exists carries none, and none is a
+permanent answer. Editing `--retention-days` applies from the next backup rather than retroactively
+([ADR-0031](docs/adr/0031-an-expiry-is-stamped-when-a-backup-is-taken.md)).
+
+**More:** [retention, the floor, and what a sweep actually deletes](docs/ops/retention.md).
+
+---
+
 ## Where to go next
 
 | If you want to | Read |
@@ -375,6 +422,7 @@ above has not already collected.
 | Know which engines are supported, and what "supported" means | [docs/engines.md](docs/engines.md) |
 | Configure it — every setting, with its default | [docs/ops/configuration.md](docs/ops/configuration.md) |
 | Schedule backups and observation, and know what a crash or a DST change does | [docs/ops/scheduling.md](docs/ops/scheduling.md) |
+| Know what retention deletes, and what it refuses to | [docs/ops/retention.md](docs/ops/retention.md) |
 | See the metadata schema | [docs/dev/data-model.md](docs/dev/data-model.md) |
 | Write a plugin for your own engine | [docs/dev/writing-an-engine-plugin.md](docs/dev/writing-an-engine-plugin.md) |
 | Know what is built and what is not | [docs/dev/STATUS.md](docs/dev/STATUS.md) |
@@ -467,13 +515,15 @@ both directions — a corrupted artifact returns `FAILED`, and a sandbox that ne
 verifications now run on a schedule, without anyone asking; SQL Server passes the same conformance
 suite as PostgreSQL, unmodified, which is the first evidence rather than assertion that adding an
 engine does not mean modifying core; Fleetward now reports on backups it did not take, so an estate
-that already backs itself up gets an answer on the day it is installed; and all of it is readable on
-one screen, where a backup proven unrestorable is the loudest thing on the page.
+that already backs itself up gets an answer on the day it is installed; all of it is readable on
+one screen, where a backup proven unrestorable is the loudest thing on the page; and artifacts that
+have outlived the retention their schedule declared are now deleted, which is the first thing this
+product does that cannot be undone.
 
 Not yet built, stated plainly because a reference document should not imply otherwise: there is no
-authentication, so every API route is open to anyone who can reach the port; artifacts are never
-expired, so they accumulate; nothing is delivered anywhere, so a failed verification is visible only
-by polling; and five of the eight engines are still binaries that only handshake.
+authentication, so every API route is open to anyone who can reach the port; nothing is delivered
+anywhere, so a failed verification is visible only by polling; and five of the eight engines are
+still binaries that only handshake.
 
 The full list, and which slice owns each item, is in [docs/dev/STATUS.md](docs/dev/STATUS.md).
 

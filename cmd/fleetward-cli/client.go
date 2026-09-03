@@ -284,6 +284,36 @@ type adherenceResponse struct {
 	Instances []instanceAdherence `json:"instances"`
 }
 
+// retentionCandidate is one backup the sweep has an opinion about. ProtectedReason is empty on a
+// backup that would be deleted and carries the sentence explaining the decision on one that would
+// not.
+type retentionCandidate struct {
+	BackupID        string     `json:"backup_id"`
+	InstanceID      string     `json:"instance_id"`
+	InstanceName    string     `json:"instance_name"`
+	CompletedAt     *time.Time `json:"completed_at"`
+	ExpiresAt       *time.Time `json:"expires_at"`
+	SizeBytes       string     `json:"size_bytes"`
+	ProtectedReason string     `json:"protected_reason"`
+}
+
+// retentionPolicyRow echoes the limits the sweep runs under. Interval arrives as a protobuf
+// duration, which the gateway renders as a string like "3600s".
+type retentionPolicyRow struct {
+	Enabled     bool   `json:"enabled"`
+	Interval    string `json:"interval"`
+	MinKeep     int32  `json:"min_keep"`
+	MaxPerSweep int32  `json:"max_per_sweep"`
+}
+
+type retentionPreviewResponse struct {
+	Policy           *retentionPolicyRow  `json:"policy"`
+	Expiring         []retentionCandidate `json:"expiring"`
+	Protected        []retentionCandidate `json:"protected"`
+	PendingDeletion  []retentionCandidate `json:"pending_deletion"`
+	ReclaimableBytes string               `json:"reclaimable_bytes"`
+}
+
 type manifestEntry struct {
 	Database    string `json:"database"`
 	ObjectName  string `json:"object_name"`

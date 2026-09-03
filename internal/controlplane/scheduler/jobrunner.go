@@ -35,8 +35,9 @@ func (r *JobRunner) RunBackupJob(ctx context.Context, in BackupJob) (string, err
 		InstanceID: in.InstanceID,
 		MethodID:   in.MethodID,
 		Options:    in.Options,
-		JobID:      in.JobID,
-		ScheduleID: in.ScheduleID,
+		JobID:         in.JobID,
+		ScheduleID:    in.ScheduleID,
+		RetentionDays: in.RetentionDays,
 		// The whole point of this slice: nobody asked for this one.
 		TriggeredManually: false,
 	})

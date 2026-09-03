@@ -218,7 +218,12 @@ func run() error {
 	// before the HTTP server stops accepting would abandon a running backup; closing it after gives
 	// each run the chance to record its outcome, which is the difference between a failed backup
 	// and a row stuck in `running` with nothing to explain it.
-	backupSvc := backup.New(db.Pool(), store, plugins, inventorySvc, sandboxes, log)
+	backupSvc := backup.New(db.Pool(), store, plugins, inventorySvc, sandboxes, backup.RetentionPolicy{
+		Enabled:     cfg.Retention.Enabled,
+		Interval:    cfg.Retention.Interval,
+		MinKeep:     cfg.Retention.MinKeep,
+		MaxPerSweep: cfg.Retention.MaxPerSweep,
+	}, log)
 	defer func() { _ = backupSvc.Close() }()
 
 	if err := fwv1.RegisterBackupServiceHandlerServer(ctx, gateway,
@@ -240,7 +245,8 @@ func run() error {
 		return fmt.Errorf("schedule api: %w", err)
 	}
 
-	sched := scheduler.New(db.Pool(), scheduler.NewJobRunner(backupSvc, inventorySvc), cfg.Scheduler, log)
+	sched := scheduler.New(db.Pool(), scheduler.NewJobRunner(backupSvc, inventorySvc),
+		cfg.Scheduler, cfg.Retention, log)
 	defer func() { _ = sched.Close() }()
 
 	// Non-critical: a stalled tick loop means nothing runs automatically, which is worth degrading

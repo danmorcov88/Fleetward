@@ -69,6 +69,14 @@ Two things about it are worth stating, because both are easy to assume the other
   estate's, and a job that quietly succeeded while learning nothing would let the estate view show a
   stale answer under a fresh timestamp.
 
+Retention is deliberately **not** a fourth kind, and looking for one is the mistake this paragraph
+exists to prevent. Deleting artifacts that have outlived their retention is an estate-wide property
+rather than a per-instance one, so it runs on the control plane's own tick beside the lease reaper
+and has no `schedules` row, no `jobs` row and no lease
+([ADR-0030](../adr/0030-retention-sweeps-the-estate-and-never-deletes-a-row.md)). What a schedule
+contributes is `--retention-days`, which is stamped onto each backup it takes. See
+[`retention.md`](retention.md).
+
 `schedules.kind` also permits `metrics`, which is refused at creation. Database performance metric
 collection is deferred deliberately rather than merely unbuilt: `CollectMetrics` is in the plugin
 contract and nothing calls it, because performance monitoring was never the pain this product exists

@@ -163,6 +163,18 @@ services:
 
       FLEETWARD_PLUGINS_DIR: /app/plugins
 
+      # Retention deletes the artifacts of backups Fleetward took that have outlived the
+      # `--retention-days` their schedule declared. It never touches a backup Fleetward did not
+      # take, and it never deletes an instance's last good one (docs/ops/retention.md).
+      #
+      # Only the interval differs from the shipped default here: one minute rather than one hour, so
+      # that a sweep is observable in a development session instead of something you wait an hour to
+      # see. It changes how often Fleetward looks, never how long a backup is kept.
+      FLEETWARD_RETENTION_ENABLED: "true"
+      FLEETWARD_RETENTION_INTERVAL: 1m
+      FLEETWARD_RETENTION_MIN_KEEP: "1"
+      FLEETWARD_RETENTION_MAX_PER_SWEEP: "500"
+
       # The control plane runs inside a container here, so a sandbox's published host port is not
       # reachable from it — 127.0.0.1 means something different on each side. Attaching sandboxes to
       # this stack's network instead lets the control plane address them by container name.

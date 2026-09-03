@@ -59,6 +59,8 @@ type harness struct {
 	plugin    *stubEngine
 	router    *stubRouter
 	sandboxes *stubSandboxes
+	resolver  *stubResolver
+	log       *slog.Logger
 	instance  string
 }
 
@@ -81,13 +83,29 @@ func newHarness(t *testing.T) *harness {
 	sandboxes := &stubSandboxes{}
 
 	router := &stubRouter{client: plugin}
-	svc := New(pool, store, router, &stubResolver{instanceID: instanceID}, sandboxes, log)
+	// The retention policy every test starts with: enabled, and with the floor and the ceiling at
+	// their production defaults. A test that needs different limits rebuilds the service through
+	// withRetention rather than reaching into the field, so what it changed is visible at the call
+	// site.
+	svc := New(pool, store, router, &stubResolver{instanceID: instanceID}, sandboxes,
+		RetentionPolicy{Enabled: true, Interval: time.Hour, MinKeep: 1, MaxPerSweep: 500}, log)
 	t.Cleanup(func() { _ = svc.Close() })
 
 	return &harness{
 		svc: svc, pool: pool, store: store, plugin: plugin, router: router,
-		sandboxes: sandboxes, instance: instanceID,
+		sandboxes: sandboxes, instance: instanceID, log: log,
+		resolver: &stubResolver{instanceID: instanceID},
 	}
+}
+
+// withRetention returns a service over the same database and object store, under a different
+// retention policy. It exists so a test that needs a floor of three, or a ceiling of one, says so
+// where it can be read rather than mutating the harness underneath the other tests.
+func (h *harness) withRetention(t *testing.T, policy RetentionPolicy) *Service {
+	t.Helper()
+	svc := New(h.pool, h.store, h.router, h.resolver, h.sandboxes, policy, h.log)
+	t.Cleanup(func() { _ = svc.Close() })
+	return svc
 }
 
 func startMetaDB(t *testing.T, ctx context.Context) *pgxpool.Pool {

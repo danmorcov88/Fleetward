@@ -150,6 +150,16 @@ service BackupService {
   rpc GetBackupAdherence(GetBackupAdherenceRequest) returns (GetBackupAdherenceResponse) {
     option (google.api.http) = {get: "/api/v1/backup-adherence"};
   }
+  // PreviewRetention reports what the next retention sweep would delete, and what it would refuse
+  // to delete and why. It is read-only and changes nothing.
+  //
+  // It exists because retention is the only thing Fleetward does that destroys something, and an
+  // operator has to be able to see the answer before it is acted on rather than afterwards in a
+  // log. There is no job row per sweep to inspect (ADR-0030), so this is the surface that replaces
+  // one.
+  rpc PreviewRetention(PreviewRetentionRequest) returns (PreviewRetentionResponse) {
+    option (google.api.http) = {get: "/api/v1/backup-retention"};
+  }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -594,6 +604,51 @@ enum AdherenceState {
   // Nothing was declared for this instance, so there is no window to be inside. Not a problem, and
   // not an achievement.
   ADHERENCE_STATE_NOT_DECLARED = 5;
+}
+
+message PreviewRetentionRequest {
+  // Restrict to one instance. Empty previews the whole estate, which is the question an operator
+  // about to enable retention actually asks.
+  string instance_id = 1;
+}
+
+message PreviewRetentionResponse {
+  // The limits the sweep runs under, echoed so that a surprising preview can be explained without
+  // reading the server's environment.
+  RetentionPolicy policy = 1;
+  // What the next sweep would expire and delete, oldest first, bounded by the sweep's own ceiling.
+  repeated RetentionCandidate expiring = 2;
+  // Backups that are past their expiry and will not be deleted, each carrying the reason. This is
+  // the half of the answer that stops "why is that one still there" being a question only the
+  // source code answers.
+  repeated RetentionCandidate protected = 3;
+  // Backups already marked expired whose artifact is still in object storage — the state a sweep
+  // interrupted between its two steps leaves behind. The next sweep finishes them (ADR-0030).
+  repeated RetentionCandidate pending_deletion = 4;
+  // How much object storage the next sweep would release.
+  int64 reclaimable_bytes = 5;
+}
+
+// RetentionPolicy is the configured shape of the sweep, not a per-instance setting. Retention is an
+// estate-wide property; what varies per backup is the expiry stamped on it (ADR-0031).
+message RetentionPolicy {
+  bool enabled = 1;
+  google.protobuf.Duration interval = 2;
+  int32 min_keep = 3;
+  int32 max_per_sweep = 4;
+}
+
+// RetentionCandidate is one backup the sweep has an opinion about.
+message RetentionCandidate {
+  string backup_id = 1;
+  string instance_id = 2;
+  string instance_name = 3;
+  google.protobuf.Timestamp completed_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  int64 size_bytes = 6;
+  // Why this backup will not be deleted, in a sentence a human can act on. Empty on a backup the
+  // sweep would remove.
+  string protected_reason = 7;
 }
 
 message GetVerificationRequest {
