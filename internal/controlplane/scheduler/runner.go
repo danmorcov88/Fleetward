@@ -164,6 +164,11 @@ func (s *Scheduler) run(parent context.Context, job *claimedJob) {
 			JobID:      job.ID,
 			InstanceID: job.InstanceID,
 		})
+	case kindDiscovery:
+		runErr = s.runner.RunDiscoveryJob(ctx, DiscoveryJob{
+			JobID:      job.ID,
+			InstanceID: job.InstanceID,
+		})
 	default:
 		runErr = fmt.Errorf("%w: the scheduler does not run %q jobs", ErrUnsupported, job.Kind)
 	}
@@ -189,11 +194,12 @@ func (s *Scheduler) run(parent context.Context, job *claimedJob) {
 
 	log.InfoContext(ctx, "scheduled job finished", slog.Duration("duration", time.Since(started)))
 
-	// An observation writes no row that is about the job — it updates the backups it found, and
-	// nothing else — so there is no transaction for its outcome to be folded into, and nothing else
-	// will close it. A job left running is not cosmetic: idx_jobs_one_active_per_instance_kind then
-	// blocks every later observation of that instance, and the polling silently stops.
-	if job.Kind == kindObserve {
+	// An observation and a health probe both write no row that is about the job — one updates the
+	// backups it found, the other the instance it probed — so there is no transaction for the
+	// outcome to be folded into, and nothing else will close it. A job left running is not
+	// cosmetic: idx_jobs_one_active_per_instance_kind then blocks every later job of that kind for
+	// that instance, and the polling silently stops.
+	if job.Kind == kindObserve || job.Kind == kindDiscovery {
 		s.close(parent, job.ID, "succeeded", "", log)
 	}
 

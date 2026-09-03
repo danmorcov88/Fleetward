@@ -85,9 +85,10 @@ clean: ## Remove build output
 # --- Protobuf ------------------------------------------------------------------------------------
 
 .PHONY: proto
-proto: ## Regenerate code from api/proto (requires buf)
+proto: ## Regenerate code from api/proto (requires buf), including the web app's types
 	buf generate
 	buf generate --template internal/storage/tsdb/prompb/buf.gen.yaml internal/storage/tsdb/prompb
+	$(MAKE) web-types
 
 .PHONY: proto-lint
 proto-lint: ## Lint the protobuf contract
@@ -172,6 +173,16 @@ web-dev: ## Run the web app in development mode
 web-build: ## Build the web app for production
 	cd web && npm run build
 
+# Generated from api/openapi/openapi.yaml, committed, and diffed by CI — the same contract the Go
+# output is held to. `make proto` runs this, so the two can never be regenerated apart.
+.PHONY: web-types
+web-types: ## Regenerate the web app's API types from api/openapi
+	cd web && npm run generate
+
+.PHONY: test-web
+test-web: ## Run the web app's tests
+	cd web && npm run test
+
 # --- Repository configuration --------------------------------------------------------------------
 
 .PHONY: ruleset-apply
@@ -190,4 +201,4 @@ tools: ## Install the development tools used by lint and vuln
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 
 .PHONY: ci
-ci: lint test build ## Run what CI runs
+ci: lint test test-web build ## Run what CI runs

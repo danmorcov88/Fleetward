@@ -17,22 +17,23 @@ import (
 
 // Job kinds and verification policies, as the CHECK constraints spell them.
 const (
-	kindBackup  = "backup"
-	kindVerify  = "verify"
-	kindObserve = "observe"
+	kindBackup    = "backup"
+	kindVerify    = "verify"
+	kindObserve   = "observe"
+	kindDiscovery = "discovery"
 
 	verifyAlways  = "always"
 	verifySampled = "sampled"
 	verifyManual  = "manual"
 )
 
-// Runner is the slice of the backup service the scheduler drives.
+// Runner is the slice of the rest of the control plane that the scheduler drives.
 //
 // It is an interface rather than a concrete dependency for one reason that matters: the scheduler's
 // tests exercise claiming, heartbeating, losing a lease and reaping, and none of that should
 // require an object store, a plugin process, or a container runtime to be present.
 //
-// Both methods are synchronous, unlike the RPC-facing RunBackup and RunVerification. The scheduler
+// Every method is synchronous, unlike the RPC-facing RunBackup and RunVerification. The scheduler
 // needs the work bound to the runner's context — a lost lease has to be able to stop it — and needs
 // to know whether the backup succeeded before it can decide about verification.
 type Runner interface {
@@ -44,6 +45,9 @@ type Runner interface {
 	// RunObservationJob reads the engine's own record of backups Fleetward did not take, and
 	// records what it finds (ADR-0015). It touches nothing on the instance it reads.
 	RunObservationJob(ctx context.Context, in ObservationJob) error
+	// RunDiscoveryJob probes one instance and records its health, so that the estate's health is
+	// an answer somebody can put a date on rather than whatever the last human left behind.
+	RunDiscoveryJob(ctx context.Context, in DiscoveryJob) error
 }
 
 // BackupJob is one scheduled backup, assembled from the job row alone.
@@ -63,6 +67,17 @@ type VerificationJob struct {
 
 // ObservationJob is one scheduled read of an instance's backup history.
 type ObservationJob struct {
+	JobID      string
+	InstanceID string
+}
+
+// DiscoveryJob is one scheduled health probe of an instance.
+//
+// The kind is called `discovery` because that is the name the CHECK constraint has carried since
+// the schema was written, and widening a constraint to rename a value nobody has typed yet would
+// be a migration spent on vocabulary. What it does is probe and record health; it does not re-run
+// the plugin's Discover to refresh topology. The name is older than the job.
+type DiscoveryJob struct {
 	JobID      string
 	InstanceID string
 }

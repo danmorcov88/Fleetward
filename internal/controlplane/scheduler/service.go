@@ -94,12 +94,14 @@ func (s *Service) CreateSchedule(ctx context.Context, in CreateScheduleInput) (*
 	if kind == "" {
 		kind = kindBackup
 	}
-	// `schedules.kind` also permits 'discovery' and 'metrics', and refusing those with a message
-	// that says which slice owns them is more useful than accepting a schedule that would silently
-	// never fire.
-	if kind != kindBackup && kind != kindObserve {
-		return nil, fmt.Errorf("%w: only %q and %q schedules run today; %q schedules arrive with the estate view",
-			ErrUnsupported, kindBackup, kindObserve, kind)
+	// `schedules.kind` also permits 'metrics', and refusing it with a message that says why is more
+	// useful than accepting a schedule that would silently never fire. Metric collection is
+	// deferred deliberately rather than merely unbuilt: the plugin contract carries CollectMetrics
+	// and nothing calls it, because performance monitoring was never the pain this product exists
+	// to solve.
+	if kind != kindBackup && kind != kindObserve && kind != kindDiscovery {
+		return nil, fmt.Errorf("%w: only %q, %q and %q schedules run today; %q collection is deferred deliberately",
+			ErrUnsupported, kindBackup, kindObserve, kindDiscovery, kind)
 	}
 
 	timezone := in.Timezone

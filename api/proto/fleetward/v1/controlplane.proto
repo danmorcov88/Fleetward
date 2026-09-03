@@ -241,14 +241,22 @@ message Instance {
   google.protobuf.Timestamp last_seen_at = 10;
   map<string, string> labels = 11;
   google.protobuf.Timestamp created_at = 12;
-  // Latest backup and verification state, denormalized so the estate grid renders in one query.
-  BackupSummary backup_summary = 13;
+  // Deprecated: never populated. It was declared for an estate grid that did not exist yet, and by
+  // the time one did, GetBackupAdherence answered the same question better: it carries the verdict
+  // as well as the backup, and it reports an instance nobody has declared anything for, which this
+  // field cannot express. Read GetBackupAdherence instead. Removing this is a breaking change and
+  // leaving it silent was a lie, so it says so here.
+  BackupSummary backup_summary = 13 [deprecated = true];
 }
 
 // BackupSummary is the two-part status the estate grid shows: did the backup succeed, and was it
 // proven restorable. These are deliberately separate — a green backup with a red verification is
 // the most dangerous state in the product and must never collapse into one indicator.
+//
+// Deprecated: see Instance.backup_summary. Superseded by GetBackupAdherence.
 message BackupSummary {
+  option deprecated = true;
+
   google.protobuf.Timestamp last_backup_at = 1;
   BackupState last_backup_state = 2;
   google.protobuf.Timestamp last_verification_at = 3;

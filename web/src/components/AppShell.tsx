@@ -2,9 +2,13 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { cn } from "@/lib/cn";
 
 /**
- * Navigation for the Phase 1 screens. Entries whose screens arrive in later stages are present but
- * disabled, so the shape of the product is visible from the first run rather than appearing a
- * screen at a time.
+ * Navigation. Entries whose screens are not built yet are present but disabled, so the shape of the
+ * product is visible from the first run rather than appearing a screen at a time.
+ *
+ * There is deliberately no account menu and no "signed in as". Every route under `/api/v1/` is open
+ * to anyone who can reach the port, and a UI that implied otherwise would be claiming a protection
+ * that does not exist. Authorization is a later slice, and until it lands this screen says nothing
+ * about who is looking at it.
  */
 const NAV = [
   { to: "/", label: "Estate", enabled: true },
@@ -43,7 +47,7 @@ export function AppShell() {
               <span
                 key={item.to}
                 className="px-3 py-2 rounded-md text-sm text-(--color-content-muted) opacity-50 cursor-not-allowed"
-                title="Arrives in a later stage"
+                title="Not built yet"
               >
                 {item.label}
               </span>

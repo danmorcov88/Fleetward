@@ -17,18 +17,18 @@ paths:
                  is stored, so there is nothing that can go stale.
             operationId: BackupService_GetBackupAdherence
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: query
                   description: |-
                     Restrict to one instance or one environment. Both empty reports the whole estate, which is the
                      question a DBA with fifty servers actually asks.
                   schema:
                     type: string
-                - name: environmentId
+                - name: environment_id
                   in: query
                   schema:
                     type: string
-                - name: problemsOnly
+                - name: problems_only
                   in: query
                   description: Report only instances that are not adherent.
                   schema:
@@ -52,11 +52,11 @@ paths:
                 - BackupService
             operationId: BackupService_ListBackups
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: query
                   schema:
                     type: string
-                - name: environmentId
+                - name: environment_id
                   in: query
                   schema:
                     type: string
@@ -73,21 +73,30 @@ paths:
                 - name: state
                   in: query
                   schema:
-                    type: integer
+                    enum:
+                        - BACKUP_STATE_UNSPECIFIED
+                        - BACKUP_STATE_PENDING
+                        - BACKUP_STATE_RUNNING
+                        - BACKUP_STATE_SUCCEEDED
+                        - BACKUP_STATE_FAILED
+                        - BACKUP_STATE_CANCELED
+                        - BACKUP_STATE_EXPIRED
+                        - BACKUP_STATE_UNKNOWN
+                    type: string
                     format: enum
-                - name: verificationFailedOnly
+                - name: verification_failed_only
                   in: query
                   description: |-
                     Return only backups whose latest verification failed. This is the query an on-call DBA runs
                      first, so it is a first-class filter rather than client-side work.
                   schema:
                     type: boolean
-                - name: pageSize
+                - name: page_size
                   in: query
                   schema:
                     type: integer
                     format: int32
-                - name: pageToken
+                - name: page_token
                   in: query
                   schema:
                     type: string
@@ -97,7 +106,11 @@ paths:
                     Restrict to backups of one origin. Unspecified returns both, which is what an adherence
                      question wants: it does not care who took the backup (ADR-0015).
                   schema:
-                    type: integer
+                    enum:
+                        - BACKUP_ORIGIN_UNSPECIFIED
+                        - BACKUP_ORIGIN_MANAGED
+                        - BACKUP_ORIGIN_OBSERVED
+                    type: string
                     format: enum
             responses:
                 "200":
@@ -112,13 +125,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/backups/{backupId}:
+    /api/v1/backups/{backup_id}:
         get:
             tags:
                 - BackupService
             operationId: BackupService_GetBackup
             parameters:
-                - name: backupId
+                - name: backup_id
                   in: path
                   required: true
                   schema:
@@ -136,7 +149,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/backups/{backupId}/verify:
+    /api/v1/backups/{backup_id}/verify:
         post:
             tags:
                 - BackupService
@@ -145,7 +158,7 @@ paths:
                  product's defining operation.
             operationId: BackupService_RunVerification
             parameters:
-                - name: backupId
+                - name: backup_id
                   in: path
                   required: true
                   schema:
@@ -175,12 +188,12 @@ paths:
                 - InventoryService
             operationId: InventoryService_ListEnvironments
             parameters:
-                - name: pageSize
+                - name: page_size
                   in: query
                   schema:
                     type: integer
                     format: int32
-                - name: pageToken
+                - name: page_token
                   in: query
                   schema:
                     type: string
@@ -244,21 +257,21 @@ paths:
                 - InventoryService
             operationId: InventoryService_ListInstances
             parameters:
-                - name: environmentId
+                - name: environment_id
                   in: query
                   schema:
                     type: string
-                - name: engineType
+                - name: engine_type
                   in: query
                   description: Filter by engine. Display-level filtering only; core does not branch on this value.
                   schema:
                     type: string
-                - name: pageSize
+                - name: page_size
                   in: query
                   schema:
                     type: integer
                     format: int32
-                - name: pageToken
+                - name: page_token
                   in: query
                   schema:
                     type: string
@@ -298,13 +311,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/instances/{instanceId}:
+    /api/v1/instances/{instance_id}:
         get:
             tags:
                 - InventoryService
             operationId: InventoryService_GetInstance
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: path
                   required: true
                   schema:
@@ -327,12 +340,12 @@ paths:
                 - InventoryService
             operationId: InventoryService_DeleteInstance
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: path
                   required: true
                   schema:
                     type: string
-                - name: deleteArtifacts
+                - name: delete_artifacts
                   in: query
                   description: |-
                     Also delete backup artifacts belonging to this instance. Defaults to false: removing an
@@ -352,13 +365,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/instances/{instanceId}/backups:
+    /api/v1/instances/{instance_id}/backups:
         post:
             tags:
                 - BackupService
             operationId: BackupService_RunBackup
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: path
                   required: true
                   schema:
@@ -382,14 +395,14 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/instances/{instanceId}/discover:
+    /api/v1/instances/{instance_id}/discover:
         post:
             tags:
                 - InventoryService
             description: DiscoverInstance refreshes topology, version, and database inventory for one instance.
             operationId: InventoryService_DiscoverInstance
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: path
                   required: true
                   schema:
@@ -413,7 +426,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/instances/{instanceId}/observe:
+    /api/v1/instances/{instance_id}/observe:
         post:
             tags:
                 - BackupService
@@ -423,7 +436,7 @@ paths:
                  a cadence, and it changes nothing on the instance it reads.
             operationId: BackupService_ObserveBackupHistory
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: path
                   required: true
                   schema:
@@ -447,13 +460,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/instances/{instanceId}/pitr-window:
+    /api/v1/instances/{instance_id}/pitr-window:
         get:
             tags:
                 - BackupService
             operationId: BackupService_GetPITRWindow
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: path
                   required: true
                   schema:
@@ -471,22 +484,22 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/instances/{instanceId}/principals:
+    /api/v1/instances/{instance_id}/principals:
         get:
             tags:
                 - InventoryService
             operationId: InventoryService_ListPrincipalsForInstance
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: path
                   required: true
                   schema:
                     type: string
-                - name: includePrivileges
+                - name: include_privileges
                   in: query
                   schema:
                     type: boolean
-                - name: includeSystem
+                - name: include_system
                   in: query
                   schema:
                     type: boolean
@@ -503,13 +516,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/instances/{instanceId}/schedules:
+    /api/v1/instances/{instance_id}/schedules:
         post:
             tags:
                 - ScheduleService
             operationId: ScheduleService_CreateSchedule
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: path
                   required: true
                   schema:
@@ -533,7 +546,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/instances/{instanceId}/test-connection:
+    /api/v1/instances/{instance_id}/test-connection:
         post:
             tags:
                 - InventoryService
@@ -542,7 +555,7 @@ paths:
                  anything. Used by the add-instance wizard.
             operationId: InventoryService_TestConnection
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: path
                   required: true
                   schema:
@@ -575,20 +588,27 @@ paths:
                  skipped, leased by another replica, or closed by the reaper after a crash.
             operationId: ScheduleService_ListJobs
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: query
                   schema:
                     type: string
-                - name: scheduleId
+                - name: schedule_id
                   in: query
                   schema:
                     type: string
                 - name: state
                   in: query
                   schema:
-                    type: integer
+                    enum:
+                        - JOB_STATE_UNSPECIFIED
+                        - JOB_STATE_PENDING
+                        - JOB_STATE_RUNNING
+                        - JOB_STATE_SUCCEEDED
+                        - JOB_STATE_FAILED
+                        - JOB_STATE_CANCELED
+                    type: string
                     format: enum
-                - name: pageSize
+                - name: page_size
                   in: query
                   schema:
                     type: integer
@@ -633,7 +653,7 @@ paths:
                 - ScheduleService
             operationId: ScheduleService_ListSchedules
             parameters:
-                - name: instanceId
+                - name: instance_id
                   in: query
                   schema:
                     type: string
@@ -650,13 +670,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/schedules/{scheduleId}:
+    /api/v1/schedules/{schedule_id}:
         get:
             tags:
                 - ScheduleService
             operationId: ScheduleService_GetSchedule
             parameters:
-                - name: scheduleId
+                - name: schedule_id
                   in: path
                   required: true
                   schema:
@@ -679,7 +699,7 @@ paths:
                 - ScheduleService
             operationId: ScheduleService_DeleteSchedule
             parameters:
-                - name: scheduleId
+                - name: schedule_id
                   in: path
                   required: true
                   schema:
@@ -697,7 +717,7 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/schedules/{scheduleId}/enabled:
+    /api/v1/schedules/{schedule_id}/enabled:
         post:
             tags:
                 - ScheduleService
@@ -707,7 +727,7 @@ paths:
                  the history that points at it.
             operationId: ScheduleService_SetScheduleEnabled
             parameters:
-                - name: scheduleId
+                - name: schedule_id
                   in: path
                   required: true
                   schema:
@@ -731,13 +751,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /api/v1/verifications/{verificationId}:
+    /api/v1/verifications/{verification_id}:
         get:
             tags:
                 - BackupService
             operationId: BackupService_GetVerification
             parameters:
-                - name: verificationId
+                - name: verification_id
                   in: path
                   required: true
                   schema:
@@ -780,55 +800,68 @@ components:
             properties:
                 id:
                     type: string
-                tenantId:
+                tenant_id:
                     type: string
-                instanceId:
+                instance_id:
                     type: string
-                methodId:
+                method_id:
                     type: string
                 state:
-                    type: integer
+                    enum:
+                        - BACKUP_STATE_UNSPECIFIED
+                        - BACKUP_STATE_PENDING
+                        - BACKUP_STATE_RUNNING
+                        - BACKUP_STATE_SUCCEEDED
+                        - BACKUP_STATE_FAILED
+                        - BACKUP_STATE_CANCELED
+                        - BACKUP_STATE_EXPIRED
+                        - BACKUP_STATE_UNKNOWN
+                    type: string
                     format: enum
-                sizeBytes:
+                size_bytes:
                     type: string
                 checksum:
                     $ref: '#/components/schemas/Checksum'
-                startedAt:
+                started_at:
                     type: string
                     format: date-time
-                completedAt:
+                completed_at:
                     type: string
                     format: date-time
                 duration:
                     pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
                     type: string
-                consistencyPoint:
+                consistency_point:
                     type: string
                     format: date-time
-                expiresAt:
+                expires_at:
                     type: string
                     format: date-time
                 artifact:
                     $ref: '#/components/schemas/ObjectRef'
-                errorMessage:
+                error_message:
                     type: string
                 verification:
                     allOf:
                         - $ref: '#/components/schemas/Verification'
                     description: Most recent verification of this backup, if any.
-                triggeredManually:
+                triggered_manually:
                     type: boolean
                 origin:
-                    type: integer
+                    enum:
+                        - BACKUP_ORIGIN_UNSPECIFIED
+                        - BACKUP_ORIGIN_MANAGED
+                        - BACKUP_ORIGIN_OBSERVED
+                    type: string
                     description: |-
                         Who took this backup. Managed backups carry a manifest Fleetward captured and can be verified;
                          observed ones are evidence about somebody else's backup and cannot (ADR-0015). The two must
                          never be rendered as the same green tick.
                     format: enum
-                externalId:
+                external_id:
                     type: string
                     description: The identifier the engine gave this backup, where the engine assigns one. Empty otherwise.
-                externalLocation:
+                external_location:
                     type: string
                     description: |-
                         Where the artifact is, as the engine names it. Set on observed backups, which Fleetward does
@@ -843,24 +876,24 @@ components:
                 supported:
                     type: boolean
                     description: ListBackupHistory returns evidence rather than ERROR_CODE_UNSUPPORTED.
-                sourceDescription:
+                source_description:
                     type: string
                     description: |-
                         Where the evidence comes from, in the engine's own vocabulary, so a report can say what it is
                          reading. Display only — core must not branch on it.
-                identityIsEngineAssigned:
+                identity_is_engine_assigned:
                     type: boolean
                     description: |-
                         ObservedBackup.external_id is an identifier the engine itself assigns, and therefore survives
                          an artifact being moved or renamed. When false the plugin derives it from what it can see, so a
                          renamed artifact may appear as a second backup, and Fleetward says so rather than double
                          counting silently.
-                reportsOutcome:
+                reports_outcome:
                     type: boolean
                     description: |-
                         The evidence distinguishes a successful backup from a failed one. When false every record is
                          OBSERVED_OUTCOME_UNKNOWN, and nothing downstream may render one as a success.
-                requiresSharedDirectory:
+                requires_shared_directory:
                     type: boolean
                     description: |-
                         Observation reads the directory of ADR-0026, so core refuses an observation schedule against an
@@ -879,29 +912,34 @@ components:
                 id:
                     type: string
                     description: Stable identifier referenced by BackupRequest.method_id, e.g. "pg_basebackup", "mysqldump".
-                displayName:
+                display_name:
                     type: string
                 description:
                     type: string
                 kind:
-                    type: integer
+                    enum:
+                        - BACKUP_KIND_UNSPECIFIED
+                        - BACKUP_KIND_PHYSICAL
+                        - BACKUP_KIND_LOGICAL
+                        - BACKUP_KIND_SNAPSHOT
+                    type: string
                     format: enum
-                isDefault:
+                is_default:
                     type: boolean
                     description: Exactly one method per plugin should set this.
-                enablesPitr:
+                enables_pitr:
                     type: boolean
                     description: Backups taken with this method can serve as a PITR baseline.
-                supportsIncremental:
+                supports_incremental:
                     type: boolean
-                supportsCompression:
+                supports_compression:
                     type: boolean
-                supportsParallelism:
+                supports_parallelism:
                     type: boolean
-                requiresDowntime:
+                requires_downtime:
                     type: boolean
                     description: The instance must be offline or locked for the duration. Core warns loudly before scheduling.
-                requiredTools:
+                required_tools:
                     type: array
                     items:
                         type: string
@@ -909,7 +947,7 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/MethodOption'
-                requiresSharedDirectory:
+                requires_shared_directory:
                     type: boolean
                     description: |-
                         This method's tooling writes the artifact to the database server's own filesystem rather than
@@ -919,87 +957,117 @@ components:
         BackupSummary:
             type: object
             properties:
-                lastBackupAt:
+                last_backup_at:
                     type: string
                     format: date-time
-                lastBackupState:
-                    type: integer
+                last_backup_state:
+                    enum:
+                        - BACKUP_STATE_UNSPECIFIED
+                        - BACKUP_STATE_PENDING
+                        - BACKUP_STATE_RUNNING
+                        - BACKUP_STATE_SUCCEEDED
+                        - BACKUP_STATE_FAILED
+                        - BACKUP_STATE_CANCELED
+                        - BACKUP_STATE_EXPIRED
+                        - BACKUP_STATE_UNKNOWN
+                    type: string
                     format: enum
-                lastVerificationAt:
+                last_verification_at:
                     type: string
                     format: date-time
-                lastVerificationStatus:
-                    type: integer
+                last_verification_status:
+                    enum:
+                        - VERIFICATION_STATUS_UNSPECIFIED
+                        - VERIFICATION_STATUS_VERIFIED
+                        - VERIFICATION_STATUS_FAILED
+                        - VERIFICATION_STATUS_INCONCLUSIVE
+                    type: string
                     format: enum
-                lastBackupId:
+                last_backup_id:
                     type: string
             description: |-
                 BackupSummary is the two-part status the estate grid shows: did the backup succeed, and was it
                  proven restorable. These are deliberately separate — a green backup with a red verification is
                  the most dangerous state in the product and must never collapse into one indicator.
+
+                 Deprecated: see Instance.backup_summary. Superseded by GetBackupAdherence.
         Capabilities:
             type: object
             properties:
-                engineType:
+                engine_type:
                     type: string
                     description: |-
                         Canonical engine identifier, e.g. "postgresql", "mysql", "mariadb", "mongodb", "redis".
                          Used for display, sandbox image resolution, and grouping only — never for behavioral branching
                          in core.
-                engineDisplayName:
+                engine_display_name:
                     type: string
-                pluginVersion:
+                plugin_version:
                     type: string
-                contractVersion:
+                contract_version:
                     type: string
                     description: Version of this contract the plugin was built against, e.g. "v1".
-                supportedEngineVersions:
+                supported_engine_versions:
                     type: array
                     items:
                         type: string
                     description: Engine versions this plugin is known to support, as semver ranges, e.g. ">=13 <17".
-                supportsPitr:
+                supports_pitr:
                     type: boolean
                     description: Point-in-time recovery is available for instances of this engine.
-                supportsSchemaDiscovery:
+                supports_schema_discovery:
                     type: boolean
                     description: The engine has a schema/database hierarchy worth discovering and displaying.
-                supportsConfigRead:
+                supports_config_read:
                     type: boolean
                     description: GetConfig returns meaningful data.
-                supportsReplication:
+                supports_replication:
                     type: boolean
                     description: The engine has a replication topology Discover can report.
-                supportsReplicationLag:
+                supports_replication_lag:
                     type: boolean
                     description: |-
                         Replication lag can be measured and is emitted as a metric. Core gates the lag health rule and
                          the UI's lag column on this flag.
-                supportsStorageMetrics:
+                supports_storage_metrics:
                     type: boolean
                     description: Storage utilization metrics are available, enabling the "storage > 85%" alert rule.
-                supportsOnlineBackup:
+                supports_online_backup:
                     type: boolean
                     description: At least one backup method runs without taking the instance offline.
-                supportsSandboxRestore:
+                supports_sandbox_restore:
                     type: boolean
                     description: |-
                         Restore into a sandbox is possible. Automated backup verification requires this; without it
                          core can back up but will report verification as unsupported rather than failed.
-                supportsPointInTimeRestore:
+                supports_point_in_time_restore:
                     type: boolean
                     description: Restore can target a point in time, not just the artifact's own consistency point.
-                backupMethods:
+                backup_methods:
                     type: array
                     items:
                         $ref: '#/components/schemas/BackupMethod'
-                principalModel:
-                    type: integer
+                principal_model:
+                    enum:
+                        - PRINCIPAL_MODEL_UNSPECIFIED
+                        - PRINCIPAL_MODEL_USERS
+                        - PRINCIPAL_MODEL_USERS_AND_ROLES
+                        - PRINCIPAL_MODEL_USERS_AND_GRANTS
+                        - PRINCIPAL_MODEL_ACL
+                        - PRINCIPAL_MODEL_NONE
+                    type: string
                     format: enum
-                supportedVerificationChecks:
+                supported_verification_checks:
                     type: array
                     items:
-                        type: integer
+                        enum:
+                            - VERIFICATION_CHECK_UNSPECIFIED
+                            - VERIFICATION_CHECK_CONNECTIVITY
+                            - VERIFICATION_CHECK_RECORD_COUNTS
+                            - VERIFICATION_CHECK_SCHEMA_PRESENCE
+                            - VERIFICATION_CHECK_INTEGRITY
+                            - VERIFICATION_CHECK_QUERYABILITY
+                        type: string
                         format: enum
                     description: Verification checks this plugin implements. Core requests a subset of these.
                 metrics:
@@ -1007,20 +1075,20 @@ components:
                     items:
                         $ref: '#/components/schemas/MetricDescriptor'
                     description: Metrics this plugin may emit, so core can register them without a collection round-trip.
-                sandboxTemplate:
+                sandbox_template:
                     allOf:
                         - $ref: '#/components/schemas/SandboxTemplate'
                     description: |-
                         How to provision a sandbox for this engine. Core's SandboxProvider consumes this and stays
                          engine-agnostic.
-                requiredTools:
+                required_tools:
                     type: array
                     items:
                         type: string
                     description: |-
                         External executables the plugin needs on its PATH, e.g. "pg_basebackup". Core surfaces missing
                          tools as a plugin health problem rather than letting a backup fail at 3am.
-                backupHistory:
+                backup_history:
                     allOf:
                         - $ref: '#/components/schemas/BackupHistoryCapabilities'
                     description: |-
@@ -1039,12 +1107,24 @@ components:
             type: object
             properties:
                 check:
-                    type: integer
+                    enum:
+                        - VERIFICATION_CHECK_UNSPECIFIED
+                        - VERIFICATION_CHECK_CONNECTIVITY
+                        - VERIFICATION_CHECK_RECORD_COUNTS
+                        - VERIFICATION_CHECK_SCHEMA_PRESENCE
+                        - VERIFICATION_CHECK_INTEGRITY
+                        - VERIFICATION_CHECK_QUERYABILITY
+                    type: string
                     format: enum
                 passed:
                     type: boolean
                 severity:
-                    type: integer
+                    enum:
+                        - SEVERITY_UNSPECIFIED
+                        - SEVERITY_INFO
+                        - SEVERITY_WARNING
+                        - SEVERITY_CRITICAL
+                    type: string
                     format: enum
                 message:
                     type: string
@@ -1059,7 +1139,12 @@ components:
             type: object
             properties:
                 algorithm:
-                    type: integer
+                    enum:
+                        - CHECKSUM_ALGORITHM_UNSPECIFIED
+                        - CHECKSUM_ALGORITHM_SHA256
+                        - CHECKSUM_ALGORITHM_CRC32C
+                        - CHECKSUM_ALGORITHM_BLAKE3
+                    type: string
                     format: enum
                 value:
                     type: string
@@ -1071,7 +1156,12 @@ components:
                     type: string
                     description: Component name, e.g. "metadb", "tsdb", "objstore", "plugin:postgresql".
                 status:
-                    type: integer
+                    enum:
+                        - SERVICE_HEALTH_UNSPECIFIED
+                        - SERVICE_HEALTH_HEALTHY
+                        - SERVICE_HEALTH_DEGRADED
+                        - SERVICE_HEALTH_UNHEALTHY
+                    type: string
                     format: enum
                 message:
                     type: string
@@ -1093,7 +1183,7 @@ components:
                     type: object
                     additionalProperties:
                         type: string
-                sharedDirectory:
+                shared_directory:
                     allOf:
                         - $ref: '#/components/schemas/SharedDirectory'
                     description: |-
@@ -1111,7 +1201,7 @@ components:
                     type: string
                 description:
                     type: string
-                isProduction:
+                is_production:
                     type: boolean
         CreateEnvironmentResponse:
             type: object
@@ -1121,11 +1211,11 @@ components:
         CreateInstanceRequest:
             type: object
             properties:
-                environmentId:
+                environment_id:
                     type: string
                 name:
                     type: string
-                engineType:
+                engine_type:
                     type: string
                 host:
                     type: string
@@ -1146,37 +1236,50 @@ components:
         CreateScheduleRequest:
             type: object
             properties:
-                instanceId:
+                instance_id:
                     type: string
                 kind:
-                    type: integer
+                    enum:
+                        - JOB_KIND_UNSPECIFIED
+                        - JOB_KIND_BACKUP
+                        - JOB_KIND_VERIFY
+                        - JOB_KIND_RESTORE
+                        - JOB_KIND_DISCOVERY
+                        - JOB_KIND_METRICS
+                        - JOB_KIND_OBSERVE
+                    type: string
                     format: enum
-                cronExpression:
+                cron_expression:
                     type: string
                 timezone:
                     type: string
                     description: Defaults to UTC when empty.
-                methodId:
+                method_id:
                     type: string
                 options:
                     type: object
                     additionalProperties:
                         type: string
-                verifyPolicy:
-                    type: integer
+                verify_policy:
+                    enum:
+                        - VERIFY_POLICY_UNSPECIFIED
+                        - VERIFY_POLICY_ALWAYS
+                        - VERIFY_POLICY_SAMPLED
+                        - VERIFY_POLICY_MANUAL
+                    type: string
                     format: enum
-                verifySamplePercent:
+                verify_sample_percent:
                     type: integer
                     format: int32
-                retentionDays:
+                retention_days:
                     type: integer
                     format: int32
-                expectedCron:
+                expected_cron:
                     type: string
                     description: |-
                         See Schedule.expected_cron. Optional: a schedule with no expectation still collects history,
                          and adherence reports that nothing was declared rather than guessing.
-                expectedGraceMinutes:
+                expected_grace_minutes:
                     type: integer
                     format: int32
         CreateScheduleResponse:
@@ -1189,7 +1292,7 @@ components:
             properties:
                 name:
                     type: string
-                sizeBytes:
+                size_bytes:
                     type: string
                 owner:
                     type: string
@@ -1197,10 +1300,10 @@ components:
                     type: string
                 collation:
                     type: string
-                objectCount:
+                object_count:
                     type: string
                     description: Tables, collections, or the engine's nearest equivalent.
-                isSystem:
+                is_system:
                     type: boolean
                     description: System or internal database, which the UI de-emphasizes and backups usually skip.
         DeleteInstanceResponse:
@@ -1212,7 +1315,7 @@ components:
         DiscoverInstanceRequest:
             type: object
             properties:
-                instanceId:
+                instance_id:
                     type: string
         DiscoverInstanceResponse:
             type: object
@@ -1230,7 +1333,7 @@ components:
             properties:
                 database:
                     type: string
-                objectName:
+                object_name:
                     type: string
                 expected:
                     type: string
@@ -1243,16 +1346,16 @@ components:
             properties:
                 id:
                     type: string
-                tenantId:
+                tenant_id:
                     type: string
                 name:
                     type: string
                 description:
                     type: string
-                isProduction:
+                is_production:
                     type: boolean
                     description: Marks production, which core uses to require stronger confirmation on destructive actions.
-                createdAt:
+                created_at:
                     type: string
                     format: date-time
         GetBackupAdherenceResponse:
@@ -1273,7 +1376,12 @@ components:
             type: object
             properties:
                 status:
-                    type: integer
+                    enum:
+                        - SERVICE_HEALTH_UNSPECIFIED
+                        - SERVICE_HEALTH_HEALTHY
+                        - SERVICE_HEALTH_DEGRADED
+                        - SERVICE_HEALTH_UNHEALTHY
+                    type: string
                     format: enum
                 components:
                     type: array
@@ -1320,11 +1428,11 @@ components:
                     type: string
                 commit:
                     type: string
-                buildDate:
+                build_date:
                     type: string
-                goVersion:
+                go_version:
                     type: string
-                contractVersion:
+                contract_version:
                     type: string
         GoogleProtobufAny:
             type: object
@@ -1340,7 +1448,12 @@ components:
                 name:
                     type: string
                 severity:
-                    type: integer
+                    enum:
+                        - SEVERITY_UNSPECIFIED
+                        - SEVERITY_INFO
+                        - SEVERITY_WARNING
+                        - SEVERITY_CRITICAL
+                    type: string
                     format: enum
                 message:
                     type: string
@@ -1353,7 +1466,13 @@ components:
             type: object
             properties:
                 state:
-                    type: integer
+                    enum:
+                        - HEALTH_STATE_UNSPECIFIED
+                        - HEALTH_STATE_UP
+                        - HEALTH_STATE_DEGRADED
+                        - HEALTH_STATE_DOWN
+                        - HEALTH_STATE_UNKNOWN
+                    type: string
                     format: enum
                 message:
                     type: string
@@ -1365,7 +1484,7 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/HealthSignal'
-                engineVersion:
+                engine_version:
                     type: string
                 error:
                     allOf:
@@ -1378,15 +1497,15 @@ components:
             properties:
                 id:
                     type: string
-                tenantId:
+                tenant_id:
                     type: string
-                environmentId:
+                environment_id:
                     type: string
                 name:
                     type: string
-                engineType:
+                engine_type:
                     type: string
-                engineVersion:
+                engine_version:
                     type: string
                 host:
                     type: string
@@ -1394,45 +1513,63 @@ components:
                     type: integer
                     format: int32
                 health:
-                    type: integer
+                    enum:
+                        - HEALTH_STATE_UNSPECIFIED
+                        - HEALTH_STATE_UP
+                        - HEALTH_STATE_DEGRADED
+                        - HEALTH_STATE_DOWN
+                        - HEALTH_STATE_UNKNOWN
+                    type: string
                     format: enum
-                lastSeenAt:
+                last_seen_at:
                     type: string
                     format: date-time
                 labels:
                     type: object
                     additionalProperties:
                         type: string
-                createdAt:
+                created_at:
                     type: string
                     format: date-time
-                backupSummary:
+                backup_summary:
                     allOf:
                         - $ref: '#/components/schemas/BackupSummary'
-                    description: Latest backup and verification state, denormalized so the estate grid renders in one query.
+                    description: |-
+                        Deprecated: never populated. It was declared for an estate grid that did not exist yet, and by
+                         the time one did, GetBackupAdherence answered the same question better: it carries the verdict
+                         as well as the backup, and it reports an instance nobody has declared anything for, which this
+                         field cannot express. Read GetBackupAdherence instead. Removing this is a breaking change and
+                         leaving it silent was a lie, so it says so here.
         InstanceAdherence:
             type: object
             properties:
-                instanceId:
+                instance_id:
                     type: string
-                instanceName:
+                instance_name:
                     type: string
-                environmentId:
+                environment_id:
                     type: string
-                engineType:
+                engine_type:
                     type: string
                 state:
-                    type: integer
+                    enum:
+                        - ADHERENCE_STATE_UNSPECIFIED
+                        - ADHERENCE_STATE_ADHERENT
+                        - ADHERENCE_STATE_MISSED
+                        - ADHERENCE_STATE_UNPROVEN
+                        - ADHERENCE_STATE_FAILED
+                        - ADHERENCE_STATE_NOT_DECLARED
+                    type: string
                     format: enum
-                expectedCron:
+                expected_cron:
                     type: string
                     description: The declaration, echoed so a reader can see what they are being held to.
                 timezone:
                     type: string
-                expectedGraceMinutes:
+                expected_grace_minutes:
                     type: integer
                     format: int32
-                expectedBy:
+                expected_by:
                     type: string
                     description: |-
                         The most recent instant a backup was supposed to have happened by, and the deadline the grace
@@ -1441,11 +1578,11 @@ components:
                 deadline:
                     type: string
                     format: date-time
-                satisfiedBy:
+                satisfied_by:
                     allOf:
                         - $ref: '#/components/schemas/Backup'
                     description: The backup that satisfied the window, when one did.
-                latestBackup:
+                latest_backup:
                     allOf:
                         - $ref: '#/components/schemas/Backup'
                     description: |-
@@ -1465,45 +1602,60 @@ components:
             properties:
                 id:
                     type: string
-                tenantId:
+                tenant_id:
                     type: string
-                instanceId:
+                instance_id:
                     type: string
-                scheduleId:
+                schedule_id:
                     type: string
                     description: Empty for a job a human triggered directly.
                 kind:
-                    type: integer
+                    enum:
+                        - JOB_KIND_UNSPECIFIED
+                        - JOB_KIND_BACKUP
+                        - JOB_KIND_VERIFY
+                        - JOB_KIND_RESTORE
+                        - JOB_KIND_DISCOVERY
+                        - JOB_KIND_METRICS
+                        - JOB_KIND_OBSERVE
+                    type: string
                     format: enum
                 state:
-                    type: integer
+                    enum:
+                        - JOB_STATE_UNSPECIFIED
+                        - JOB_STATE_PENDING
+                        - JOB_STATE_RUNNING
+                        - JOB_STATE_SUCCEEDED
+                        - JOB_STATE_FAILED
+                        - JOB_STATE_CANCELED
+                    type: string
                     format: enum
-                scheduledFor:
+                scheduled_for:
                     type: string
                     format: date-time
-                leaseOwner:
+                lease_owner:
                     type: string
                     description: |-
                         Identifies the process holding the lease, as <hostname>/<pid>/<process-uuid>. The uuid is what
                          keeps a restarted process on a recycled pid from looking like its own predecessor.
-                leaseExpiresAt:
+                lease_expires_at:
                     type: string
                     format: date-time
-                heartbeatAt:
+                heartbeat_at:
                     type: string
                     format: date-time
                 attempts:
                     type: integer
                     format: int32
-                startedAt:
+                started_at:
                     type: string
                     format: date-time
-                finishedAt:
+                finished_at:
                     type: string
                     format: date-time
-                errorMessage:
+                error_message:
                     type: string
-                createdAt:
+                created_at:
                     type: string
                     format: date-time
             description: |-
@@ -1516,9 +1668,9 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/Backup'
-                nextPageToken:
+                next_page_token:
                     type: string
-                totalSize:
+                total_size:
                     type: integer
                     format: int32
         ListEnvironmentsResponse:
@@ -1528,7 +1680,7 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/Environment'
-                nextPageToken:
+                next_page_token:
                     type: string
         ListInstancesResponse:
             type: object
@@ -1537,9 +1689,9 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/Instance'
-                nextPageToken:
+                next_page_token:
                     type: string
-                totalSize:
+                total_size:
                     type: integer
                     format: int32
         ListJobsResponse:
@@ -1564,7 +1716,14 @@ components:
                     items:
                         $ref: '#/components/schemas/Principal'
                 model:
-                    type: integer
+                    enum:
+                        - PRINCIPAL_MODEL_UNSPECIFIED
+                        - PRINCIPAL_MODEL_USERS
+                        - PRINCIPAL_MODEL_USERS_AND_ROLES
+                        - PRINCIPAL_MODEL_USERS_AND_GRANTS
+                        - PRINCIPAL_MODEL_ACL
+                        - PRINCIPAL_MODEL_NONE
+                    type: string
                     format: enum
         ListSchedulesResponse:
             type: object
@@ -1578,18 +1737,18 @@ components:
             properties:
                 database:
                     type: string
-                objectName:
+                object_name:
                     type: string
                     description: Table, collection, keyspace, or key pattern.
-                recordCount:
+                record_count:
                     type: string
                     description: Rows, documents, or keys.
-                sizeBytes:
+                size_bytes:
                     type: string
                 checksum:
                     type: string
                     description: Optional per-object content checksum, when the engine can produce one cheaply.
-                countMayHaveDrifted:
+                count_may_have_drifted:
                     type: boolean
                     description: |-
                         The count could not be pinned to the artifact's own consistency point, because the object was
@@ -1601,18 +1760,25 @@ components:
             properties:
                 name:
                     type: string
-                displayName:
+                display_name:
                     type: string
                 description:
                     type: string
                 type:
-                    type: integer
+                    enum:
+                        - OPTION_TYPE_UNSPECIFIED
+                        - OPTION_TYPE_STRING
+                        - OPTION_TYPE_INT
+                        - OPTION_TYPE_BOOL
+                        - OPTION_TYPE_ENUM
+                        - OPTION_TYPE_DURATION
+                    type: string
                     format: enum
-                defaultValue:
+                default_value:
                     type: string
                 required:
                     type: boolean
-                allowedValues:
+                allowed_values:
                     type: array
                     items:
                         type: string
@@ -1627,14 +1793,19 @@ components:
                     type: string
                     description: OpenTelemetry semantic-convention name, e.g. "db.client.connection.count".
                 type:
-                    type: integer
+                    enum:
+                        - METRIC_TYPE_UNSPECIFIED
+                        - METRIC_TYPE_GAUGE
+                        - METRIC_TYPE_SUM
+                        - METRIC_TYPE_UP_DOWN_COUNTER
+                    type: string
                     format: enum
                 unit:
                     type: string
                     description: UCUM unit, e.g. "1", "By", "s".
                 description:
                     type: string
-                attributeKeys:
+                attribute_keys:
                     type: array
                     items:
                         type: string
@@ -1650,15 +1821,22 @@ components:
                     type: integer
                     format: int32
                 role:
-                    type: integer
+                    enum:
+                        - NODE_ROLE_UNSPECIFIED
+                        - NODE_ROLE_PRIMARY
+                        - NODE_ROLE_REPLICA
+                        - NODE_ROLE_ARBITER
+                        - NODE_ROLE_ROUTER
+                        - NODE_ROLE_STANDALONE
+                    type: string
                     format: enum
                 state:
                     type: string
-                replicationLagSeconds:
+                replication_lag_seconds:
                     type: number
                     description: Populated only when Capabilities.supports_replication_lag is true.
                     format: double
-                isSelf:
+                is_self:
                     type: boolean
         ObjectRef:
             type: object
@@ -1674,7 +1852,7 @@ components:
         ObserveBackupHistoryRequest:
             type: object
             properties:
-                instanceId:
+                instance_id:
                     type: string
         ObserveBackupHistoryResponse:
             type: object
@@ -1698,21 +1876,21 @@ components:
         ObservedEvidence:
             type: object
             properties:
-                sourceDescription:
+                source_description:
                     type: string
                     description: The source, in the engine's own vocabulary, e.g. "msdb.dbo.backupset".
-                reportsOutcome:
+                reports_outcome:
                     type: boolean
                     description: The source distinguishes success from failure. When false, `state` is UNKNOWN by construction.
-                identityIsEngineAssigned:
+                identity_is_engine_assigned:
                     type: boolean
                     description: The identity came from the engine, so a moved or renamed artifact stays one backup.
-                completedAtIsApproximate:
+                completed_at_is_approximate:
                     type: boolean
                     description: |-
                         The finish time could not be converted to UTC with the offset in force on the day, so it may
                          be out by a daylight-saving transition.
-                observedAt:
+                observed_at:
                     type: string
                     format: date-time
             description: |-
@@ -1722,14 +1900,14 @@ components:
         PITRBaseline:
             type: object
             properties:
-                backupId:
+                backup_id:
                     type: string
-                takenAt:
+                taken_at:
                     type: string
                     format: date-time
                 artifact:
                     $ref: '#/components/schemas/ObjectRef'
-                methodId:
+                method_id:
                     type: string
         PITRGap:
             type: object
@@ -1747,7 +1925,7 @@ components:
                         False when the engine or configuration does not currently support PITR — for example WAL
                          archiving is off. The UI explains why using the reason field rather than showing an empty
                          timeline.
-                unavailableReason:
+                unavailable_reason:
                     type: string
                 earliest:
                     type: string
@@ -1771,14 +1949,14 @@ components:
         PasswordPolicy:
             type: object
             properties:
-                minLength:
+                min_length:
                     type: integer
                     format: int32
-                minCharacterClasses:
+                min_character_classes:
                     type: integer
                     description: Minimum number of distinct classes — uppercase, lowercase, digit, symbol — that must appear.
                     format: int32
-                symbolAlphabet:
+                symbol_alphabet:
                     type: string
                     description: Symbols this engine accepts, if its own set is narrower than core's. Empty keeps core's.
             description: |-
@@ -1792,7 +1970,20 @@ components:
             type: object
             properties:
                 code:
-                    type: integer
+                    enum:
+                        - ERROR_CODE_UNSPECIFIED
+                        - ERROR_CODE_CONNECTION_FAILED
+                        - ERROR_CODE_AUTHENTICATION_FAILED
+                        - ERROR_CODE_PERMISSION_DENIED
+                        - ERROR_CODE_UNSUPPORTED
+                        - ERROR_CODE_INVALID_ARGUMENT
+                        - ERROR_CODE_TOOL_NOT_FOUND
+                        - ERROR_CODE_TOOL_FAILED
+                        - ERROR_CODE_OBJECT_STORE_FAILED
+                        - ERROR_CODE_TIMEOUT
+                        - ERROR_CODE_CANCELED
+                        - ERROR_CODE_INTERNAL
+                    type: string
                     format: enum
                 message:
                     type: string
@@ -1812,23 +2003,30 @@ components:
         PluginInfo:
             type: object
             properties:
-                engineType:
+                engine_type:
                     type: string
                 capabilities:
                     $ref: '#/components/schemas/Capabilities'
                 state:
-                    type: integer
+                    enum:
+                        - PLUGIN_STATE_UNSPECIFIED
+                        - PLUGIN_STATE_STARTING
+                        - PLUGIN_STATE_READY
+                        - PLUGIN_STATE_UNHEALTHY
+                        - PLUGIN_STATE_FAILED
+                        - PLUGIN_STATE_STOPPED
+                    type: string
                     format: enum
                 message:
                     type: string
-                missingTools:
+                missing_tools:
                     type: array
                     items:
                         type: string
                     description: |-
                         Tools declared as required that are missing on this host. A non-empty list means backups using
                          the affected methods will fail, so core surfaces it before a schedule fires.
-                restartCount:
+                restart_count:
                     type: integer
                     format: int32
         Principal:
@@ -1837,16 +2035,22 @@ components:
                 name:
                     type: string
                 kind:
-                    type: integer
+                    enum:
+                        - PRINCIPAL_KIND_UNSPECIFIED
+                        - PRINCIPAL_KIND_USER
+                        - PRINCIPAL_KIND_ROLE
+                        - PRINCIPAL_KIND_GROUP
+                        - PRINCIPAL_KIND_SERVICE
+                    type: string
                     format: enum
-                canLogin:
+                can_login:
                     type: boolean
-                isSuperuser:
+                is_superuser:
                     type: boolean
                     description: Holds unrestricted or near-unrestricted rights. The UI flags these prominently.
-                isSystem:
+                is_system:
                     type: boolean
-                memberOf:
+                member_of:
                     type: array
                     items:
                         type: string
@@ -1855,10 +2059,10 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/Privilege'
-                passwordExpiresAt:
+                password_expires_at:
                     type: string
                     format: date-time
-                lastLoginAt:
+                last_login_at:
                     type: string
                     format: date-time
                 attributes:
@@ -1879,14 +2083,14 @@ components:
                 grantable:
                     type: boolean
                     description: The principal may grant this privilege onward.
-                grantedBy:
+                granted_by:
                     type: string
         RunBackupRequest:
             type: object
             properties:
-                instanceId:
+                instance_id:
                     type: string
-                methodId:
+                method_id:
                     type: string
                     description: Empty selects the plugin's default method.
                 options:
@@ -1897,44 +2101,51 @@ components:
                     type: array
                     items:
                         type: string
-                verifyOnCompletion:
+                verify_on_completion:
                     type: boolean
                     description: Run verification as soon as the backup completes, overriding the instance's policy.
         RunBackupResponse:
             type: object
             properties:
-                backupId:
+                backup_id:
                     type: string
-                jobId:
+                job_id:
                     type: string
         RunVerificationRequest:
             type: object
             properties:
-                backupId:
+                backup_id:
                     type: string
                 checks:
                     type: array
                     items:
-                        type: integer
+                        enum:
+                            - VERIFICATION_CHECK_UNSPECIFIED
+                            - VERIFICATION_CHECK_CONNECTIVITY
+                            - VERIFICATION_CHECK_RECORD_COUNTS
+                            - VERIFICATION_CHECK_SCHEMA_PRESENCE
+                            - VERIFICATION_CHECK_INTEGRITY
+                            - VERIFICATION_CHECK_QUERYABILITY
+                        type: string
                         format: enum
                     description: Checks to run. Empty runs every check the plugin supports.
         RunVerificationResponse:
             type: object
             properties:
-                verificationId:
+                verification_id:
                     type: string
-                jobId:
+                job_id:
                     type: string
         SandboxTemplate:
             type: object
             properties:
-                imageRepository:
+                image_repository:
                     type: string
                     description: Image repository without a tag, e.g. "postgres".
-                defaultTag:
+                default_tag:
                     type: string
                     description: Tag to use when the source instance's version cannot be matched, e.g. "16".
-                tagTemplate:
+                tag_template:
                     type: string
                     description: |-
                         Go text/template evaluated with the discovered engine version to produce a tag, e.g.
@@ -1943,37 +2154,37 @@ components:
                     type: object
                     additionalProperties:
                         type: string
-                containerPort:
+                container_port:
                     type: integer
                     format: int32
-                readinessCommand:
+                readiness_command:
                     type: array
                     items:
                         type: string
                     description: Command run inside the container to decide readiness, e.g. ["pg_isready", "-U", "postgres"].
-                readinessTimeout:
+                readiness_timeout:
                     pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
                     type: string
                 command:
                     type: array
                     items:
                         type: string
-                minDiskBytes:
+                min_disk_bytes:
                     type: string
                     description: Minimum tmpfs/volume size hint in bytes for the sandbox data directory.
-                sharedDirectory:
+                shared_directory:
                     type: string
                     description: |-
                         Path inside the container at which core mounts a directory the plugin can also read and write,
                          for engines that hand their artifact over as a file (ADR-0026). Core reports both names for it
                          in the sandbox's Credentials.shared_directory. Empty for engines that stream.
-                fixedUsername:
+                fixed_username:
                     type: string
                     description: |-
                         The administrative account this image always creates and cannot be told to rename, e.g. "sa".
                          Core renders {{ .Username }} to it instead of generating a name, and still generates the
                          password. Empty keeps the generated username, which is the behaviour ADR-0020 describes.
-                passwordPolicy:
+                password_policy:
                     allOf:
                         - $ref: '#/components/schemas/PasswordPolicy'
                     description: |-
@@ -1989,14 +2200,22 @@ components:
             properties:
                 id:
                     type: string
-                tenantId:
+                tenant_id:
                     type: string
-                instanceId:
+                instance_id:
                     type: string
                 kind:
-                    type: integer
+                    enum:
+                        - JOB_KIND_UNSPECIFIED
+                        - JOB_KIND_BACKUP
+                        - JOB_KIND_VERIFY
+                        - JOB_KIND_RESTORE
+                        - JOB_KIND_DISCOVERY
+                        - JOB_KIND_METRICS
+                        - JOB_KIND_OBSERVE
+                    type: string
                     format: enum
-                cronExpression:
+                cron_expression:
                     type: string
                     description: Standard five-field cron expression, interpreted in `timezone`.
                 timezone:
@@ -2004,24 +2223,29 @@ components:
                     description: |-
                         IANA location name, e.g. "Europe/Bucharest". A DBA writing "0 2 * * *" means 02:00 where the
                          server is, which is a different UTC instant in summer than in winter.
-                methodId:
+                method_id:
                     type: string
                     description: Empty selects the plugin's default backup method.
                 options:
                     type: object
                     additionalProperties:
                         type: string
-                verifyPolicy:
-                    type: integer
+                verify_policy:
+                    enum:
+                        - VERIFY_POLICY_UNSPECIFIED
+                        - VERIFY_POLICY_ALWAYS
+                        - VERIFY_POLICY_SAMPLED
+                        - VERIFY_POLICY_MANUAL
+                    type: string
                     format: enum
-                verifySamplePercent:
+                verify_sample_percent:
                     type: integer
                     description: Only consulted when verify_policy is SAMPLED.
                     format: int32
-                retentionDays:
+                retention_days:
                     type: integer
                     format: int32
-                expectedCron:
+                expected_cron:
                     type: string
                     description: |-
                         What a backup of this instance is supposed to look like, declared rather than inferred.
@@ -2030,19 +2254,19 @@ components:
                          backup is supposed to have happened, and how late is still acceptable. Inferring the second
                          from the observed rhythm would answer "is this normal for you" instead of "is this what you
                          asked for", and the second question is the product.
-                expectedGraceMinutes:
+                expected_grace_minutes:
                     type: integer
                     format: int32
-                isEnabled:
+                is_enabled:
                     type: boolean
-                nextRunAt:
+                next_run_at:
                     type: string
                     description: The clock. Always UTC on the wire and in storage, computed in `timezone`.
                     format: date-time
-                lastRunAt:
+                last_run_at:
                     type: string
                     format: date-time
-                createdAt:
+                created_at:
                     type: string
                     format: date-time
             description: |-
@@ -2052,22 +2276,22 @@ components:
         ServerInfo:
             type: object
             properties:
-                engineType:
+                engine_type:
                     type: string
                 version:
                     type: string
                     description: Normalized semver where possible, e.g. "16.2".
-                versionString:
+                version_string:
                     type: string
                     description: Raw version string as the engine reports it.
                 uptime:
                     pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
                     type: string
-                clusterName:
+                cluster_name:
                     type: string
-                dataDirectory:
+                data_directory:
                     type: string
-                readOnly:
+                read_only:
                     type: boolean
                 attributes:
                     type: object
@@ -2076,7 +2300,7 @@ components:
         SetScheduleEnabledRequest:
             type: object
             properties:
-                scheduleId:
+                schedule_id:
                     type: string
                 enabled:
                     type: boolean
@@ -2088,12 +2312,12 @@ components:
         SharedDirectory:
             type: object
             properties:
-                enginePath:
+                engine_path:
                     type: string
                     description: |-
                         The path as the engine sees it. Used verbatim in statements sent to the engine, so it must be
                          spelled the way that engine's platform spells a path.
-                localPath:
+                local_path:
                     type: string
                     description: The same directory as the process running the plugin sees it.
             description: |-
@@ -2107,18 +2331,18 @@ components:
         SourceManifest:
             type: object
             properties:
-                capturedAt:
+                captured_at:
                     type: string
                     format: date-time
                 entries:
                     type: array
                     items:
                         $ref: '#/components/schemas/ManifestEntry'
-                totalObjects:
+                total_objects:
                     type: string
-                totalRecords:
+                total_records:
                     type: string
-                isSampled:
+                is_sampled:
                     type: boolean
                     description: The plugin could only sample, so count comparisons are indicative rather than exact.
             description: SourceManifest records what the source instance contained at backup time.
@@ -2143,30 +2367,30 @@ components:
             properties:
                 enabled:
                     type: boolean
-                insecureSkipVerify:
+                insecure_skip_verify:
                     type: boolean
                     description: Skips certificate verification. Intended for development only; core warns when it is set.
-                caPem:
+                ca_pem:
                     type: string
                     format: bytes
-                clientCertPem:
+                client_cert_pem:
                     type: string
                     format: bytes
-                clientKeyPem:
+                client_key_pem:
                     type: string
                     format: bytes
-                serverName:
+                server_name:
                     type: string
         TestConnectionRequest:
             type: object
             properties:
-                instanceId:
+                instance_id:
                     type: string
                 connection:
                     allOf:
                         - $ref: '#/components/schemas/ConnectionSpec'
                     description: Supply to test credentials that have not been stored yet, during the add-instance wizard.
-                engineType:
+                engine_type:
                     type: string
                 host:
                     type: string
@@ -2198,7 +2422,7 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/Node'
-                isStandalone:
+                is_standalone:
                     type: boolean
                     description: The engine reports a topology but this instance is standalone.
         Verification:
@@ -2206,19 +2430,24 @@ components:
             properties:
                 id:
                     type: string
-                backupId:
+                backup_id:
                     type: string
                 status:
-                    type: integer
+                    enum:
+                        - VERIFICATION_STATUS_UNSPECIFIED
+                        - VERIFICATION_STATUS_VERIFIED
+                        - VERIFICATION_STATUS_FAILED
+                        - VERIFICATION_STATUS_INCONCLUSIVE
+                    type: string
                     format: enum
                 checks:
                     type: array
                     items:
                         $ref: '#/components/schemas/CheckResult'
-                startedAt:
+                started_at:
                     type: string
                     format: date-time
-                completedAt:
+                completed_at:
                     type: string
                     format: date-time
                 duration:
@@ -2226,7 +2455,7 @@ components:
                     type: string
                 report:
                     type: string
-                errorMessage:
+                error_message:
                     type: string
 tags:
     - name: BackupService

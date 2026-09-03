@@ -68,7 +68,8 @@ Everything below must pass before the branch is pushed. These are the same check
 
 ```bash
 make lint            # golangci-lint + buf lint + eslint
-make test            # unit tests
+make test            # Go unit tests
+make test-web        # the web app's tests
 make test-integration  # testcontainers; needs Docker
 make conformance     # the shared plugin suite
 ```
@@ -76,9 +77,15 @@ make conformance     # the shared plugin suite
 If the slice touched `api/proto/`, also:
 
 ```bash
-make proto           # regenerate, and commit the result
+make proto           # regenerate Go, OpenAPI and the web app's types; commit the result
 buf breaking --against '.git#branch=main'
 ```
+
+On Windows, run `make proto` in a worktree created with `git -c core.autocrlf=false worktree add`.
+The OpenAPI generator embeds `.proto` comments as YAML strings, so a CRLF checkout writes literal
+`
+` escapes inside them that no line-ending normalization removes and `git diff` does not show
+([ADR-0029](../../adr/0029-the-openapi-document-is-generated-to-match-the-wire.md)).
 
 ### 5. Close out
 
@@ -145,6 +152,7 @@ If you write a new one, follow this shape — it is what makes a cold start poss
 | B1 | [Scheduler and leases](B1-scheduler-and-leases.md) | [entry](../journal/B1-scheduler-and-leases.md) | ✅ |
 | B2 | [SQL Server plugin](B2-sqlserver-plugin.md) | [entry](../journal/B2-sqlserver-plugin.md) | ✅ |
 | B3 | [Observed backups](B3-observed-backups.md) | [entry](../journal/B3-observed-backups.md) | ✅ |
+| B4 | [Estate Overview](B4-estate-overview.md) | [entry](../journal/B4-estate-overview.md) | ✅ |
 
 Phase A is complete and Phase B has started. What comes next is in
 [`../../roadmap.md`](../../roadmap.md). A brief is written when its slice starts — writing them all

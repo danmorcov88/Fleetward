@@ -29,12 +29,13 @@ fleetward-cli schedule list
 fleetward-cli job list --instance prod-1
 ```
 
-## Two kinds of schedule run
+## Three kinds of schedule run
 
 | Kind | What it does | What it touches on the instance |
 |---|---|---|
 | `backup` | Fleetward takes the backup, using the engine's own native tooling | a backup, and the connection that drives it |
 | `observe` | Fleetward reads the engine's own record of backups it did **not** take | nothing — two queries, or a directory listing |
+| `discovery` | Fleetward probes the instance and records its health | one health check, the same one `instance test` runs |
 
 `observe` is what makes Fleetward useful on an estate whose backups are already being taken by cron,
 by scripts, or by tooling that predates it ([ADR-0015](../adr/0015-observed-and-managed-backups.md)).
@@ -46,9 +47,32 @@ fleetward-cli schedule create --instance prod-1 --kind observe --cron "*/30 * * 
     --expect-cron "0 2 * * *" --expect-grace 2h --timezone Europe/Bucharest
 ```
 
-`schedules.kind` also permits `discovery` and `metrics`. Both are refused at creation with a message
-naming the slice that will bring them, which is more useful than accepting a schedule that would
-silently never fire.
+`discovery` is what makes the estate view's health column an answer with a date on it. Without one,
+`instances.health` is whatever the last person to run `instance test` left behind — and a green dot
+for a server that died three weeks ago is worse than no dot at all. The estate view renders how old
+the answer is, so the column stays honest when the probe is behind or has stopped.
+
+```bash
+fleetward-cli schedule create --instance prod-1 --kind discovery --cron "*/5 * * * *"
+```
+
+Two things about it are worth stating, because both are easy to assume the other way round:
+
+- **It probes health and nothing else.** Despite the name, it does not re-run the plugin's
+  `Discover` to refresh topology or database lists. The kind is called `discovery` because that is
+  the name the `CHECK` constraint has carried since the schema was written; the name is older than
+  the job. It does refresh the engine version, because the health probe reports one.
+- **An instance that is down is a *successful* probe.** The plugin answered, the answer was `DOWN`,
+  and it was recorded — `last_seen_at` deliberately does not move, because it means "the last time
+  we successfully talked to it". What fails the job is not being able to ask at all: no plugin for
+  the engine, or the plugin process unreachable. That is Fleetward's problem rather than the
+  estate's, and a job that quietly succeeded while learning nothing would let the estate view show a
+  stale answer under a fresh timestamp.
+
+`schedules.kind` also permits `metrics`, which is refused at creation. Database performance metric
+collection is deferred deliberately rather than merely unbuilt: `CollectMetrics` is in the plugin
+contract and nothing calls it, because performance monitoring was never the pain this product exists
+to solve, and that need is already met by existing tooling.
 
 ## Two cron expressions, answering different questions
 

@@ -12,35 +12,40 @@ and everything with a longer lifetime lives elsewhere: rationale in the
 
 ## Current position
 
-**Slice B3 is complete. Next is B4 — the Estate Overview screen and a generated API client.**
+**Slice B4 is complete. Next is B5 — retention and expiry.**
 
-Fleetward now reports on backups it did not take. Point it at an instance, declare when a backup is
-supposed to happen, and it answers — with nothing installed on that server, no credential created,
-and no backup arrangement migrated:
+Fleetward now answers its two questions on one screen. Fifty rows, four columns, and neither
+question needs a click:
 
-```
-fleetward-cli backup adherence
-INSTANCE  ENGINE      EXPECTED   GRACE  LAST BACKUP (UTC)    ADHERENCE
-prod-1    sqlserver   0 2 * * *  2h     2026-09-02 02:07:11  adherent
-prod-2    postgresql  0 2 * * *  2h     2026-08-24 02:03:55  missed
-prod-3    postgresql  —          —      2026-09-02 02:01:02  not_declared
-```
+| Instance | Health | Backup | Verified |
+|---|---|---|---|
+| prod-1 · sqlserver | healthy · 2m ago | adherent — last 6h ago | **verification failed** |
+| prod-2 · postgresql | healthy · 3m ago | missed — last 9d ago | — |
+| prod-3 · postgresql | down · 4h ago | adherent — last 5h ago | n/a — not ours |
+| prod-4 · postgresql | healthy · 1m ago | nothing declared — last 2h ago | never verified |
 
-That is the first pillar of the product thesis, answerable on the day of installation, for an entire
-estate, without owning a single artifact.
+The order is the argument. A backup that succeeded and was proven bad sits above one that never
+happened, because a backup believed good and proven bad is the more dangerous of the two
+(`CLAUDE.md` §5), and an instance nobody has declared anything for sits above the ones that are
+fine. Origin has no column: it decides what the Verified cell *says*, so `n/a — not ours` and
+`never verified` cannot be read apart ([ADR-0015](../adr/0015-observed-and-managed-backups.md)).
 
-The two origins are never rendered as the same thing. A backup Fleetward took carries a manifest and
-can be proven restorable; one it observed carries none and never can, and both the API and the CLI
-say so rather than leaving a blank. A window satisfied only by evidence that cannot report an
-outcome — a file in a directory — reads `unproven`, never `adherent`.
+Two things arrived with it that are not the screen.
 
-It cost the contract one RPC and six additive fields, and the schema its first migration since the
-initial one. Two decisions came out of it:
-[ADR-0027](../adr/0027-an-observed-backup-is-identified-by-what-the-engine-calls-it.md) on identity,
-and [ADR-0028](../adr/0028-observation-is-a-schedule-kind-and-an-expectation-is-declared.md) on how
-observation runs and where the declaration lives.
+**The health in that second column moves on its own.** `discovery` joined `backup` and `observe` as
+a schedule kind — no migration, because both CHECK constraints already permitted it — so an estate's
+health is an answer with a date on it rather than whatever the last person to run `instance test`
+left behind. The cell renders that date, which is what keeps it honest when the probe is behind.
 
-Session protocol: [`slices/README.md`](slices/README.md). B4's brief is not written yet; briefs are
+**The web app's types are generated from the contract, and the document they come from is now true.**
+`api/openapi/openapi.yaml` had been generated, committed and diffed by CI since the contract
+existed — and it described `instanceId` where the server sends `instance_id`, integers where the
+server sends enum names, and gRPC status errors where the server sends problem details. Stable, and
+wrong. Two generator options fixed it, and the first thing the generated types found was a field the
+System screen had been rendering blank since it was written
+([ADR-0029](../adr/0029-the-openapi-document-is-generated-to-match-the-wire.md)).
+
+Session protocol: [`slices/README.md`](slices/README.md). B5's brief is not written yet; briefs are
 written when the slice starts.
 
 ## Phases
@@ -49,7 +54,7 @@ written when the slice starts.
 |---|---|
 | Foundation — contract, control plane, dev stack | ✅ [journal](journal/00-foundation.md) |
 | A — prove the loop (PostgreSQL), A1–A6 | ✅ [journal](journal/README.md) |
-| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B3 done, B4 next |
+| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B4 done, B5 next |
 | Access compliance, structural drift, query editor | deferred — see [roadmap](../roadmap.md#deferred-deliberately) |
 
 There is no Phase F. Production readiness is a property of every slice
@@ -61,8 +66,10 @@ Listed so that no session has to re-derive them, and so that no document has to 
 
 - **There is no authentication or authorization.** Every route under `/api/v1/` is open to anyone
   who can reach the port, including the ones that add an instance, create a schedule, trigger a
-  backup, and poll an instance's backup history. `cfg.Auth` is parsed and validated and read by no
-  file outside `internal/config`. The tenant is the constant `metadb.DefaultTenantID`. **B6.**
+  backup, and poll an instance's backup history. So is the estate view, which is why it carries no
+  login screen, no account menu and no "signed in as": a UI implying a protection that does not exist
+  is worse than one that says nothing. `cfg.Auth` is parsed and validated and read by no file outside
+  `internal/config`. The tenant is the constant `metadb.DefaultTenantID`. **B6.**
 - **Five of the eight engines are still binaries that only handshake.** MySQL, MongoDB, and Redis
   declare no capabilities; Oracle, ClickHouse, and Cassandra have no binary at all. PostgreSQL and
   SQL Server are real. **B11–B16.**
@@ -104,9 +111,13 @@ Listed so that no session has to re-derive them, and so that no document has to 
 - **Nothing has been released.** No tag, no published container image, no signed artifact —
   `release.yml` installs cosign and never invokes it. `docker-compose.yml` is a development
   configuration by its own declaration. **B9.**
-- **The web UI is a shell.** Two routes; `Estate.tsx` is a placeholder and `lib/api.ts` speaks two
-  endpoints with hand-written types. Schedules, jobs, backup history and adherence have no screen.
-  **B4.**
+- **The web UI is one screen and a status page.** The Estate Overview reads the estate and reports
+  on it; nothing in it changes anything. Adding or editing an instance, managing schedules and jobs,
+  and any view of an individual backup's verification report are all still CLI-only.
+- **A verification carried on the estate view omits its per-check detail.** `GetBackupAdherence`
+  attaches the verdict and when it was reached, in one batched query; the checks and discrepancies
+  behind that verdict come from `GetBackup`, one backup at a time. Deliberate — no column renders
+  them — and written down because the `Verification` on that response is therefore partial.
 - **A manually triggered verification is not bounded.** `SCHEDULER_MAX_CONCURRENT_JOBS` bounds
   scheduled work, which is the case that matters on an estate of fifty. A human calling the verify
   endpoint in a loop can still start a sandbox per call.
@@ -119,8 +130,15 @@ Listed so that no session has to re-derive them, and so that no document has to 
   failed run waits for its schedule's next occurrence. That is deliberate for now — see the
   alternatives in [ADR-0025](../adr/0025-an-expired-lease-fails-its-job.md) — and a real retry
   policy needs backoff and a window rather than a counter.
-- **Only `backup` and `observe` schedules run.** `schedules.kind` also permits `discovery` and
-  `metrics`; both are refused at creation with a message naming the slice that will bring them. **B4.**
+- **`metrics` schedules do not run.** `backup`, `observe` and `discovery` do. `schedules.kind` also
+  permits `metrics`, which is refused at creation: database performance metric collection is
+  deferred deliberately rather than merely unbuilt — `CollectMetrics` is in the contract and nothing
+  calls it, because performance monitoring was never the pain this product exists to solve.
+- **A `discovery` schedule probes health and nothing more.** It does not re-run `Discover` to refresh
+  topology or database lists, despite the kind's name, which is older than the job. It refreshes
+  `health`, `health_message`, `engine_version` and `last_seen_at` through the same `TestConnection` a
+  human runs — and an instance that is *down* is a successful probe. What fails the job is not being
+  able to ask at all.
 
 ## Environment notes
 
@@ -134,8 +152,16 @@ Listed so that no session has to re-derive them, and so that no document has to 
 - On Windows, `go test -race` requires cgo and a C toolchain, which a stock install has neither of.
   The unit and conformance suites run without `-race` there; CI runs them with `-race` on Linux.
 - A Windows checkout with `core.autocrlf=true` makes `gofmt` and `buf format --diff` report every
-  file in the tree as unformatted. It is a line-ending artefact, not a finding — check a branch in a
-  worktree created with `core.autocrlf=false` before believing it.
+  file in the tree as unformatted, and `golangci-lint`'s `whitespace` linter report a finding in
+  `tools/wikigen/nav.go` that is not there. Line-ending artefacts, not findings — check a branch in a
+  worktree created with `core.autocrlf=false` before believing any of them.
+- **Regenerating `api/openapi/openapi.yaml` on Windows corrupts it, and the corruption is invisible
+  to `git diff`.** The generator embeds `.proto` comments as YAML string literals, so a CRLF checkout
+  produces literal `
+` escapes *inside* the strings, which no line-ending normalization touches.
+  CI regenerates on Linux and rejects the diff. Regenerate in an LF worktree, or normalize the
+  sources under `api/proto/` to LF first — `grep -cF '
+' api/openapi/openapi.yaml` must print 0.
 - **Which conformance cases run here depends on what a case needs, not on which engine it is.** The
   SQL Server plugin shells out to nothing, so every case runs for it. PostgreSQL's backup and restore
   cases skip for want of `pg_dump`, `pg_restore` and `psql` on `PATH` — but its **backup-history case

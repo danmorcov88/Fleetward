@@ -45,11 +45,22 @@ jobs:
         if: github.event_name == 'pull_request'
         run: buf breaking --against '.git#branch=origin/main'
 
+      # The web app's API types are generated from api/openapi, so they are held to the same rule as
+      # the Go output: regenerated here and diffed. A generated file that is never regenerated is a
+      # file that is stable and wrong, which is the failure this step exists to prevent.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
       - name: Verify generated code is current
         run: |
           buf generate
           buf generate --template internal/storage/tsdb/prompb/buf.gen.yaml internal/storage/tsdb/prompb
-          if ! git diff --exit-code -- api/gen api/openapi internal/storage/tsdb/prompb; then
+          npm --prefix web ci
+          npm --prefix web run generate
+          if ! git diff --exit-code -- api/gen api/openapi internal/storage/tsdb/prompb web/src/lib/api.gen.ts; then
             echo "::error::Generated code is out of date. Run 'make proto' and commit the result."
             exit 1
           fi
@@ -280,6 +291,9 @@ jobs:
 
       - run: npm ci
       - run: npm run lint
+      # A dashboard whose claim is "it renders the right status", checked only for compiling, is a
+      # gap rather than a detail. These assert the three things that would make the estate view lie.
+      - run: npm run test
       - run: npm run build
 
   compose:

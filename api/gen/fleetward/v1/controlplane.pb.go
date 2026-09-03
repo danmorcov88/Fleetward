@@ -1028,7 +1028,13 @@ type Instance struct {
 	LastSeenAt    *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
 	Labels        map[string]string      `protobuf:"bytes,11,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	// Latest backup and verification state, denormalized so the estate grid renders in one query.
+	// Deprecated: never populated. It was declared for an estate grid that did not exist yet, and by
+	// the time one did, GetBackupAdherence answered the same question better: it carries the verdict
+	// as well as the backup, and it reports an instance nobody has declared anything for, which this
+	// field cannot express. Read GetBackupAdherence instead. Removing this is a breaking change and
+	// leaving it silent was a lie, so it says so here.
+	//
+	// Deprecated: Marked as deprecated in fleetward/v1/controlplane.proto.
 	BackupSummary *BackupSummary `protobuf:"bytes,13,opt,name=backup_summary,json=backupSummary,proto3" json:"backup_summary,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1148,6 +1154,7 @@ func (x *Instance) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in fleetward/v1/controlplane.proto.
 func (x *Instance) GetBackupSummary() *BackupSummary {
 	if x != nil {
 		return x.BackupSummary
@@ -1158,6 +1165,10 @@ func (x *Instance) GetBackupSummary() *BackupSummary {
 // BackupSummary is the two-part status the estate grid shows: did the backup succeed, and was it
 // proven restorable. These are deliberately separate — a green backup with a red verification is
 // the most dangerous state in the product and must never collapse into one indicator.
+//
+// Deprecated: see Instance.backup_summary. Superseded by GetBackupAdherence.
+//
+// Deprecated: Marked as deprecated in fleetward/v1/controlplane.proto.
 type BackupSummary struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	LastBackupAt           *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=last_backup_at,json=lastBackupAt,proto3" json:"last_backup_at,omitempty"`
@@ -4822,7 +4833,7 @@ const file_fleetward_v1_controlplane_proto_rawDesc = "" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x12#\n" +
 	"\ris_production\x18\x05 \x01(\bR\fisProduction\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xc9\x04\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xcd\x04\n" +
 	"\bInstance\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12%\n" +
@@ -4839,17 +4850,17 @@ const file_fleetward_v1_controlplane_proto_rawDesc = "" +
 	"lastSeenAt\x12:\n" +
 	"\x06labels\x18\v \x03(\v2\".fleetward.v1.Instance.LabelsEntryR\x06labels\x129\n" +
 	"\n" +
-	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12B\n" +
-	"\x0ebackup_summary\x18\r \x01(\v2\x1b.fleetward.v1.BackupSummaryR\rbackupSummary\x1a9\n" +
+	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12F\n" +
+	"\x0ebackup_summary\x18\r \x01(\v2\x1b.fleetward.v1.BackupSummaryB\x02\x18\x01R\rbackupSummary\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe8\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xec\x02\n" +
 	"\rBackupSummary\x12@\n" +
 	"\x0elast_backup_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\flastBackupAt\x12E\n" +
 	"\x11last_backup_state\x18\x02 \x01(\x0e2\x19.fleetward.v1.BackupStateR\x0flastBackupState\x12L\n" +
 	"\x14last_verification_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x12lastVerificationAt\x12Z\n" +
 	"\x18last_verification_status\x18\x04 \x01(\x0e2 .fleetward.v1.VerificationStatusR\x16lastVerificationStatus\x12$\n" +
-	"\x0elast_backup_id\x18\x05 \x01(\tR\flastBackupId\"U\n" +
+	"\x0elast_backup_id\x18\x05 \x01(\tR\flastBackupId:\x02\x18\x01\"U\n" +
 	"\x17ListEnvironmentsRequest\x12\x1b\n" +
 	"\tpage_size\x18\x01 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +

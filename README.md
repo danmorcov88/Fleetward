@@ -321,6 +321,49 @@ more, and says so. What each engine can and cannot establish is in
 
 **More:** [observed and managed backups](docs/adr/0015-observed-and-managed-backups.md).
 
+### See the whole estate at once
+
+Everything above is one server at a time, which is fine for one server. The problem this product
+exists for is fifty of them, and a command per server is not a surface — so open
+<http://localhost:3000>.
+
+| Instance | Health | Backup | Verified |
+|---|---|---|---|
+| **prod-1** · sqlserver | healthy · 2m ago | adherent — last 6h ago | **verification failed** |
+| **prod-2** · postgresql | healthy · 3m ago | missed — last 9d ago | — |
+| **prod-3** · postgresql | down · 4h ago | adherent — last 5h ago | n/a — not ours |
+| **prod-4** · postgresql | healthy · 1m ago | nothing declared — last 2h ago | never verified |
+
+Four columns, and the order is the argument. **A backup that succeeded and failed verification sits
+at the top** — above one that never happened — because a backup believed good and proven bad is the
+more dangerous of the two. An instance nobody has declared an expectation for is next, because on an
+estate of fifty "nobody has said what this one's backups should look like" is a finding rather than
+a blank.
+
+Origin has no column of its own. For a reader scanning fifty rows it decides exactly one thing —
+whether a verification is possible at all — so it is what the Verified cell *says*: `n/a — not ours`
+for a backup Fleetward did not take, `never verified` for one it did and has not yet proven. Those
+are different facts, and a screen that rendered the first as the second would send you looking for a
+verification that is never coming.
+
+Everything that weakens an answer is behind the row: the declared schedule, the grace period, and
+the caveats the plugin reported — an approximate timestamp, or a source that assigns no identity so
+a renamed file looks like a new backup.
+
+The health column moves on its own, and shows how old its answer is:
+
+```bash
+bin/fleetward-cli schedule create --instance prod-1 --kind discovery --cron "*/5 * * * *"
+```
+
+The page refetches every thirty seconds. It is a poll rather than a stream, deliberately: fifty rows
+on that cadence is a polling problem, and it reads nothing from your databases that the schedule
+above has not already collected.
+
+> The screen reports and changes nothing. Adding a server, editing a schedule and triggering a
+> backup are CLI-only, and there is no login — every API route is open to anyone who can reach the
+> port, so the UI says nothing about who is looking at it.
+
 ---
 
 ## Where to go next
@@ -380,10 +423,11 @@ home elsewhere lives in that home.
 ```bash
 make help              # every target
 make build             # control plane, CLI, and all plugin binaries → ./bin
-make test              # unit tests
+make test              # Go unit tests
+make test-web          # the web app's tests
 make conformance       # the plugin conformance suite, against every plugin
 make lint              # golangci-lint + buf lint + eslint
-make proto             # regenerate from api/proto
+make proto             # regenerate from api/proto — Go, OpenAPI, and the web app's types
 make vuln              # govulncheck
 ```
 
@@ -401,7 +445,7 @@ flowchart LR
     PR --> B["build all binaries<br/>+ handshake check"]
     PR --> C["conformance suite<br/>every plugin"]
     PR --> V["govulncheck"]
-    PR --> W["web lint + build"]
+    PR --> W["web lint + test + build"]
     PR --> DC["docscheck<br/>claims match the tree"]
     PR --> D["docker compose up<br/>readyz must be green"]
     P & L & T & TW & B & C & V & W & DC & D --> M["mergeable"]
@@ -422,8 +466,9 @@ both directions — a corrupted artifact returns `FAILED`, and a sandbox that ne
 `INCONCLUSIVE`. Phase B turns that proven loop into something installable. Backups and their
 verifications now run on a schedule, without anyone asking; SQL Server passes the same conformance
 suite as PostgreSQL, unmodified, which is the first evidence rather than assertion that adding an
-engine does not mean modifying core; and Fleetward now reports on backups it did not take, so an
-estate that already backs itself up gets an answer on the day it is installed.
+engine does not mean modifying core; Fleetward now reports on backups it did not take, so an estate
+that already backs itself up gets an answer on the day it is installed; and all of it is readable on
+one screen, where a backup proven unrestorable is the loudest thing on the page.
 
 Not yet built, stated plainly because a reference document should not imply otherwise: there is no
 authentication, so every API route is open to anyone who can reach the port; artifacts are never

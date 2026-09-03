@@ -18,9 +18,9 @@ function toneFor(status: string): StatusTone {
 /**
  * System status renders the control plane's own readiness.
  *
- * It exists from Stage 0 because it is the screen that proves the whole stack is wired together:
- * browser to Vite proxy to control plane to Postgres, MinIO, VictoriaMetrics, and the plugin
- * manager.
+ * It was the first screen built, because it is the one that proves the whole stack is wired
+ * together: browser to Vite proxy to control plane to Postgres, MinIO, VictoriaMetrics, and the
+ * plugin manager.
  */
 export function System() {
   const readiness = useQuery({
@@ -90,8 +90,14 @@ export function System() {
           <dd className="tabular-nums">{version.data.commit}</dd>
           <dt className="text-(--color-content-muted)">Contract</dt>
           <dd className="tabular-nums">{version.data.contract_version}</dd>
-          <dt className="text-(--color-content-muted)">Platform</dt>
-          <dd className="tabular-nums">{version.data.platform}</dd>
+          {/* This row used to read `version.data.platform`, a field GetVersionResponse has never
+              carried, so it rendered blank from the day it was written. Nothing caught it because
+              the type it was checked against was hand-written from the same wrong assumption. It is
+              the first thing the generated types found. */}
+          <dt className="text-(--color-content-muted)">Go</dt>
+          <dd className="tabular-nums">{version.data.go_version}</dd>
+          <dt className="text-(--color-content-muted)">Built</dt>
+          <dd className="tabular-nums">{version.data.build_date}</dd>
         </dl>
       )}
     </div>

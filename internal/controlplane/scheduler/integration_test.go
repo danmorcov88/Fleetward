@@ -53,6 +53,7 @@ type stubRunner struct {
 	backupIDs []string
 	verified  []string
 	observed  []string
+	probed    []string
 
 	// block, when non-nil, holds RunBackupJob until it is closed or the context is cancelled.
 	block chan struct{}
@@ -123,6 +124,19 @@ func (r *stubRunner) observations() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]string(nil), r.observed...)
+}
+
+func (r *stubRunner) RunDiscoveryJob(_ context.Context, in DiscoveryJob) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.probed = append(r.probed, in.InstanceID)
+	return r.err
+}
+
+func (r *stubRunner) probes() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.probed...)
 }
 
 func (r *stubRunner) jobsRun() []string {
@@ -872,5 +886,69 @@ func TestSchedulerRunsAndClosesAnObservation(t *testing.T) {
 
 	if got := runner.observations(); len(got) == 0 || got[0] != h.instanceID {
 		t.Errorf("the runner was asked to observe %v, want [%s]", got, h.instanceID)
+	}
+}
+
+// TestSchedulerRunsAndClosesAHealthProbe is the observation test's twin, and it is here for the
+// same reason: a discovery job writes no row that is about itself, so if the runner does not close
+// it, idx_jobs_one_active_per_instance_kind blocks every later probe of that instance and the
+// estate's health silently stops moving. The screen would keep rendering a green dot with a
+// timestamp that never advances, which is worse than rendering nothing.
+func TestSchedulerRunsAndClosesAHealthProbe(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	svc := NewService(h.pool, h.log)
+	created, err := svc.CreateSchedule(ctx, CreateScheduleInput{
+		InstanceID:     h.instanceID,
+		Kind:           kindDiscovery,
+		CronExpression: "* * * * *",
+	})
+	if err != nil {
+		t.Fatalf("CreateSchedule: %v", err)
+	}
+	if _, err := h.pool.Exec(ctx,
+		`UPDATE schedules SET next_run_at = now() - interval '1 minute' WHERE id = $1`, created.GetId()); err != nil {
+		t.Fatalf("make the schedule due: %v", err)
+	}
+
+	runner := newStubRunner()
+	s := h.scheduler(runner, config.SchedulerConfig{
+		Enabled:           true,
+		LeaseTTL:          time.Minute,
+		LeaseHeartbeat:    10 * time.Second,
+		PollInterval:      200 * time.Millisecond,
+		MaxConcurrentJobs: 2,
+	})
+
+	s.Start(ctx)
+	defer func() { _ = s.Close() }()
+
+	deadline := time.After(60 * time.Second)
+	for {
+		jobs, err := svc.ListJobs(ctx, ListJobsFilter{InstanceID: h.instanceID})
+		if err != nil {
+			t.Fatalf("ListJobs: %v", err)
+		}
+		done := false
+		for _, j := range jobs {
+			if j.GetKind() == fwv1.JobKind_JOB_KIND_DISCOVERY &&
+				j.GetState() == fwv1.JobState_JOB_STATE_SUCCEEDED {
+				done = true
+			}
+		}
+		if done {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("no discovery job reached a terminal state; probes run: %v, jobs: %d",
+				runner.probes(), len(jobs))
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+
+	if got := runner.probes(); len(got) == 0 || got[0] != h.instanceID {
+		t.Errorf("the runner was asked to probe %v, want [%s]", got, h.instanceID)
 	}
 }
