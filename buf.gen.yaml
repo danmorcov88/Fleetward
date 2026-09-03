@@ -18,5 +18,12 @@ plugins:
     out: api/gen
     opt: paths=source_relative
   # OpenAPI v3 for the external REST surface (ADR-0004).
+  #
+  # Both options exist to make the document describe the bytes the server actually sends rather
+  # than the generator's defaults (ADR-0029). The gateway marshals with UseProtoNames, so fields
+  # and query parameters are snake_case, and protojson renders an enum as its name rather than its
+  # number. Without these the document is confidently wrong on every field of every message, and a
+  # client generated from it compiles and reads nothing.
   - remote: buf.build/community/google-gnostic-openapi:v0.7.0
     out: api/openapi
+    opt: naming=proto,enum_type=string

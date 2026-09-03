@@ -85,11 +85,14 @@ func newScheduleCreateCommand(serverURL *string, timeout *time.Duration) *cobra.
 
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create a backup or observation schedule for one instance",
-		Long: "Two kinds of schedule run today.\n\n" +
-			"  backup   Fleetward takes the backup, on the cadence --cron names.\n" +
-			"  observe  Fleetward reads the engine's own record of backups it did not take, on the\n" +
-			"           cadence --cron names, and changes nothing on the instance.\n\n" +
+		Short: "Create a backup, observation, or health-probe schedule for one instance",
+		Long: "Three kinds of schedule run today.\n\n" +
+			"  backup     Fleetward takes the backup, on the cadence --cron names.\n" +
+			"  observe    Fleetward reads the engine's own record of backups it did not take, on the\n" +
+			"             cadence --cron names, and changes nothing on the instance.\n" +
+			"  discovery  Fleetward probes the instance and records its health, so the estate view\n" +
+			"             shows an answer somebody can put a date on rather than whatever the last\n" +
+			"             person to run `instance test` left behind.\n\n" +
 			"--expect-cron is separate from --cron and answers a different question. --cron is how\n" +
 			"often Fleetward looks; --expect-cron is when a backup is supposed to have happened, and\n" +
 			"it is what `backup adherence` holds the instance to. Without it Fleetward can report\n" +
@@ -110,9 +113,10 @@ func newScheduleCreateCommand(serverURL *string, timeout *time.Duration) *cobra.
 			}
 
 			switch strings.ToLower(kind) {
-			case "backup", "observe":
+			case "backup", "observe", "discovery":
 			default:
-				return fmt.Errorf("--kind must be %q or %q, got %q", "backup", "observe", kind)
+				return fmt.Errorf("--kind must be %q, %q or %q, got %q",
+					"backup", "observe", "discovery", kind)
 			}
 			if expectGrace < 0 {
 				return fmt.Errorf("--expect-grace cannot be negative")
@@ -157,11 +161,18 @@ func newScheduleCreateCommand(serverURL *string, timeout *time.Duration) *cobra.
 			fmt.Fprintf(out, "schedule %s created on %s\n", resp.Schedule.ID, inst.Name)
 			fmt.Fprintf(out, "  %s in %s — next run %s\n",
 				resp.Schedule.CronExpression, resp.Schedule.Timezone, formatRunTime(resp.Schedule.NextRunAt))
-			if resp.Schedule.ExpectedCron != "" {
+			// The expectation is about backups, so the hint about a missing one belongs only to a
+			// schedule that has anything to do with backups. A health probe told to declare when a
+			// backup is due sends the reader looking for a flag that would do nothing.
+			switch {
+			case resp.Schedule.ExpectedCron != "":
 				fmt.Fprintf(out, "  a backup is expected at %s in %s, up to %s late\n",
 					resp.Schedule.ExpectedCron, resp.Schedule.Timezone,
 					formatGrace(resp.Schedule.ExpectedGraceMinutes))
-			} else {
+			case strings.EqualFold(kind, "discovery"):
+				fmt.Fprintln(out, "  this instance's health will be probed on that cadence, and the "+
+					"estate view shows how old the answer is")
+			default:
 				fmt.Fprintln(out, "  nothing was declared about when a backup is due, so "+
 					"`backup adherence` cannot report this instance as behind — add --expect-cron")
 			}
@@ -170,7 +181,8 @@ func newScheduleCreateCommand(serverURL *string, timeout *time.Duration) *cobra.
 	}
 
 	cmd.Flags().StringVar(&instanceName, "instance", "", "instance name or identifier (required)")
-	cmd.Flags().StringVar(&kind, "kind", "backup", "backup, or observe to read backups Fleetward did not take")
+	cmd.Flags().StringVar(&kind, "kind", "backup",
+		"backup, observe to read backups Fleetward did not take, or discovery to probe health")
 	cmd.Flags().StringVar(&cronExpr, "cron", "", "standard five-field cron expression, e.g. \"0 2 * * *\" (required)")
 	cmd.Flags().StringVar(&expectCron, "expect-cron", "",
 		"when a backup is supposed to have happened, as a cron expression; what `backup adherence` checks")

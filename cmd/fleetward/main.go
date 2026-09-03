@@ -240,7 +240,7 @@ func run() error {
 		return fmt.Errorf("schedule api: %w", err)
 	}
 
-	sched := scheduler.New(db.Pool(), scheduler.NewBackupRunner(backupSvc), cfg.Scheduler, log)
+	sched := scheduler.New(db.Pool(), scheduler.NewJobRunner(backupSvc, inventorySvc), cfg.Scheduler, log)
 	defer func() { _ = sched.Close() }()
 
 	// Non-critical: a stalled tick loop means nothing runs automatically, which is worth degrading

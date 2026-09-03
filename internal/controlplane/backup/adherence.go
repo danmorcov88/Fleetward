@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
@@ -60,10 +61,19 @@ func (s *Service) GetBackupAdherence(ctx context.Context, in GetAdherenceInput) 
 
 	now := time.Now().UTC()
 	for _, e := range expectations {
+		// Nothing declared is the ordinary case, not a failure to parse. Reporting the empty
+		// expression's parse error as a caveat describes a misconfiguration that does not exist,
+		// and on an estate where most instances have no declaration yet that is most of the rows
+		// carrying a warning about a schedule nobody wrote. It reads as NOT_DECLARED and says
+		// nothing further; the estate view renders that state in words of its own.
+		if e.cron == "" {
+			e.state = fwv1.AdherenceState_ADHERENCE_STATE_NOT_DECLARED
+			continue
+		}
 		if err := e.evaluateWindow(now); err != nil {
 			// A cron expression that stopped parsing — because a time zone left the system
-			// database, say — must not take the whole estate's answer down with it. The instance
-			// reports that nothing usable was declared, and the rest of the estate still answers.
+			// database, say — must not take the whole estate's answer down with it. This one was
+			// declared and is broken, which is worth saying out loud.
 			e.state = fwv1.AdherenceState_ADHERENCE_STATE_NOT_DECLARED
 			e.caveats = append(e.caveats, "the declared schedule could not be evaluated: "+err.Error())
 		}
@@ -73,6 +83,9 @@ func (s *Service) GetBackupAdherence(ctx context.Context, in GetAdherenceInput) 
 		return nil, err
 	}
 	if err := s.attachLatestBackups(ctx, expectations); err != nil {
+		return nil, err
+	}
+	if err := s.attachVerifications(ctx, expectations); err != nil {
 		return nil, err
 	}
 
@@ -403,6 +416,84 @@ func (s *Service) attachLatestBackups(ctx context.Context, expectations []*expec
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("backup: read the latest backup per instance: %w", err)
+	}
+	return nil
+}
+
+// attachVerifications fills in the latest verification of every managed backup this answer carries.
+//
+// It exists because the estate view needs the second half of the two-part status for fifty
+// instances at once, and until this slice the only way to get a verification was GetBackup, one
+// backup at a time. Fifty round trips per refresh, every thirty seconds, is not a dashboard.
+//
+// Two things it deliberately does not do:
+//
+// Observed backups are skipped rather than queried and found empty. A backup Fleetward did not take
+// carries no manifest and can never be verified, so "no verification row" means something different
+// for it than for a managed backup — the first is a permanent fact, the second is a gap
+// (ADR-0015). Skipping them keeps that distinction in the origin, where it belongs, rather than
+// inviting a reader to infer it from an absence.
+//
+// And it does not decode per-check results. A verification's checks are its detail, they can be
+// large, and no column of the estate view renders them — GetBackup is where a reader goes for the
+// report on one backup. What comes back here is the verdict and when it was reached.
+func (s *Service) attachVerifications(ctx context.Context, expectations []*expectation) error {
+	byBackup := map[string][]*fwv1.Backup{}
+	for _, e := range expectations {
+		for _, b := range []*fwv1.Backup{e.satisfied, e.latest} {
+			if b == nil || b.GetOrigin() != fwv1.BackupOrigin_BACKUP_ORIGIN_MANAGED {
+				continue
+			}
+			byBackup[b.GetId()] = append(byBackup[b.GetId()], b)
+		}
+	}
+	if len(byBackup) == 0 {
+		return nil
+	}
+
+	ids := make([]string, 0, len(byBackup))
+	for id := range byBackup {
+		ids = append(ids, id)
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT ON (backup_id)
+		       backup_id, id, status, report, error_message, started_at, completed_at, duration_ms
+		FROM   verifications
+		WHERE  tenant_id = $1 AND backup_id = ANY($2)
+		ORDER  BY backup_id, created_at DESC`, s.tenantID, ids)
+	if err != nil {
+		return fmt.Errorf("backup: read the latest verification per backup: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			backupID    string
+			status      string
+			startedAt   *time.Time
+			completedAt *time.Time
+			durationMS  int64
+			v           = &fwv1.Verification{}
+		)
+		if err := rows.Scan(&backupID, &v.Id, &status, &v.Report, &v.ErrorMessage,
+			&startedAt, &completedAt, &durationMS); err != nil {
+			return fmt.Errorf("backup: read a verification: %w", err)
+		}
+		v.BackupId = backupID
+		v.Status = parseVerificationStatus(status)
+		v.Duration = durationpb.New(time.Duration(durationMS) * time.Millisecond)
+		v.StartedAt = timestampOrNil(startedAt)
+		v.CompletedAt = timestampOrNil(completedAt)
+
+		// The same backup can be both the one that satisfied the window and the latest one, and
+		// they are the same pointer when it is. Assigning to every target keeps that harmless.
+		for _, b := range byBackup[backupID] {
+			b.Verification = v
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("backup: read the latest verification per backup: %w", err)
 	}
 	return nil
 }
