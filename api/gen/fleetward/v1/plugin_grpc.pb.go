@@ -19,16 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	EnginePlugin_GetCapabilities_FullMethodName = "/fleetward.v1.EnginePlugin/GetCapabilities"
-	EnginePlugin_Discover_FullMethodName        = "/fleetward.v1.EnginePlugin/Discover"
-	EnginePlugin_GetConfig_FullMethodName       = "/fleetward.v1.EnginePlugin/GetConfig"
-	EnginePlugin_CollectMetrics_FullMethodName  = "/fleetward.v1.EnginePlugin/CollectMetrics"
-	EnginePlugin_Backup_FullMethodName          = "/fleetward.v1.EnginePlugin/Backup"
-	EnginePlugin_Restore_FullMethodName         = "/fleetward.v1.EnginePlugin/Restore"
-	EnginePlugin_VerifyRestore_FullMethodName   = "/fleetward.v1.EnginePlugin/VerifyRestore"
-	EnginePlugin_ListPITRTargets_FullMethodName = "/fleetward.v1.EnginePlugin/ListPITRTargets"
-	EnginePlugin_ListPrincipals_FullMethodName  = "/fleetward.v1.EnginePlugin/ListPrincipals"
-	EnginePlugin_HealthCheck_FullMethodName     = "/fleetward.v1.EnginePlugin/HealthCheck"
+	EnginePlugin_GetCapabilities_FullMethodName   = "/fleetward.v1.EnginePlugin/GetCapabilities"
+	EnginePlugin_Discover_FullMethodName          = "/fleetward.v1.EnginePlugin/Discover"
+	EnginePlugin_GetConfig_FullMethodName         = "/fleetward.v1.EnginePlugin/GetConfig"
+	EnginePlugin_CollectMetrics_FullMethodName    = "/fleetward.v1.EnginePlugin/CollectMetrics"
+	EnginePlugin_Backup_FullMethodName            = "/fleetward.v1.EnginePlugin/Backup"
+	EnginePlugin_Restore_FullMethodName           = "/fleetward.v1.EnginePlugin/Restore"
+	EnginePlugin_VerifyRestore_FullMethodName     = "/fleetward.v1.EnginePlugin/VerifyRestore"
+	EnginePlugin_ListPITRTargets_FullMethodName   = "/fleetward.v1.EnginePlugin/ListPITRTargets"
+	EnginePlugin_ListBackupHistory_FullMethodName = "/fleetward.v1.EnginePlugin/ListBackupHistory"
+	EnginePlugin_ListPrincipals_FullMethodName    = "/fleetward.v1.EnginePlugin/ListPrincipals"
+	EnginePlugin_HealthCheck_FullMethodName       = "/fleetward.v1.EnginePlugin/HealthCheck"
 )
 
 // EnginePluginClient is the client API for EnginePlugin service.
@@ -72,6 +73,14 @@ type EnginePluginClient interface {
 	// ListPITRTargets reports the point-in-time-recovery window currently available for an instance.
 	// Plugins whose capabilities set supports_pitr = false return available = false.
 	ListPITRTargets(ctx context.Context, in *ListPITRTargetsRequest, opts ...grpc.CallOption) (*PITRWindow, error)
+	// ListBackupHistory reports backups the engine knows about that Fleetward did not take
+	// (ADR-0015). It is strictly read-only observation: the plugin reads whatever evidence the engine
+	// keeps — a history table, a directory of files — and reports it. Fleetward never owns, reads, or
+	// deletes the artifacts it describes.
+	//
+	// Plugins whose capabilities leave backup_history.supported false refuse this with
+	// ERROR_CODE_UNSUPPORTED.
+	ListBackupHistory(ctx context.Context, in *ListBackupHistoryRequest, opts ...grpc.CallOption) (*ListBackupHistoryResponse, error)
 	// ListPrincipals enumerates users, roles, and privileges. This RPC is strictly read-only:
 	// Fleetward surfaces access, it does not administer it.
 	ListPrincipals(ctx context.Context, in *ListPrincipalsRequest, opts ...grpc.CallOption) (*ListPrincipalsResponse, error)
@@ -196,6 +205,16 @@ func (c *enginePluginClient) ListPITRTargets(ctx context.Context, in *ListPITRTa
 	return out, nil
 }
 
+func (c *enginePluginClient) ListBackupHistory(ctx context.Context, in *ListBackupHistoryRequest, opts ...grpc.CallOption) (*ListBackupHistoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBackupHistoryResponse)
+	err := c.cc.Invoke(ctx, EnginePlugin_ListBackupHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *enginePluginClient) ListPrincipals(ctx context.Context, in *ListPrincipalsRequest, opts ...grpc.CallOption) (*ListPrincipalsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListPrincipalsResponse)
@@ -257,6 +276,14 @@ type EnginePluginServer interface {
 	// ListPITRTargets reports the point-in-time-recovery window currently available for an instance.
 	// Plugins whose capabilities set supports_pitr = false return available = false.
 	ListPITRTargets(context.Context, *ListPITRTargetsRequest) (*PITRWindow, error)
+	// ListBackupHistory reports backups the engine knows about that Fleetward did not take
+	// (ADR-0015). It is strictly read-only observation: the plugin reads whatever evidence the engine
+	// keeps — a history table, a directory of files — and reports it. Fleetward never owns, reads, or
+	// deletes the artifacts it describes.
+	//
+	// Plugins whose capabilities leave backup_history.supported false refuse this with
+	// ERROR_CODE_UNSUPPORTED.
+	ListBackupHistory(context.Context, *ListBackupHistoryRequest) (*ListBackupHistoryResponse, error)
 	// ListPrincipals enumerates users, roles, and privileges. This RPC is strictly read-only:
 	// Fleetward surfaces access, it does not administer it.
 	ListPrincipals(context.Context, *ListPrincipalsRequest) (*ListPrincipalsResponse, error)
@@ -297,6 +324,9 @@ func (UnimplementedEnginePluginServer) VerifyRestore(context.Context, *VerifyRes
 }
 func (UnimplementedEnginePluginServer) ListPITRTargets(context.Context, *ListPITRTargetsRequest) (*PITRWindow, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListPITRTargets not implemented")
+}
+func (UnimplementedEnginePluginServer) ListBackupHistory(context.Context, *ListBackupHistoryRequest) (*ListBackupHistoryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListBackupHistory not implemented")
 }
 func (UnimplementedEnginePluginServer) ListPrincipals(context.Context, *ListPrincipalsRequest) (*ListPrincipalsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListPrincipals not implemented")
@@ -448,6 +478,24 @@ func _EnginePlugin_ListPITRTargets_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EnginePlugin_ListBackupHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBackupHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EnginePluginServer).ListBackupHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EnginePlugin_ListBackupHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EnginePluginServer).ListBackupHistory(ctx, req.(*ListBackupHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EnginePlugin_ListPrincipals_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListPrincipalsRequest)
 	if err := dec(in); err != nil {
@@ -510,6 +558,10 @@ var EnginePlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListPITRTargets",
 			Handler:    _EnginePlugin_ListPITRTargets_Handler,
+		},
+		{
+			MethodName: "ListBackupHistory",
+			Handler:    _EnginePlugin_ListBackupHistory_Handler,
 		},
 		{
 			MethodName: "ListPrincipals",

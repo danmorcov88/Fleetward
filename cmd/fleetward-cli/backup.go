@@ -23,13 +23,19 @@ func newBackupCommand(serverURL *string, timeout *time.Duration) *cobra.Command 
 		Use:   "backup",
 		Short: "Take and inspect backups",
 		Long: "Backups are taken by the engine's own native tooling, orchestrated by Fleetward.\n" +
-			"Every backup carries a manifest of what the source contained when it was taken, which\n" +
-			"is what makes the verification in `backup verify` mean something.",
+			"Every backup Fleetward takes carries a manifest of what the source contained when it\n" +
+			"was taken, which is what makes the verification in `backup verify` mean something.\n\n" +
+			"Fleetward also reports on backups it did not take: `backup history` and\n" +
+			"`backup adherence` cover an estate whose backups are already being taken by something\n" +
+			"else, without changing anything about it.",
 	}
 	cmd.AddCommand(
 		newBackupRunCommand(serverURL, timeout),
 		newBackupShowCommand(serverURL, timeout),
 		newBackupVerifyCommand(serverURL, timeout),
+		newBackupHistoryCommand(serverURL, timeout),
+		newBackupObserveCommand(serverURL, timeout),
+		newBackupAdherenceCommand(serverURL, timeout),
 	)
 	return cmd
 }
@@ -199,7 +205,8 @@ func followBackup(ctx context.Context, c *client, backupID string, onState func(
 
 func isTerminalBackupState(state string) bool {
 	switch state {
-	case "BACKUP_STATE_SUCCEEDED", "BACKUP_STATE_FAILED", "BACKUP_STATE_CANCELED", "BACKUP_STATE_EXPIRED":
+	case "BACKUP_STATE_SUCCEEDED", "BACKUP_STATE_FAILED", "BACKUP_STATE_CANCELED",
+		"BACKUP_STATE_EXPIRED", "BACKUP_STATE_UNKNOWN":
 		return true
 	default:
 		return false
@@ -211,8 +218,12 @@ func printBackup(out io.Writer, resp *backupResponse) {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 
 	fmt.Fprintf(w, "id\t%s\n", b.ID)
+	fmt.Fprintf(w, "origin\t%s\n", strings.ToLower(trimEnum("BACKUP_ORIGIN_", b.Origin)))
 	fmt.Fprintf(w, "state\t%s\n", trimEnum("BACKUP_STATE_", b.State))
 	fmt.Fprintf(w, "method\t%s\n", b.MethodID)
+	if b.ExternalLocation != "" {
+		fmt.Fprintf(w, "location\t%s\n", b.ExternalLocation)
+	}
 	if b.Artifact != nil && b.Artifact.Key != "" {
 		fmt.Fprintf(w, "artifact\t%s/%s\n", b.Artifact.Bucket, b.Artifact.Key)
 	}
@@ -238,6 +249,21 @@ func printBackup(out io.Writer, resp *backupResponse) {
 	// Printed even when there is none. "Not verified" is information an operator needs, and an
 	// absent line reads as "fine" rather than as "unproven".
 	verified := "never verified"
+	if e := b.Evidence; e != nil {
+		// An observed backup is not an unverified backup, and saying so is the whole point of
+		// carrying an origin at all. What it can be checked against is stated here instead.
+		verified = "not possible — Fleetward did not take this backup, so there is no manifest to verify it against"
+		fmt.Fprintf(w, "evidence\t%s\n", e.SourceDescription)
+		if !e.ReportsOutcome {
+			fmt.Fprintf(w, "\t%s\n", "this source cannot say whether the backup completed successfully")
+		}
+		if e.CompletedAtIsApproximate {
+			fmt.Fprintf(w, "\t%s\n", "the finish time may be out by up to an hour across a daylight-saving change")
+		}
+		if e.ObservedAt != nil {
+			fmt.Fprintf(w, "observed\t%s\n", e.ObservedAt.UTC().Format(time.RFC3339))
+		}
+	}
 	if b.Verification != nil {
 		verified = trimEnum("VERIFICATION_STATUS_", b.Verification.Status)
 		if verified == "UNSPECIFIED" {

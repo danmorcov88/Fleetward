@@ -57,6 +57,7 @@ type harness struct {
 	pool      *pgxpool.Pool
 	store     objstore.ObjectStore
 	plugin    *stubEngine
+	router    *stubRouter
 	sandboxes *stubSandboxes
 	instance  string
 }
@@ -79,11 +80,13 @@ func newHarness(t *testing.T) *harness {
 	// tests, and duplicating it would only make this suite slower and flakier.
 	sandboxes := &stubSandboxes{}
 
-	svc := New(pool, store, &stubRouter{client: plugin}, &stubResolver{instanceID: instanceID}, sandboxes, log)
+	router := &stubRouter{client: plugin}
+	svc := New(pool, store, router, &stubResolver{instanceID: instanceID}, sandboxes, log)
 	t.Cleanup(func() { _ = svc.Close() })
 
 	return &harness{
-		svc: svc, pool: pool, store: store, plugin: plugin, sandboxes: sandboxes, instance: instanceID,
+		svc: svc, pool: pool, store: store, plugin: plugin, router: router,
+		sandboxes: sandboxes, instance: instanceID,
 	}
 }
 
@@ -437,13 +440,19 @@ func (r *stubResolver) ResolveConnection(_ context.Context, instanceID string) (
 }
 
 // stubRouter serves one engine type with one client.
-type stubRouter struct{ client fwv1.EnginePluginClient }
+type stubRouter struct {
+	client fwv1.EnginePluginClient
+	// history is what this engine declares about backups it did not take. Nil is the honest default
+	// and the state every plugin starts in: it can see none.
+	history *fwv1.BackupHistoryCapabilities
+}
 
 func (r *stubRouter) Client(engineType string) (fwv1.EnginePluginClient, *fwv1.Capabilities, error) {
 	if engineType != engine {
 		return nil, nil, fmt.Errorf("no plugin available for engine type %q", engineType)
 	}
 	return r.client, &fwv1.Capabilities{
+		BackupHistory:        r.history,
 		EngineType:           engine,
 		PluginVersion:        "0.1.0",
 		SupportsOnlineBackup: true,
@@ -478,6 +487,13 @@ type stubEngine struct {
 	endWithoutTerminal bool
 	// block, when non-nil, holds the run open until it is closed.
 	block chan struct{}
+
+	// history is what this engine claims to see of backups Fleetward did not take, exercised by
+	// observe_integration_test.go.
+	history []*fwv1.ObservedBackup
+	// externalID is what the engine calls the backup this plugin takes, reported back so that the
+	// observation poll can converge on it rather than recording it twice.
+	externalID string
 
 	// The verification half, exercised by verify_integration_test.go.
 	restoreError *fwv1.PluginError
@@ -542,6 +558,9 @@ func (s *stubEngine) Backup(ctx context.Context, in *fwv1.BackupRequest, _ ...gr
 				MethodId: "dump",
 				Manifest: manifest,
 				Parts:    parts,
+				// What the engine called this backup, for engines that keep their own record of
+				// one. Empty for engines that do not, which is the default here.
+				ExternalId: s.externalID,
 			},
 		})
 	}

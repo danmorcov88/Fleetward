@@ -213,6 +213,62 @@ full before you touch the target, then restore from `engine_path`.
 
 ---
 
+## 7b. Backups your plugin did not take
+
+Most estates already back themselves up, by cron or by scripts that predate Fleetward, and reporting
+on those without changing anything is what makes Fleetward adoptable at all
+([ADR-0015](../adr/0015-observed-and-managed-backups.md)). `ListBackupHistory` is how a plugin
+supplies that, and it is strictly read-only: read whatever evidence the engine keeps, report it, and
+touch nothing.
+
+What counts as evidence differs enormously by engine, so **what your source can prove is a
+declaration rather than an assumption**:
+
+```go
+BackupHistory: &fwv1.BackupHistoryCapabilities{
+	Supported:                true,
+	SourceDescription:        "myengine's own record of its backups",
+	IdentityIsEngineAssigned: true,   // the engine names the backup; a moved file is still one backup
+	ReportsOutcome:           true,   // the evidence distinguishes success from failure
+	RequiresSharedDirectory:  false,  // observation reads a directory rather than the connection
+},
+```
+
+Core acts on every one of those generically. Declaring `ReportsOutcome` for a source that cannot
+prove one is the same defect as declaring a capability you have not implemented, and it is worse in
+its consequence: it puts a green tick on somebody's estate that nothing stands behind.
+
+Four rules, and each of them is a conformance assertion.
+
+**Every record carries an `external_id` that is stable across polls and unique within the instance,
+and comes from the engine rather than from the moment you observed it.** A poll runs every half hour
+for years against unchanged evidence; core upserts on this identity, so an unstable one records the
+same nightly backup forty-eight times a day
+([ADR-0027](../adr/0027-an-observed-backup-is-identified-by-what-the-engine-calls-it.md)). If your
+source assigns nothing, derive one from what is stable about it and set
+`IdentityIsEngineAssigned = false`.
+
+**If your engine records its own backups, report the identity of the one you just took** in
+`BackupResult.external_id`. Fleetward's backups appear in that record like everyone else's, and this
+is what makes the next poll land on the row that already exists rather than inserting the same
+backup a second time under an origin it does not have.
+
+**Timestamps are UTC.** `google.protobuf.Timestamp` has no other meaning. An engine that records
+local time with no offset is yours to convert — and where you cannot convert exactly, set
+`FinishedAtIsApproximate` rather than guessing. Core widens the compliance window for a record that
+carries it, and reports the caveat.
+
+**Honour `Limit` and `Since`.** An engine's backup history on an instance that has been up for years
+holds hundreds of thousands of rows, and a full scan on every poll is not acceptable against a
+production server. Core supplies a watermark and expects a bounded page.
+
+If your engine keeps no record at all — PostgreSQL does not — a configured directory of files is a
+legitimate source, and its honest ceiling is `OBSERVED_OUTCOME_UNKNOWN`: a file arrived, and nothing
+about it says the dump that wrote it finished. Declare `ReportsOutcome: false` and let Fleetward say
+so. A plugin that can see nothing declares `Supported: false` and refuses the RPC with
+`ERROR_CODE_UNSUPPORTED`; answering with an empty list would report an engine nobody is watching as
+an engine with nothing to report.
+
 ## 8. Errors
 
 Return `sdk.Error` values, not bare errors:
@@ -310,8 +366,12 @@ So register a `Fixture` for your engine in
 [`test/conformance/fixtures_test.go`](../../test/conformance/fixtures_test.go), keyed by your
 engine type. It has two methods: `Seed` puts several objects with different row counts into a fresh
 instance, and `RemoveRows` deletes rows from exactly one of them and reports which — by the name
-your manifest uses for it — and how many. Look at `fixture_postgresql_test.go`; it is under fifty
-lines and it is the only engine-specific code in the suite.
+your manifest uses for it — and how many. Look at `fixture_postgresql_test.go`; it is small, and
+fixtures are the only engine-specific code in the suite.
+
+A plugin that declares `BackupHistory.Supported` also implements `ExternalBackuper` on its fixture,
+which causes a backup by the engine's own means — the way a cron job would — so the suite has
+something to observe that Fleetward did not take.
 
 Everything else is shared. Adding an engine means adding a fixture beside your plugin; it never
 means changing an assertion. Until you add one, the Stage 1 cases skip with a message saying so,
@@ -336,5 +396,7 @@ gate is not a merge gate, so CI installs them.
 - [ ] A restore target that does not answer is never reported as a tool failure
 - [ ] No credentials in logs, errors, or on disk
 - [ ] A `Fixture` is registered so the suite can exercise Stage 1
+- [ ] `BackupHistoryCapabilities` describes what your evidence can and cannot prove
+- [ ] Observed records carry a stable `external_id` and UTC timestamps
 - [ ] Conformance passes
 - [ ] An ADR for any decision a future maintainer might otherwise undo

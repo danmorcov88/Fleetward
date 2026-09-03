@@ -5,6 +5,9 @@ package conformance
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -84,4 +87,22 @@ func connect(ctx context.Context, creds *fwv1.Credentials) (*pgx.Conn, error) {
 		return nil, fmt.Errorf("connect to the %s instance: %w", creds.GetDatabase(), err)
 	}
 	return conn, nil
+}
+
+// TakeExternalBackup writes a dump into the directory this instance's backups are written to.
+//
+// It is a file rather than a real pg_dump on purpose, and the reason is the finding this fixture
+// exists to make available: PostgreSQL keeps no record of its own backups, so a directory listing is
+// all there is to read, and a directory listing cannot tell a complete dump from a truncated one.
+// Writing a file is exactly as much evidence as the real thing leaves behind.
+func (postgresFixture) TakeExternalBackup(_ context.Context, creds *fwv1.Credentials) error {
+	dir := creds.GetSharedDirectory().GetLocalPath()
+	if dir == "" {
+		return fmt.Errorf("no backup directory is configured for this instance")
+	}
+	name := filepath.Join(dir, fmt.Sprintf("nightly-%d.dump", time.Now().UnixNano()))
+	if err := os.WriteFile(name, []byte("-- a backup somebody else took\n"), 0o600); err != nil {
+		return fmt.Errorf("write a backup file: %w", err)
+	}
+	return nil
 }

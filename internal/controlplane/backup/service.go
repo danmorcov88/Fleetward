@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,6 +79,18 @@ const (
 	// progressLogInterval throttles progress logging. A plugin may emit a message per part, and a
 	// large backup would otherwise write thousands of identical-looking lines.
 	progressLogInterval = 30 * time.Second
+
+	// originManaged and originObserved are the two origins a backup can have (ADR-0015). They are
+	// the values of backups.origin, and the distinction is load-bearing rather than descriptive:
+	// only a managed backup carries a manifest Fleetward captured, and therefore only a managed
+	// backup can ever be verified.
+	originManaged  = "managed"
+	originObserved = "observed"
+
+	// defaultListPageSize and maxListPageSize bound a history listing. Fifty instances backed up
+	// nightly for a year is eighteen thousand rows, and something has to say no.
+	defaultListPageSize = 50
+	maxListPageSize     = 500
 )
 
 // Router is the slice of the plugin manager this service needs.
@@ -689,6 +703,17 @@ func (s *Service) recordSuccess(ctx context.Context, req runRequest, result *fwv
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// The engine's own identifier for what was just written, where the engine assigns one.
+	//
+	// It is what stops this backup being recorded a second time, as somebody else's, by the next
+	// observation poll: an engine that keeps a backup history records Fleetward's backups alongside
+	// everyone else's, and the upsert in observe.go converges onto this row rather than inserting a
+	// duplicate (ADR-0027). NULL rather than empty, because the identity index is partial on it.
+	var externalID any
+	if id := result.GetExternalId(); id != "" {
+		externalID = id
+	}
+
 	_, err = tx.Exec(ctx, `
 		UPDATE backups
 		SET state              = 'succeeded',
@@ -701,10 +726,11 @@ func (s *Service) recordSuccess(ctx context.Context, req runRequest, result *fwv
 		    consistency_point  = $7,
 		    manifest           = $8,
 		    metadata           = $9,
+		    external_id        = $10,
 		    completed_at       = now(),
-		    duration_ms        = $10,
+		    duration_ms        = $11,
 		    updated_at         = now()
-		WHERE id = $11 AND tenant_id = $12`,
+		WHERE id = $12 AND tenant_id = $13`,
 		result.GetArtifact().GetBucket(),
 		result.GetArtifact().GetKey(),
 		result.GetSizeBytes(),
@@ -714,6 +740,7 @@ func (s *Service) recordSuccess(ctx context.Context, req runRequest, result *fwv
 		nullableTime(result.GetConsistencyPoint()),
 		manifest,
 		metadataOrEmpty(result.GetMetadata()),
+		externalID,
 		result.GetDuration().AsDuration().Milliseconds(),
 		req.backupID, s.tenantID)
 	if err != nil {
@@ -765,49 +792,17 @@ func (s *Service) GetBackup(ctx context.Context, backupID string) (*fwv1.Backup,
 		return nil, nil, err
 	}
 
-	var (
-		out               = &fwv1.Backup{Id: id, TenantId: s.tenantID}
-		state             string
-		checksumAlgorithm string
-		checksumValue     string
-		bucket            string
-		objectKey         string
-		startedAt         *time.Time
-		completedAt       *time.Time
-		consistencyPoint  *time.Time
-		expiresAt         *time.Time
-		durationMS        int64
-		manifestRaw       []byte
-	)
-
-	err = s.pool.QueryRow(ctx, `
-		SELECT instance_id, method_id, state, size_bytes, checksum_algorithm, checksum_value,
-		       bucket, object_key, started_at, completed_at, consistency_point, expires_at,
-		       duration_ms, error_message, triggered_manually, manifest
+	var manifestRaw []byte
+	out, err := s.scanBackup(s.pool.QueryRow(ctx, `
+		SELECT `+backupColumns+`, manifest
 		FROM backups
-		WHERE id = $1 AND tenant_id = $2`, id, s.tenantID).
-		Scan(&out.InstanceId, &out.MethodId, &state, &out.SizeBytes, &checksumAlgorithm, &checksumValue,
-			&bucket, &objectKey, &startedAt, &completedAt, &consistencyPoint, &expiresAt,
-			&durationMS, &out.ErrorMessage, &out.TriggeredManually, &manifestRaw)
+		WHERE id = $1 AND tenant_id = $2`, id, s.tenantID), &manifestRaw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, fmt.Errorf("%w: backup %s", ErrNotFound, backupID)
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("backup: load backup: %w", err)
 	}
-
-	out.State = parseBackupState(state)
-	out.Duration = durationpb.New(time.Duration(durationMS) * time.Millisecond)
-	if checksumValue != "" {
-		out.Checksum = &fwv1.Checksum{Algorithm: parseChecksumAlgorithm(checksumAlgorithm), Value: checksumValue}
-	}
-	if objectKey != "" {
-		out.Artifact = &fwv1.ObjectRef{Bucket: bucket, Key: objectKey}
-	}
-	out.StartedAt = timestampOrNil(startedAt)
-	out.CompletedAt = timestampOrNil(completedAt)
-	out.ConsistencyPoint = timestampOrNil(consistencyPoint)
-	out.ExpiresAt = timestampOrNil(expiresAt)
 
 	manifest := &fwv1.SourceManifest{}
 	if len(manifestRaw) > 0 && string(manifestRaw) != "{}" {
@@ -829,6 +824,169 @@ func (s *Service) GetBackup(ctx context.Context, backupID string) (*fwv1.Backup,
 	out.Verification = verification
 
 	return out, manifest, nil
+}
+
+// ListBackupsInput filters a history listing. Everything is optional; an empty input reports the
+// whole estate's most recent backups, of both origins.
+type ListBackupsInput struct {
+	InstanceID    string
+	EnvironmentID string
+	State         fwv1.BackupState
+	Origin        fwv1.BackupOrigin
+	PageSize      int32
+}
+
+// ListBackups reports backup history across both origins.
+//
+// The origin filter defaults to neither, which is deliberate: the question "did this server get
+// backed up" does not care who took the backup, and a listing that quietly showed only the backups
+// Fleetward took would report an estate with a full year of history as an estate with none
+// (ADR-0015).
+func (s *Service) ListBackups(ctx context.Context, in ListBackupsInput) ([]*fwv1.Backup, error) {
+	size := int(in.PageSize)
+	switch {
+	case size <= 0:
+		size = defaultListPageSize
+	case size > maxListPageSize:
+		size = maxListPageSize
+	}
+
+	args := []any{s.tenantID}
+	filters := ""
+	add := func(clause, suffix string, value any) {
+		args = append(args, value)
+		filters += fmt.Sprintf(" AND %s $%d%s", clause, len(args), suffix)
+	}
+
+	if in.InstanceID != "" {
+		id, err := requireUUID("instance_id", in.InstanceID)
+		if err != nil {
+			return nil, err
+		}
+		add("b.instance_id =", "", id)
+	}
+	if in.EnvironmentID != "" {
+		id, err := requireUUID("environment_id", in.EnvironmentID)
+		if err != nil {
+			return nil, err
+		}
+		add("b.instance_id IN (SELECT id FROM instances WHERE environment_id =", ")", id)
+	}
+	if in.State != fwv1.BackupState_BACKUP_STATE_UNSPECIFIED {
+		add("b.state =", "", backupStateName(in.State))
+	}
+	switch in.Origin {
+	case fwv1.BackupOrigin_BACKUP_ORIGIN_MANAGED:
+		add("b.origin =", "", originManaged)
+	case fwv1.BackupOrigin_BACKUP_ORIGIN_OBSERVED:
+		add("b.origin =", "", originObserved)
+	case fwv1.BackupOrigin_BACKUP_ORIGIN_UNSPECIFIED:
+		// Both, which is the useful default.
+	}
+
+	args = append(args, size)
+	// Ordered by when the backup actually happened rather than by when the row was written: an
+	// observed backup is recorded whenever the poll ran, which can be days after the fact.
+	query := `
+		SELECT ` + prefixed(backupColumns, "b.") + `
+		FROM backups AS b
+		WHERE b.tenant_id = $1` + filters + `
+		ORDER BY COALESCE(b.completed_at, b.started_at, b.created_at) DESC, b.id
+		LIMIT $` + strconv.Itoa(len(args))
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("backup: list backups: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*fwv1.Backup
+	for rows.Next() {
+		b, err := s.scanBackup(rows, nil)
+		if err != nil {
+			return nil, fmt.Errorf("backup: read a backup row: %w", err)
+		}
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("backup: list backups: %w", err)
+	}
+	return out, nil
+}
+
+// backupColumns is the one place a backup row's projection is written down, so a single backup, a
+// listing, and an adherence answer cannot drift into showing different things about the same row.
+const backupColumns = `id, instance_id, method_id, state, origin, external_id, external_location,
+	       evidence, size_bytes, checksum_algorithm, checksum_value, bucket, object_key,
+	       started_at, completed_at, consistency_point, expires_at, duration_ms, error_message,
+	       triggered_manually, observed_at`
+
+// prefixed qualifies every column in a projection with a table alias.
+func prefixed(columns, alias string) string {
+	parts := strings.Split(columns, ",")
+	for i, p := range parts {
+		parts[i] = alias + strings.TrimSpace(p)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// scanner is what both pgx.Row and pgx.Rows satisfy, so one helper reads a single row and a page.
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+// scanBackup reads backupColumns into a contract message. manifestRaw, when non-nil, appends the
+// manifest column, which the caller must have selected.
+func (s *Service) scanBackup(row scanner, manifestRaw *[]byte) (*fwv1.Backup, error) {
+	var (
+		out               = &fwv1.Backup{TenantId: s.tenantID}
+		state             string
+		origin            string
+		externalID        *string
+		evidenceRaw       []byte
+		checksumAlgorithm string
+		checksumValue     string
+		bucket            string
+		objectKey         string
+		startedAt         *time.Time
+		completedAt       *time.Time
+		consistencyPoint  *time.Time
+		expiresAt         *time.Time
+		observedAt        *time.Time
+		durationMS        int64
+	)
+
+	dest := []any{
+		&out.Id, &out.InstanceId, &out.MethodId, &state, &origin, &externalID, &out.ExternalLocation,
+		&evidenceRaw, &out.SizeBytes, &checksumAlgorithm, &checksumValue, &bucket, &objectKey,
+		&startedAt, &completedAt, &consistencyPoint, &expiresAt, &durationMS, &out.ErrorMessage,
+		&out.TriggeredManually, &observedAt,
+	}
+	if manifestRaw != nil {
+		dest = append(dest, manifestRaw)
+	}
+	if err := row.Scan(dest...); err != nil {
+		return nil, err
+	}
+
+	out.State = parseBackupState(state)
+	out.Origin = parseBackupOrigin(origin)
+	if externalID != nil {
+		out.ExternalId = *externalID
+	}
+	out.Duration = durationpb.New(time.Duration(durationMS) * time.Millisecond)
+	if checksumValue != "" {
+		out.Checksum = &fwv1.Checksum{Algorithm: parseChecksumAlgorithm(checksumAlgorithm), Value: checksumValue}
+	}
+	if objectKey != "" {
+		out.Artifact = &fwv1.ObjectRef{Bucket: bucket, Key: objectKey}
+	}
+	out.StartedAt = timestampOrNil(startedAt)
+	out.CompletedAt = timestampOrNil(completedAt)
+	out.ConsistencyPoint = timestampOrNil(consistencyPoint)
+	out.ExpiresAt = timestampOrNil(expiresAt)
+	out.Evidence = decodeEvidence(evidenceRaw, observedAt)
+	return out, nil
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -854,9 +1012,37 @@ func parseBackupState(name string) fwv1.BackupState {
 		return fwv1.BackupState_BACKUP_STATE_CANCELED
 	case "expired":
 		return fwv1.BackupState_BACKUP_STATE_EXPIRED
+	case "unknown":
+		return fwv1.BackupState_BACKUP_STATE_UNKNOWN
 	default:
 		return fwv1.BackupState_BACKUP_STATE_UNSPECIFIED
 	}
+}
+
+// backupStateName is the inverse, for the one place a caller filters on a state.
+func backupStateName(state fwv1.BackupState) string {
+	return strings.ToLower(strings.TrimPrefix(state.String(), "BACKUP_STATE_"))
+}
+
+func parseBackupOrigin(name string) fwv1.BackupOrigin {
+	if name == originObserved {
+		return fwv1.BackupOrigin_BACKUP_ORIGIN_OBSERVED
+	}
+	return fwv1.BackupOrigin_BACKUP_ORIGIN_MANAGED
+}
+
+// decodeEvidence reads back what the source a backup was observed from could establish. A managed
+// backup has none and gets none: its evidence is the manifest and the checksum.
+func decodeEvidence(raw []byte, observedAt *time.Time) *fwv1.ObservedEvidence {
+	if len(raw) == 0 || string(raw) == "{}" {
+		return nil
+	}
+	out := &fwv1.ObservedEvidence{}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(raw, out); err != nil {
+		return nil
+	}
+	out.ObservedAt = timestampOrNil(observedAt)
+	return out
 }
 
 // parseChecksumAlgorithm reads back the enum name the column stores. An unknown value becomes

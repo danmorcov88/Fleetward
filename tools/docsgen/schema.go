@@ -26,6 +26,8 @@ var (
 	createTable = regexp.MustCompile(`(?i)^CREATE TABLE (\w+) \($`)
 	columnLine  = regexp.MustCompile(`^\s+(\w+)\s+([A-Za-z]+(?:\([^)]*\))?)`)
 	referencesT = regexp.MustCompile(`(?i)REFERENCES\s+(\w+)`)
+	alterTable  = regexp.MustCompile(`(?i)^ALTER TABLE (\w+)$`)
+	addColumn   = regexp.MustCompile(`(?i)^ADD COLUMN (\w+)\s+([A-Za-z]+(?:\([^)]*\))?)`)
 )
 
 // groups decide which tables are drawn together. Eighteen tables in one entity diagram is a
@@ -69,16 +71,57 @@ var groups = []struct {
 	},
 }
 
-func genSchema(root string) (string, error) {
-	src := filepath.Join(root, "internal", "storage", "metadb", "migrations", "000001_init.up.sql")
-	b, err := os.ReadFile(src) //nolint:gosec // a fixed path inside the repository
+// migrationsDir is where golang-migrate's files live. Every one of them is read, in order.
+const migrationsDir = "internal/storage/metadb/migrations"
+
+// readMigrations returns every up migration, in the order golang-migrate applies them.
+//
+// This used to read 000001_init.up.sql and nothing else, which was correct for exactly as long as
+// there was one migration. The failure mode of the old version is the reason this comment is here:
+// a second migration would have been invisible, the diagrams would have silently described the
+// schema of a year ago, and CI would have passed — because a generated file that is stable and
+// wrong diffs clean against itself.
+func readMigrations(root string) (string, []string, error) {
+	dir := filepath.Join(root, filepath.FromSlash(migrationsDir))
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return "", fmt.Errorf("reading the migration: %w", err)
+		return "", nil, fmt.Errorf("reading the migrations directory: %w", err)
 	}
 
-	tables := parseSchema(string(b))
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".up.sql") {
+			names = append(names, e.Name())
+		}
+	}
+	// golang-migrate orders by the numeric prefix, and the zero padding makes that a plain
+	// lexicographic sort. Order matters: an ALTER can only be applied to a table that exists.
+	sort.Strings(names)
+	if len(names) == 0 {
+		return "", nil, fmt.Errorf("found no migrations in %s", migrationsDir)
+	}
+
+	var sql strings.Builder
+	for _, name := range names {
+		b, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // a fixed path inside the repository
+		if err != nil {
+			return "", nil, fmt.Errorf("reading %s: %w", name, err)
+		}
+		sql.Write(b)
+		sql.WriteString("\n")
+	}
+	return sql.String(), names, nil
+}
+
+func genSchema(root string) (string, error) {
+	sql, applied, err := readMigrations(root)
+	if err != nil {
+		return "", err
+	}
+
+	tables := parseSchema(sql)
 	if len(tables) == 0 {
-		return "", fmt.Errorf("found no tables — has the migration changed shape?")
+		return "", fmt.Errorf("found no tables — have the migrations changed shape?")
 	}
 
 	byName := map[string]schemaTable{}
@@ -108,7 +151,11 @@ func genSchema(root string) (string, error) {
 	}
 
 	var out strings.Builder
-	out.WriteString(banner("internal/storage/metadb/migrations/000001_init.up.sql"))
+	sources := make([]string, 0, len(applied))
+	for _, name := range applied {
+		sources = append(sources, migrationsDir+"/"+name)
+	}
+	out.WriteString(banner(strings.Join(sources, ", ")))
 	fmt.Fprintf(&out, `# Data model
 
 %d tables, grouped by the question they answer. The schema is deliberately ahead of the code: the
@@ -195,15 +242,56 @@ func erDiagram(names []string, byName map[string]schemaTable) string {
 	return b.String()
 }
 
+// parseSchema applies every migration's DDL in order and returns the schema they leave behind.
+//
+// It understands two shapes: CREATE TABLE, which introduces a table, and ALTER TABLE ... ADD COLUMN,
+// which is how every migration after the first one changes it. It is a reader rather than a parser
+// — anything it does not recognise is skipped — and the check that keeps that honest is the one in
+// genSchema that refuses a table no group draws.
 func parseSchema(sql string) []schemaTable {
 	var out []schemaTable
 	var current *schemaTable
+	// altering is the table an ALTER TABLE statement is currently adding columns to. It is separate
+	// from `current` because the two blocks end differently: a CREATE ends at its closing bracket,
+	// an ALTER ends at the semicolon that terminates its last clause.
+	var altering *schemaTable
+
+	index := func(name string) *schemaTable {
+		for i := range out {
+			if out[i].name == name {
+				return &out[i]
+			}
+		}
+		return nil
+	}
 
 	for _, raw := range strings.Split(strings.ReplaceAll(sql, "\r\n", "\n"), "\n") {
 		line := strings.TrimRight(raw, " \t")
 		if m := createTable.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
 			out = append(out, schemaTable{name: m[1]})
 			current = &out[len(out)-1]
+			altering = nil
+			continue
+		}
+		if m := alterTable.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+			// An ALTER against a table no migration created is a typo, not a schema: leaving
+			// `altering` nil skips its clauses rather than inventing a table.
+			altering = index(m[1])
+			current = nil
+			continue
+		}
+		if altering != nil {
+			trimmed := strings.TrimSpace(line)
+			if m := addColumn.FindStringSubmatch(trimmed); m != nil {
+				c := column{name: m[1], typ: strings.ToLower(m[2])}
+				if r := referencesT.FindStringSubmatch(trimmed); r != nil {
+					c.references = r[1]
+				}
+				altering.columns = append(altering.columns, c)
+			}
+			if strings.HasSuffix(trimmed, ";") {
+				altering = nil
+			}
 			continue
 		}
 		if current == nil {

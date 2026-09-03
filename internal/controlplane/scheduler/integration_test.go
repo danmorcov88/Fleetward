@@ -31,6 +31,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
 	"github.com/danmorcov88/fleetward/internal/config"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 )
@@ -51,6 +52,7 @@ type stubRunner struct {
 
 	backupIDs []string
 	verified  []string
+	observed  []string
 
 	// block, when non-nil, holds RunBackupJob until it is closed or the context is cancelled.
 	block chan struct{}
@@ -108,6 +110,19 @@ func (r *stubRunner) RunVerificationJob(_ context.Context, in VerificationJob) e
 	defer r.mu.Unlock()
 	r.verified = append(r.verified, in.BackupID)
 	return nil
+}
+
+func (r *stubRunner) RunObservationJob(_ context.Context, in ObservationJob) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.observed = append(r.observed, in.InstanceID)
+	return r.err
+}
+
+func (r *stubRunner) observations() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.observed...)
 }
 
 func (r *stubRunner) jobsRun() []string {
@@ -784,5 +799,78 @@ func TestCloseCancelsInFlightWorkAndWaitsForItToUnwind(t *testing.T) {
 	}
 	if err := runner.cancelled(); !errors.Is(err, context.Canceled) {
 		t.Fatalf("the work ended with %v; shutdown must cancel it rather than wait hours for it", err)
+	}
+}
+
+// TestSchedulerRunsAndClosesAnObservation covers the asymmetry that a walk found and no unit test
+// would have.
+//
+// A backup and a verification write their own job's terminal state, in the same transaction as the
+// row that explains the outcome. An observation writes no such row — it updates the backups it
+// found, and nothing that is about the job — so nothing else closes it. Left running, the job then
+// trips idx_jobs_one_active_per_instance_kind and every later observation of that instance is
+// skipped: the polling stops, silently, and the estate keeps reporting whatever it last saw.
+func TestSchedulerRunsAndClosesAnObservation(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	svc := NewService(h.pool, h.log)
+	created, err := svc.CreateSchedule(ctx, CreateScheduleInput{
+		InstanceID:           h.instanceID,
+		Kind:                 kindObserve,
+		CronExpression:       "* * * * *",
+		ExpectedCron:         "0 2 * * *",
+		ExpectedGraceMinutes: 120,
+	})
+	if err != nil {
+		t.Fatalf("CreateSchedule: %v", err)
+	}
+	if created.GetExpectedCron() != "0 2 * * *" || created.GetExpectedGraceMinutes() != 120 {
+		t.Fatalf("the declaration did not survive the round trip: %q ±%d",
+			created.GetExpectedCron(), created.GetExpectedGraceMinutes())
+	}
+	if _, err := h.pool.Exec(ctx,
+		`UPDATE schedules SET next_run_at = now() - interval '1 minute' WHERE id = $1`, created.GetId()); err != nil {
+		t.Fatalf("make the schedule due: %v", err)
+	}
+
+	runner := newStubRunner()
+	s := h.scheduler(runner, config.SchedulerConfig{
+		Enabled:           true,
+		LeaseTTL:          time.Minute,
+		LeaseHeartbeat:    10 * time.Second,
+		PollInterval:      200 * time.Millisecond,
+		MaxConcurrentJobs: 2,
+	})
+
+	s.Start(ctx)
+	defer func() { _ = s.Close() }()
+
+	deadline := time.After(60 * time.Second)
+	for {
+		jobs, err := svc.ListJobs(ctx, ListJobsFilter{InstanceID: h.instanceID})
+		if err != nil {
+			t.Fatalf("ListJobs: %v", err)
+		}
+		done := false
+		for _, j := range jobs {
+			if j.GetKind() == fwv1.JobKind_JOB_KIND_OBSERVE &&
+				j.GetState() == fwv1.JobState_JOB_STATE_SUCCEEDED {
+				done = true
+			}
+		}
+		if done {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("no observation job reached a terminal state; observations run: %v, jobs: %d",
+				runner.observations(), len(jobs))
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+
+	if got := runner.observations(); len(got) == 0 || got[0] != h.instanceID {
+		t.Errorf("the runner was asked to observe %v, want [%s]", got, h.instanceID)
 	}
 }

@@ -79,6 +79,14 @@ func (b Base) ListPITRTargets(context.Context, *fwv1.ListPITRTargetsRequest) (*f
 	}, nil
 }
 
+// ListBackupHistory implements Engine. A plugin that cannot see backups it did not take refuses
+// rather than answering with an empty list: "there is no evidence here" and "there were no backups"
+// are different statements, and rendering the first as the second would report a healthy estate for
+// an engine nobody is watching.
+func (b Base) ListBackupHistory(context.Context, *fwv1.ListBackupHistoryRequest) (*fwv1.ListBackupHistoryResponse, error) {
+	return nil, b.unsupported("ListBackupHistory")
+}
+
 // ListPrincipals implements Engine.
 func (b Base) ListPrincipals(context.Context, *fwv1.ListPrincipalsRequest) (*fwv1.ListPrincipalsResponse, error) {
 	return &fwv1.ListPrincipalsResponse{Model: fwv1.PrincipalModel_PRINCIPAL_MODEL_NONE}, nil

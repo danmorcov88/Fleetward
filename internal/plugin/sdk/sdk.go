@@ -58,6 +58,12 @@ type Engine interface {
 
 	ListPITRTargets(ctx context.Context, req *fwv1.ListPITRTargetsRequest) (*fwv1.PITRWindow, error)
 
+	// ListBackupHistory reports backups the engine knows about that Fleetward did not take
+	// (ADR-0015). Implementations must be read-only and must honour req.Limit: an engine's own
+	// backup history can hold hundreds of thousands of rows on an instance that has been up for
+	// years, and scanning all of them on every poll is not acceptable against a production server.
+	ListBackupHistory(ctx context.Context, req *fwv1.ListBackupHistoryRequest) (*fwv1.ListBackupHistoryResponse, error)
+
 	// ListPrincipals enumerates users, roles, and privileges. Implementations must be read-only.
 	ListPrincipals(ctx context.Context, req *fwv1.ListPrincipalsRequest) (*fwv1.ListPrincipalsResponse, error)
 

@@ -115,6 +115,22 @@ func ValidateCapabilities(caps *fwv1.Capabilities) error {
 		errs = append(errs, errors.New("supports_replication_lag requires supports_replication"))
 	}
 
+	// The backup-history block exists so core can report honestly on evidence it did not produce.
+	// Every check below refuses a matrix that would let core overstate what the evidence proves,
+	// which is the one failure mode this feature has (ADR-0015).
+	if bh := caps.GetBackupHistory(); bh.GetSupported() {
+		if bh.GetSourceDescription() == "" {
+			errs = append(errs, errors.New(
+				"backup_history.supported requires source_description: a report has to be able to "+
+					"say what it read"))
+		}
+	} else {
+		if bh.GetIdentityIsEngineAssigned() || bh.GetReportsOutcome() || bh.GetRequiresSharedDirectory() {
+			errs = append(errs, errors.New(
+				"backup_history declares properties of a source it does not support"))
+		}
+	}
+
 	seenMetrics := make(map[string]bool, len(caps.GetMetrics()))
 	for i, m := range caps.GetMetrics() {
 		if m.GetName() == "" {

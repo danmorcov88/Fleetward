@@ -52,15 +52,17 @@ func (g *GRPCServer) GetSchedule(ctx context.Context, req *fwv1.GetScheduleReque
 // CreateSchedule declares a recurring intent and computes its first run.
 func (g *GRPCServer) CreateSchedule(ctx context.Context, req *fwv1.CreateScheduleRequest) (*fwv1.CreateScheduleResponse, error) {
 	schedule, err := g.svc.CreateSchedule(ctx, CreateScheduleInput{
-		InstanceID:      req.GetInstanceId(),
-		Kind:            jobKindName(req.GetKind()),
-		CronExpression:  req.GetCronExpression(),
-		Timezone:        req.GetTimezone(),
-		MethodID:        req.GetMethodId(),
-		Options:         req.GetOptions(),
-		VerifyPolicy:    verifyPolicyName(req.GetVerifyPolicy()),
-		VerifySamplePct: req.GetVerifySamplePercent(),
-		RetentionDays:   req.GetRetentionDays(),
+		InstanceID:           req.GetInstanceId(),
+		Kind:                 jobKindName(req.GetKind()),
+		CronExpression:       req.GetCronExpression(),
+		Timezone:             req.GetTimezone(),
+		MethodID:             req.GetMethodId(),
+		Options:              req.GetOptions(),
+		ExpectedCron:         req.GetExpectedCron(),
+		ExpectedGraceMinutes: req.GetExpectedGraceMinutes(),
+		VerifyPolicy:         verifyPolicyName(req.GetVerifyPolicy()),
+		VerifySamplePct:      req.GetVerifySamplePercent(),
+		RetentionDays:        req.GetRetentionDays(),
 	})
 	if err != nil {
 		return nil, g.fail(ctx, "create schedule", err)
@@ -142,6 +144,8 @@ func jobKindName(k fwv1.JobKind) string {
 		return "discovery"
 	case fwv1.JobKind_JOB_KIND_METRICS:
 		return "metrics"
+	case fwv1.JobKind_JOB_KIND_OBSERVE:
+		return kindObserve
 	case fwv1.JobKind_JOB_KIND_UNSPECIFIED:
 		return ""
 	default:
@@ -161,6 +165,8 @@ func jobKindFromName(name string) fwv1.JobKind {
 		return fwv1.JobKind_JOB_KIND_DISCOVERY
 	case "metrics":
 		return fwv1.JobKind_JOB_KIND_METRICS
+	case kindObserve:
+		return fwv1.JobKind_JOB_KIND_OBSERVE
 	default:
 		return fwv1.JobKind_JOB_KIND_UNSPECIFIED
 	}

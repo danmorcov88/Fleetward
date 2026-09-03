@@ -222,6 +222,10 @@ func runBackup(ctx context.Context, req *fwv1.BackupRequest, emit sdk.Emitter[*f
 		ConsistencyPoint: timestamppb.New(time.Now()),
 		Manifest:         manifest,
 		Parts:            parts,
+		// The engine recorded this backup in its own history alongside everybody else's, so the
+		// next observation poll will see it. Reporting the identity it was given there makes that
+		// poll land on this row instead of inserting the same backup a second time (ADR-0027).
+		ExternalId: observedIdentity(ctx, db, engine),
 		// Handed straight back to Restore as its options. Core stores it and never reads it.
 		Metadata: map[string]string{metadataDatabase: database},
 	}, nil

@@ -49,7 +49,7 @@ that sentence; anything that is not has been moved behind it.
 |---|---|---|
 | B1 | Scheduler: cron over `schedules`, job claim by lease, heartbeat, recovery after a crash | Nothing runs automatically today. Without this there is nothing to install. |
 | B2 | SQL Server plugin, passing the conformance suite unmodified | The architecture's central claim, until then untested |
-| B3 | Observed backups: `ListBackupHistory`, `backups.origin`, PostgreSQL and SQL Server | Reporting on backups taken by existing cron and scripts, changing nothing |
+| B3 | Observed backups: `ListBackupHistory`, `backups.origin`, schedule adherence, PostgreSQL and SQL Server | Reporting on backups taken by existing cron and scripts, changing nothing |
 | B4 | Estate Overview screen + an API client generated from the OpenAPI document | Fifty servers at a glance; the CLI is a poor surface for that |
 | B5 | Retention and expiry | Untracked artifact growth on a company bucket |
 | B6 | Authorization spine: principal, RBAC over `role_grants`, tenancy, audit log | Every route is currently open to anyone who can reach the port |

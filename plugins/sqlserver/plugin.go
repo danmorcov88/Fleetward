@@ -10,8 +10,8 @@
 // through a directory both of them can see (ADR-0026), and the upload from there is the same code
 // PostgreSQL uses.
 //
-// Slice B2 status: HealthCheck, Discover, Backup, Restore, and VerifyRestore are implemented
-// against a real instance. Only the capabilities those RPCs deliver are declared. Capabilities are
+// Slice B3 status: HealthCheck, Discover, Backup, Restore, VerifyRestore, and ListBackupHistory
+// are implemented against a real instance. Only the capabilities those RPCs deliver are declared. Capabilities are
 // a promise core relies on when deciding what to do to a production database, so each is turned on
 // in the same change that implements it — never before.
 package sqlserver
@@ -73,13 +73,16 @@ func (p *Plugin) Capabilities(context.Context) (*fwv1.Capabilities, error) {
 		SandboxTemplate:             sandboxTemplate(),
 		SupportedVerificationChecks: supportedChecks(),
 
+		// Delivered by ListBackupHistory: every backup taken on this instance, including the ones
+		// nothing to do with Fleetward, read from the record the engine keeps of them.
+		BackupHistory: backupHistoryCapabilities(),
+
 		// Not yet implemented, so not yet declared. Each is turned on by the slice that builds it:
-		//   B3   ListBackupHistory over msdb.dbo.backupset — the richest such source of any engine
 		//   B12+ SupportsPitr and SupportsPointInTimeRestore, on log backups
 		//   later PrincipalModel, SupportsConfigRead, SupportsStorageMetrics, Metrics
 
 		Metadata: map[string]string{
-			"slice": "B2 — the SQL Server plugin",
+			"slice": "B3 — observed backups",
 		},
 	}, nil
 }

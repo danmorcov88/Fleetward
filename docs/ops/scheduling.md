@@ -4,8 +4,10 @@ How Fleetward decides that a backup should run now, how it makes sure exactly on
 it, and what it does when the process running it disappears.
 
 Every setting named here is documented in [`configuration.md`](configuration.md). The decision
-behind the design is [ADR-0013](../adr/0013-internal-scheduler-with-leases.md), and the decision
-about what an expired lease means is [ADR-0025](../adr/0025-an-expired-lease-fails-its-job.md).
+behind the design is [ADR-0013](../adr/0013-internal-scheduler-with-leases.md), the decision about
+what an expired lease means is [ADR-0025](../adr/0025-an-expired-lease-fails-its-job.md), and the
+decision to run observation as a schedule kind is
+[ADR-0028](../adr/0028-observation-is-a-schedule-kind-and-an-expectation-is-declared.md).
 
 ---
 
@@ -26,6 +28,71 @@ fleetward-cli schedule create --instance prod-1 --cron "0 2 * * *" \
 fleetward-cli schedule list
 fleetward-cli job list --instance prod-1
 ```
+
+## Two kinds of schedule run
+
+| Kind | What it does | What it touches on the instance |
+|---|---|---|
+| `backup` | Fleetward takes the backup, using the engine's own native tooling | a backup, and the connection that drives it |
+| `observe` | Fleetward reads the engine's own record of backups it did **not** take | nothing — two queries, or a directory listing |
+
+`observe` is what makes Fleetward useful on an estate whose backups are already being taken by cron,
+by scripts, or by tooling that predates it ([ADR-0015](../adr/0015-observed-and-managed-backups.md)).
+It changes nothing on the server it reads: no artifact is fetched, moved, or deleted, and nothing is
+written.
+
+```bash
+fleetward-cli schedule create --instance prod-1 --kind observe --cron "*/30 * * * *" \
+    --expect-cron "0 2 * * *" --expect-grace 2h --timezone Europe/Bucharest
+```
+
+`schedules.kind` also permits `discovery` and `metrics`. Both are refused at creation with a message
+naming the slice that will bring them, which is more useful than accepting a schedule that would
+silently never fire.
+
+## Two cron expressions, answering different questions
+
+An `observe` schedule carries both, and confusing them is the mistake worth avoiding:
+
+- **`--cron`** is how often Fleetward goes and looks. Half-hourly is a reasonable cadence for a
+  nightly backup; so is once a day.
+- **`--expect-cron`** is when a backup is *supposed* to have happened, with `--expect-grace` saying
+  how late is still acceptable. This is what `fleetward-cli backup adherence` holds the instance to.
+
+Deriving the second from the first would report "we polled and saw nothing" as though it were "your
+backup did not run". Inferring it from the observed rhythm would be worse: it answers *is this normal
+for you*, so a server that quietly stopped backing up in March would have that failure normalised
+into its own baseline.
+
+Both are read in the schedule's `--timezone`, for the same reason `--cron` is.
+
+An expectation is optional. Without one, Fleetward reports what it found and reports the instance as
+`not_declared` rather than as healthy — on an estate of fifty servers, "nobody has said what this
+one's backups should look like" is a finding rather than a blank.
+
+```
+fleetward-cli backup adherence
+INSTANCE  ENGINE      EXPECTED               GRACE  LAST BACKUP (UTC)    ADHERENCE
+prod-1    sqlserver   0 2 * * * Europe/…     2h     2026-09-02 02:07:11  adherent
+prod-2    postgresql  0 2 * * *              2h     2026-08-24 02:03:55  missed
+prod-3    postgresql  —                      —      2026-09-02 02:01:02  not_declared
+```
+
+`unproven` is a fourth answer and it is not a rounding of the other three: a backup arrived inside
+the window, and the evidence available cannot say whether it succeeded. A directory listing can never
+say more than that, because a truncated dump leaves a file behind exactly as a complete one does.
+
+## When the grace period is judged
+
+The occurrence being judged is the most recent one whose grace has **already run out**, not the most
+recent one that has passed.
+
+An instance expected to back up at 02:00 with two hours of grace is not reported as behind at 02:30,
+while the backup may still be running. Until 04:00 the answer is still about the previous night, and
+at 04:01 it becomes about this one.
+
+A declaration that names a schedule and no tolerance gets two hours. Zero would be the literal
+reading and it is useless: it demands a backup complete in the same instant it was due.
 
 ## The clock is a column, not a timer
 

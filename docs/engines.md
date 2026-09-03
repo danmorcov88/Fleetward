@@ -14,8 +14,8 @@ chosen for a feature list.
 
 | Engine | Backup method | Status |
 |---|---|---|
-| **PostgreSQL** | `pg_dump` today; `pg_basebackup` + WAL archiving next, `pgbackrest` as a later method | **Reference plugin** — health, discovery, backup, sandbox restore, and verification implemented |
-| **SQL Server** | `BACKUP DATABASE … WITH CHECKSUM`, handed over through a shared directory ([ADR-0026](adr/0026-a-shared-directory-carries-a-file-based-artifact.md)) | **Second engine** — health, discovery, backup, sandbox restore, and verification implemented |
+| **PostgreSQL** | `pg_dump` today; `pg_basebackup` + WAL archiving next, `pgbackrest` as a later method | **Reference plugin** — health, discovery, backup, sandbox restore, verification, and observed backup history implemented |
+| **SQL Server** | `BACKUP DATABASE … WITH CHECKSUM`, handed over through a shared directory ([ADR-0026](adr/0026-a-shared-directory-carries-a-file-based-artifact.md)) | **Second engine** — health, discovery, backup, sandbox restore, verification, and observed backup history implemented |
 | **MySQL / MariaDB** | `mysqldump` first, `xtrabackup` later | Slice B11 — binary handshakes, no capabilities declared |
 | **Oracle** | RMAN | Slice B12 |
 | **MongoDB** | `mongodump`, snapshot-based to follow | Slice B13 — binary handshakes, no capabilities declared |
@@ -43,10 +43,46 @@ suite has two stages, and only the second one is a real claim:
   of the same length, a manifest that no longer describes its source, and an unreachable target each
   produce the correct verdict. PostgreSQL and SQL Server pass this today.
 
+A plugin that declares it can observe backups it did not take is additionally held to that: a backup
+is taken on the instance by the engine's own means, and the plugin has to report it, keep its
+identity stable when the same evidence is read again, and honour the watermark the next poll resumes
+from. A plugin that declares it cannot is held to refusing the call rather than answering with an
+empty list.
+
 Opting into Stage 1 is capability-driven: a plugin needs at least one backup method,
 `supports_sandbox_restore`, a `SandboxTemplate`, and a registered fixture. Adding an engine means
 adding a fixture beside your plugin; it never means changing an assertion. Full guide:
 [writing an engine plugin](dev/writing-an-engine-plugin.md).
+
+## What each engine can see of backups it did not take
+
+Most estates already back themselves up. Fleetward reports on those without changing anything about
+them ([ADR-0015](adr/0015-observed-and-managed-backups.md)) — but what it can *prove* about somebody
+else's backup depends entirely on what the engine leaves behind, and that varies more between
+engines than anything else in this product.
+
+So it is declared rather than assumed. Each plugin publishes what its source can and cannot
+establish, and Fleetward reports accordingly.
+
+| Engine | What it reads | Identity survives a rename | Can prove the backup succeeded |
+|---|---|---|---|
+| **SQL Server** | `msdb.dbo.backupset` — the engine's own record of every backup taken on the instance | yes, `backup_set_uuid` | yes: a row is written only when a backup completes |
+| **PostgreSQL** | a configured backup directory, listed | no, the identity is derived from the file name | **no** |
+| Every other engine | nothing yet | — | — |
+
+The gap between those two rows is the point, and it is why SQL Server was built before this work
+started. PostgreSQL keeps no record of its own backups: `pg_stat_archiver` describes WAL archiving,
+which is a different question and says nothing about whether last night's dump ran. A directory can
+prove that a file arrived, this big, at this time — and **a truncated dump leaves a file behind
+exactly as a complete one does**, so it can never prove success.
+
+Fleetward says so rather than rounding it up. A window satisfied only by a file reads as `unproven`,
+never `adherent`, and the answer carries the reason.
+
+> Set the directory with `--backup-dir` and `--backup-dir-local` on `fleetward-cli instance add` —
+> the same pair an engine that hands its artifact over as a file uses. Which file names count as
+> backups defaults to the usual extensions and can be narrowed with a `backup_file_pattern`
+> connection option.
 
 ## Engines that hand over a file rather than a stream
 

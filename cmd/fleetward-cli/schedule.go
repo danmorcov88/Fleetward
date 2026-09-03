@@ -26,6 +26,10 @@ type schedule struct {
 	IsEnabled           bool              `json:"is_enabled"`
 	NextRunAt           string            `json:"next_run_at"`
 	LastRunAt           string            `json:"last_run_at"`
+	// The declaration half: when a backup is supposed to have happened, which is a different
+	// question from CronExpression, the cadence this schedule itself runs on.
+	ExpectedCron         string `json:"expected_cron"`
+	ExpectedGraceMinutes int32  `json:"expected_grace_minutes"`
 }
 
 // job is one run the scheduler leased.
@@ -67,6 +71,7 @@ func newScheduleCommand(serverURL *string, timeout *time.Duration) *cobra.Comman
 func newScheduleCreateCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
 	var (
 		instanceName  string
+		kind          string
 		cronExpr      string
 		timezone      string
 		methodID      string
@@ -74,11 +79,21 @@ func newScheduleCreateCommand(serverURL *string, timeout *time.Duration) *cobra.
 		verifyPolicy  string
 		samplePercent int32
 		retentionDays int32
+		expectCron    string
+		expectGrace   time.Duration
 	)
 
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create a backup schedule for one instance",
+		Short: "Create a backup or observation schedule for one instance",
+		Long: "Two kinds of schedule run today.\n\n" +
+			"  backup   Fleetward takes the backup, on the cadence --cron names.\n" +
+			"  observe  Fleetward reads the engine's own record of backups it did not take, on the\n" +
+			"           cadence --cron names, and changes nothing on the instance.\n\n" +
+			"--expect-cron is separate from --cron and answers a different question. --cron is how\n" +
+			"often Fleetward looks; --expect-cron is when a backup is supposed to have happened, and\n" +
+			"it is what `backup adherence` holds the instance to. Without it Fleetward can report\n" +
+			"what it found and cannot report what is missing.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			parsedOptions, err := parseKeyValues(options, "option")
 			if err != nil {
@@ -94,12 +109,29 @@ func newScheduleCreateCommand(serverURL *string, timeout *time.Duration) *cobra.
 				return err
 			}
 
+			switch strings.ToLower(kind) {
+			case "backup", "observe":
+			default:
+				return fmt.Errorf("--kind must be %q or %q, got %q", "backup", "observe", kind)
+			}
+			if expectGrace < 0 {
+				return fmt.Errorf("--expect-grace cannot be negative")
+			}
+			if expectCron == "" && expectGrace != 0 {
+				return fmt.Errorf("--expect-grace means nothing without --expect-cron: it says how " +
+					"late a backup may be, and nothing has said when one is due")
+			}
+
 			body := map[string]any{
 				"instance_id":     inst.ID,
-				"kind":            "JOB_KIND_BACKUP",
+				"kind":            "JOB_KIND_" + strings.ToUpper(kind),
 				"cron_expression": cronExpr,
 				"timezone":        timezone,
 				"verify_policy":   "VERIFY_POLICY_" + strings.ToUpper(verifyPolicy),
+			}
+			if expectCron != "" {
+				body["expected_cron"] = expectCron
+				body["expected_grace_minutes"] = int32(expectGrace.Minutes())
 			}
 			if methodID != "" {
 				body["method_id"] = methodID
@@ -125,12 +157,25 @@ func newScheduleCreateCommand(serverURL *string, timeout *time.Duration) *cobra.
 			fmt.Fprintf(out, "schedule %s created on %s\n", resp.Schedule.ID, inst.Name)
 			fmt.Fprintf(out, "  %s in %s — next run %s\n",
 				resp.Schedule.CronExpression, resp.Schedule.Timezone, formatRunTime(resp.Schedule.NextRunAt))
+			if resp.Schedule.ExpectedCron != "" {
+				fmt.Fprintf(out, "  a backup is expected at %s in %s, up to %s late\n",
+					resp.Schedule.ExpectedCron, resp.Schedule.Timezone,
+					formatGrace(resp.Schedule.ExpectedGraceMinutes))
+			} else {
+				fmt.Fprintln(out, "  nothing was declared about when a backup is due, so "+
+					"`backup adherence` cannot report this instance as behind — add --expect-cron")
+			}
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&instanceName, "instance", "", "instance name or identifier (required)")
+	cmd.Flags().StringVar(&kind, "kind", "backup", "backup, or observe to read backups Fleetward did not take")
 	cmd.Flags().StringVar(&cronExpr, "cron", "", "standard five-field cron expression, e.g. \"0 2 * * *\" (required)")
+	cmd.Flags().StringVar(&expectCron, "expect-cron", "",
+		"when a backup is supposed to have happened, as a cron expression; what `backup adherence` checks")
+	cmd.Flags().DurationVar(&expectGrace, "expect-grace", 0,
+		"how late a backup may be and still count, e.g. 2h; defaults to 2h when --expect-cron is set")
 	cmd.Flags().StringVar(&timezone, "timezone", "UTC", "IANA timezone the expression is read in, e.g. Europe/Bucharest")
 	cmd.Flags().StringVar(&methodID, "method", "", "backup method; empty uses the plugin's default")
 	cmd.Flags().StringArrayVar(&options, "option", nil, "method option as key=value; repeatable")
@@ -178,12 +223,19 @@ func newScheduleListCommand(serverURL *string, timeout *time.Duration) *cobra.Co
 			}
 
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(tw, "ID\tKIND\tCRON\tTIMEZONE\tVERIFY\tENABLED\tNEXT RUN (UTC)\tLAST RUN (UTC)")
+			fmt.Fprintln(tw, "ID\tKIND\tCRON\tEXPECTED\tTIMEZONE\tVERIFY\tENABLED\tNEXT RUN (UTC)\tLAST RUN (UTC)")
 			for _, s := range resp.Schedules {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				expected := s.ExpectedCron
+				if expected == "" {
+					expected = "—"
+				} else {
+					expected += " ±" + formatGrace(s.ExpectedGraceMinutes)
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 					s.ID,
 					strings.ToLower(trimEnum("JOB_KIND_", s.Kind)),
 					s.CronExpression,
+					expected,
 					s.Timezone,
 					verifyLabel(s),
 					yesNo(s.IsEnabled),

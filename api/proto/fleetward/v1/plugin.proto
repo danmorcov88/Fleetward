@@ -51,6 +51,15 @@ service EnginePlugin {
   // Plugins whose capabilities set supports_pitr = false return available = false.
   rpc ListPITRTargets(ListPITRTargetsRequest) returns (PITRWindow);
 
+  // ListBackupHistory reports backups the engine knows about that Fleetward did not take
+  // (ADR-0015). It is strictly read-only observation: the plugin reads whatever evidence the engine
+  // keeps — a history table, a directory of files — and reports it. Fleetward never owns, reads, or
+  // deletes the artifacts it describes.
+  //
+  // Plugins whose capabilities leave backup_history.supported false refuse this with
+  // ERROR_CODE_UNSUPPORTED.
+  rpc ListBackupHistory(ListBackupHistoryRequest) returns (ListBackupHistoryResponse);
+
   // ListPrincipals enumerates users, roles, and privileges. This RPC is strictly read-only:
   // Fleetward surfaces access, it does not administer it.
   rpc ListPrincipals(ListPrincipalsRequest) returns (ListPrincipalsResponse);
@@ -115,6 +124,9 @@ message Capabilities {
   // External executables the plugin needs on its PATH, e.g. "pg_basebackup". Core surfaces missing
   // tools as a plugin health problem rather than letting a backup fail at 3am.
   repeated string required_tools = 25;
+  // What this plugin can see of backups Fleetward did not take (ADR-0015). Engines differ
+  // enormously, so this is a declaration rather than an assumption core may make.
+  BackupHistoryCapabilities backup_history = 26;
 
   // Display-only metadata. Core must not branch on these.
   map<string, string> metadata = 30;
@@ -235,6 +247,32 @@ message PasswordPolicy {
   int32 min_character_classes = 2;
   // Symbols this engine accepts, if its own set is narrower than core's. Empty keeps core's.
   string symbol_alphabet = 3;
+}
+
+// BackupHistoryCapabilities declares what a plugin can observe of backups it did not take.
+//
+// The fields are not decoration. Two engines' evidence differ in what they can actually prove: a
+// history table the engine maintains records an outcome and an identity that survives anything; a
+// directory listing records that a file exists. Presenting those as the same green tick is exactly
+// the false confidence this product exists to eliminate, so what each source can and cannot support
+// is declared here and core reports accordingly.
+message BackupHistoryCapabilities {
+  // ListBackupHistory returns evidence rather than ERROR_CODE_UNSUPPORTED.
+  bool supported = 1;
+  // Where the evidence comes from, in the engine's own vocabulary, so a report can say what it is
+  // reading. Display only — core must not branch on it.
+  string source_description = 2;
+  // ObservedBackup.external_id is an identifier the engine itself assigns, and therefore survives
+  // an artifact being moved or renamed. When false the plugin derives it from what it can see, so a
+  // renamed artifact may appear as a second backup, and Fleetward says so rather than double
+  // counting silently.
+  bool identity_is_engine_assigned = 3;
+  // The evidence distinguishes a successful backup from a failed one. When false every record is
+  // OBSERVED_OUTCOME_UNKNOWN, and nothing downstream may render one as a success.
+  bool reports_outcome = 4;
+  // Observation reads the directory of ADR-0026, so core refuses an observation schedule against an
+  // instance that has none — the same precondition BackupMethod.requires_shared_directory carries.
+  bool requires_shared_directory = 5;
 }
 
 message MetricDescriptor {
@@ -487,6 +525,15 @@ message BackupResult {
   // Receipts for a multipart upload, in part order. Empty when the artifact was written through
   // ArtifactTarget.upload_url.
   repeated UploadedPart parts = 11;
+  // The identifier the engine gave the backup this call just took, in the same vocabulary
+  // ObservedBackup.external_id uses.
+  //
+  // An engine that keeps its own backup history records Fleetward's backups alongside everyone
+  // else's, so the next observation poll sees the backup Fleetward itself took. Reporting the
+  // engine's identifier here makes that poll's upsert land on the row that already exists, instead
+  // of inserting the same physical backup a second time under an origin it does not have. Empty for
+  // an engine that assigns no such identifier, which changes nothing for it.
+  string external_id = 12;
 }
 
 // SourceManifest records what the source instance contained at backup time.
@@ -696,6 +743,78 @@ message PITRBaseline {
   google.protobuf.Timestamp taken_at = 2;
   ObjectRef artifact = 3;
   string method_id = 4;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Backup history — backups Fleetward did not take (ADR-0015)
+// -----------------------------------------------------------------------------------------------
+
+message ListBackupHistoryRequest {
+  ConnectionRef connection = 1;
+  Credentials credentials = 2;
+  // Report only backups that finished at or after this instant. Core sets it from a watermark it
+  // derives from what it has already recorded, so a poll reads an increment rather than a history.
+  google.protobuf.Timestamp since = 3;
+  // Maximum records to return in this call. The plugin MUST honour it. An engine's own backup
+  // history on an instance that has been up for years holds hundreds of thousands of rows, and
+  // scanning all of them on every poll is not acceptable against a production server.
+  int32 limit = 4;
+  // Opaque continuation from a previous response. The plugin defines its meaning; core echoes it.
+  string page_token = 5;
+  // Databases to report on. Empty means every database the evidence covers.
+  repeated string databases = 6;
+  google.protobuf.Duration timeout = 7;
+}
+
+message ListBackupHistoryResponse {
+  repeated ObservedBackup backups = 1;
+  // Empty when the evidence has been read up to the point the request asked for.
+  string next_page_token = 2;
+}
+
+// ObservedBackup is one piece of evidence that a backup happened. It is not a claim that the
+// artifact is restorable: only a backup Fleetward took carries a manifest captured at backup time,
+// and without one there is nothing to verify contents against (ADR-0015, ADR-0022).
+message ObservedBackup {
+  // Identity of this backup within this instance, as the engine names it rather than as this poll
+  // happened to see it. Core upserts on (instance, external_id) and never inspects the string, so
+  // the same backup observed twice is one row.
+  //
+  // It MUST be stable across polls and unique within the instance. A plugin whose evidence carries
+  // no engine-assigned identifier derives one and declares identity_is_engine_assigned = false.
+  string external_id = 1;
+  string database = 2;
+  // The backup type in the engine's own vocabulary, e.g. "database", "log", "differential",
+  // "pg_dump". Display only — core must not branch on it.
+  string method = 3;
+  BackupKind kind = 4;
+  ObservedOutcome outcome = 5;
+  // Both UTC, always. An engine that records local time with no offset is the plugin's problem to
+  // convert, not core's to guess: google.protobuf.Timestamp has exactly one meaning.
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp finished_at = 7;
+  // The conversion to UTC could not use the offset in force on the day of the backup, so the
+  // timestamp may be out by a daylight-saving transition. Core widens the compliance window rather
+  // than trusting it exactly. The default — false — means exact, so evidence that carries an offset
+  // keeps its meaning.
+  bool finished_at_is_approximate = 8;
+  // 0 when the evidence does not record a size.
+  int64 size_bytes = 9;
+  // Where the artifact is, as the engine or the filesystem names it. Fleetward does not own it and
+  // never reads it; this exists so a human can go and find it.
+  string location = 10;
+  // Anything else the evidence carried, for display. Core must not branch on it.
+  map<string, string> details = 11;
+}
+
+enum ObservedOutcome {
+  OBSERVED_OUTCOME_UNSPECIFIED = 0;
+  OBSERVED_OUTCOME_SUCCEEDED = 1;
+  OBSERVED_OUTCOME_FAILED = 2;
+  // A backup happened, and the evidence says nothing about whether it completed correctly. A
+  // truncated dump leaves a file behind exactly as a good one does, so a directory listing can
+  // never report anything else.
+  OBSERVED_OUTCOME_UNKNOWN = 3;
 }
 
 // -----------------------------------------------------------------------------------------------

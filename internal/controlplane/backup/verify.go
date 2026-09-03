@@ -214,6 +214,7 @@ func (s *Service) loadVerificationTarget(ctx context.Context, backupID string) (
 	var (
 		out               = verificationTarget{backupID: id}
 		state             string
+		origin            string
 		checksumAlgorithm string
 		checksumValue     string
 		manifestRaw       []byte
@@ -221,17 +222,34 @@ func (s *Service) loadVerificationTarget(ctx context.Context, backupID string) (
 	)
 
 	err = s.pool.QueryRow(ctx, `
-		SELECT instance_id, method_id, state, bucket, object_key, size_bytes,
+		SELECT instance_id, method_id, state, origin, bucket, object_key, size_bytes,
 		       checksum_algorithm, checksum_value, engine_version, manifest, metadata
 		FROM backups
 		WHERE id = $1 AND tenant_id = $2`, id, s.tenantID).
-		Scan(&out.instanceID, &out.methodID, &state, &out.bucket, &out.objectKey, &out.sizeBytes,
+		Scan(&out.instanceID, &out.methodID, &state, &origin, &out.bucket, &out.objectKey, &out.sizeBytes,
 			&checksumAlgorithm, &checksumValue, &out.engineVersion, &manifestRaw, &metadataRaw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return verificationTarget{}, fmt.Errorf("%w: backup %s", ErrNotFound, backupID)
 	}
 	if err != nil {
 		return verificationTarget{}, fmt.Errorf("backup: load backup for verification: %w", err)
+	}
+
+	// Refused here, before a job or a verification row exists, and refused for the reason that is
+	// actually true.
+	//
+	// An observed backup carries no manifest, so it would otherwise fall into the manifest-less
+	// branch in runVerification and come back INCONCLUSIVE — which reads as "something went wrong
+	// with the check" and sits in the same bucket as an image that could not be pulled. It is not
+	// that. Verification compares a restored instance against ground truth captured at backup time,
+	// and there is none for a backup Fleetward did not take: this is a permanent, structural answer
+	// and it belongs in front of the person asking (ADR-0015, ADR-0022).
+	if origin == originObserved {
+		return verificationTarget{}, fmt.Errorf(
+			"%w: backup %s was taken by something other than Fleetward, so there is no manifest "+
+				"captured at backup time to verify it against. Only a backup Fleetward ran can be "+
+				"verified; an observed one is reported for schedule adherence and nothing more",
+			ErrNotVerifiable, backupID)
 	}
 
 	if state != "succeeded" {
