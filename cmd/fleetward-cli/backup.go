@@ -27,7 +27,8 @@ func newBackupCommand(serverURL *string, timeout *time.Duration) *cobra.Command 
 			"was taken, which is what makes the verification in `backup verify` mean something.\n\n" +
 			"Fleetward also reports on backups it did not take: `backup history` and\n" +
 			"`backup adherence` cover an estate whose backups are already being taken by something\n" +
-			"else, without changing anything about it.",
+			"else, without changing anything about it — and `backup retention` shows what Fleetward\n" +
+			"would delete of its own, before it deletes any of it.",
 	}
 	cmd.AddCommand(
 		newBackupRunCommand(serverURL, timeout),
@@ -36,6 +37,7 @@ func newBackupCommand(serverURL *string, timeout *time.Duration) *cobra.Command 
 		newBackupHistoryCommand(serverURL, timeout),
 		newBackupObserveCommand(serverURL, timeout),
 		newBackupAdherenceCommand(serverURL, timeout),
+		newBackupRetentionCommand(serverURL, timeout),
 	)
 	return cmd
 }

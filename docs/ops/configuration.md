@@ -166,6 +166,15 @@ Parsed and validated, and read by nothing. **There is no authentication yet, and
 | `TELEMETRY_SAMPLE_RATIO`  | `1.0`            |  |  |
 | `TELEMETRY_SERVICE_NAME`  | `fleetward`      |  |  |
 
+## Other
+
+| Variable                  | Default |  | Notes |
+| ------------------------- | ------- | --- | --- |
+| `RETENTION_ENABLED`       | `true`  |  | Enabled turns the sweep on. False leaves artifacts in place forever, which is what every version before this one did, and is a legitimate configuration for an operator who wants to watch `backup retention` for a while before trusting it. |
+| `RETENTION_INTERVAL`      | `1h`    |  | Interval paces the sweep. It is deliberately far longer than the scheduler's poll interval: the sweep is estate-wide and destructive, and there is no reason for an artifact to be removed within seconds of its expiry rather than within the hour. |
+| `RETENTION_MAX_PER_SWEEP` | `500`   |  | MaxPerSweep bounds how many artifacts one sweep removes. It exists so that a bug is bounded, not because the query is slow: a destructive loop with no ceiling is the wrong shape however correct it looks. What it does not remove this hour it removes next hour. |
+| `RETENTION_MIN_KEEP`      | `1`     |  | MinKeep is how many recent successful backups of an instance are kept whatever their expiry says. Its floor is 1 and zero is refused: retention that can delete an instance's last working backup is the most damaging thing this product could do, and it is the ordinary consequence of a correct implementation of "delete anything older than N days" (ADR-0032). |
+
 ## Required
 
 `METADB_DSN` must be non-empty, and a master key must be supplied when the secrets provider is

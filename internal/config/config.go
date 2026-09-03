@@ -47,6 +47,7 @@ type Config struct {
 	Auth        AuthConfig
 	Telemetry   TelemetryConfig
 	Scheduler   SchedulerConfig
+	Retention   RetentionConfig
 	Sandbox     SandboxConfig
 }
 
@@ -183,6 +184,30 @@ type SchedulerConfig struct {
 	MaxConcurrentJobs int
 }
 
+// RetentionConfig tunes the retention sweep (ADR-0030).
+//
+// This is the only configuration in Fleetward that governs destroying something, so every field is
+// a limit rather than a feature, and two of them refuse values that would remove a limit entirely.
+type RetentionConfig struct {
+	// Enabled turns the sweep on. False leaves artifacts in place forever, which is what every
+	// version before this one did, and is a legitimate configuration for an operator who wants to
+	// watch `backup retention` for a while before trusting it.
+	Enabled bool
+	// Interval paces the sweep. It is deliberately far longer than the scheduler's poll interval:
+	// the sweep is estate-wide and destructive, and there is no reason for an artifact to be removed
+	// within seconds of its expiry rather than within the hour.
+	Interval time.Duration
+	// MinKeep is how many recent successful backups of an instance are kept whatever their expiry
+	// says. Its floor is 1 and zero is refused: retention that can delete an instance's last
+	// working backup is the most damaging thing this product could do, and it is the ordinary
+	// consequence of a correct implementation of "delete anything older than N days" (ADR-0032).
+	MinKeep int
+	// MaxPerSweep bounds how many artifacts one sweep removes. It exists so that a bug is bounded,
+	// not because the query is slow: a destructive loop with no ceiling is the wrong shape however
+	// correct it looks. What it does not remove this hour it removes next hour.
+	MaxPerSweep int
+}
+
 // SandboxConfig configures the ephemeral containers used for backup verification.
 type SandboxConfig struct {
 	// Provider is "docker" in the MVP; "kubernetes" is the planned second implementation.
@@ -303,6 +328,12 @@ func Load() (*Config, error) {
 			PollInterval:      envDuration("SCHEDULER_POLL_INTERVAL", 10*time.Second),
 			MaxConcurrentJobs: envInt("SCHEDULER_MAX_CONCURRENT_JOBS", 4),
 		},
+		Retention: RetentionConfig{
+			Enabled:     envBool("RETENTION_ENABLED", true),
+			Interval:    envDuration("RETENTION_INTERVAL", time.Hour),
+			MinKeep:     envInt("RETENTION_MIN_KEEP", 1),
+			MaxPerSweep: envInt("RETENTION_MAX_PER_SWEEP", 500),
+		},
 		Sandbox: SandboxConfig{
 			Provider:       env("SANDBOX_PROVIDER", "docker"),
 			DockerHost:     env("SANDBOX_DOCKER_HOST", ""),
@@ -365,6 +396,32 @@ func (c *Config) Validate() error {
 			"%sSCHEDULER_LEASE_HEARTBEAT (%s) must be shorter than %sSCHEDULER_LEASE_TTL (%s), "+
 				"otherwise a running job's lease expires before it is renewed and the job can be claimed twice",
 			envPrefix, c.Scheduler.LeaseHeartbeat, envPrefix, c.Scheduler.LeaseTTL))
+	}
+
+	// The three refusals below are the reason retention is safe to leave on. Each removes a way to
+	// configure the sweep into something unbounded, and they are checked even when the sweep is
+	// disabled: a value that would be dangerous when someone turns it on should be rejected when
+	// they write it, not months later when they flip the switch.
+	if c.Retention.MinKeep < 1 {
+		errs = append(errs, fmt.Errorf(
+			"%sRETENTION_MIN_KEEP (%d): must be at least 1. Retention that may delete an instance's "+
+				"last successful backup is the most damaging thing Fleetward can do, and it is the "+
+				"ordinary result of a correct \"delete anything older than N days\"; the floor is not "+
+				"optional",
+			envPrefix, c.Retention.MinKeep))
+	}
+	if c.Retention.MaxPerSweep < 1 {
+		errs = append(errs, fmt.Errorf(
+			"%sRETENTION_MAX_PER_SWEEP (%d): must be at least 1; it bounds how many artifacts one "+
+				"sweep may delete, and an unbounded destructive loop is the wrong shape however "+
+				"correct it looks",
+			envPrefix, c.Retention.MaxPerSweep))
+	}
+	if c.Retention.Interval <= 0 {
+		errs = append(errs, fmt.Errorf(
+			"%sRETENTION_INTERVAL (%s): must be positive; zero would run the sweep on every "+
+				"scheduler tick",
+			envPrefix, c.Retention.Interval))
 	}
 
 	if (c.Sandbox.SharedDirVolume == "") != (c.Sandbox.SharedDirLocal == "") {
@@ -431,6 +488,7 @@ func (c *Config) LogValue() slog.Value {
 		slog.Bool("auth_enabled", c.Auth.Enabled),
 		slog.String("auth_issuer_url", c.Auth.IssuerURL),
 		slog.Bool("scheduler_enabled", c.Scheduler.Enabled),
+		slog.Bool("retention_enabled", c.Retention.Enabled),
 		slog.String("sandbox_provider", c.Sandbox.Provider),
 	)
 }

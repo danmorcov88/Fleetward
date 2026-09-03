@@ -113,6 +113,9 @@ supersedes the old.
 | File-based artifacts | An engine that writes its backup to its own filesystem hands it over through a directory the plugin can also see; no credential ever reaches the engine | [0026](docs/adr/0026-a-shared-directory-carries-a-file-based-artifact.md) |
 | Observed identity | An observed backup is identified by what the engine calls it; core upserts on that and never parses it | [0027](docs/adr/0027-an-observed-backup-is-identified-by-what-the-engine-calls-it.md) |
 | Observation and expectation | Observation is a schedule kind; what a backup should look like is declared, never inferred, and adherence is computed on read | [0028](docs/adr/0028-observation-is-a-schedule-kind-and-an-expectation-is-declared.md) |
+| Retention | An estate-wide sweep on the scheduler's tick, holding no lease; the artifact is deleted behind an `expired` row that is never removed, and an observed backup cannot reach that state | [0030](docs/adr/0030-retention-sweeps-the-estate-and-never-deletes-a-row.md) |
+| Expiry | Stamped when a backup is taken, from the retention in force then, and never recomputed — so a schedule edited or deleted changes nothing, and an upgrade deletes nothing | [0031](docs/adr/0031-an-expiry-is-stamped-when-a-backup-is-taken.md) |
+| The retention floor | An instance's most recent successful backup and its most recent proven-restorable one are never deleted; verification decides the floor, never eligibility | [0032](docs/adr/0032-retention-never-deletes-the-last-good-backup.md) |
 
 ### Product and scope decisions
 

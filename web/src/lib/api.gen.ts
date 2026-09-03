@@ -26,6 +26,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/backup-retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description PreviewRetention reports what the next retention sweep would delete, and what it would refuse
+         *      to delete and why. It is read-only and changes nothing.
+         *
+         *      It exists because retention is the only thing Fleetward does that destroys something, and an
+         *      operator has to be able to see the answer before it is acted on rather than afterwards in a
+         *      log. There is no job row per sweep to inspect (ADR-0030), so this is the surface that replaces
+         *      one.
+         */
+        get: operations["BackupService_PreviewRetention"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backups": {
         parameters: {
             query?: never;
@@ -1173,6 +1198,28 @@ export interface components {
             /** Format: int32 */
             restart_count?: number;
         };
+        PreviewRetentionResponse: {
+            /**
+             * @description The limits the sweep runs under, echoed so that a surprising preview can be explained without
+             *      reading the server's environment.
+             */
+            policy?: components["schemas"]["RetentionPolicy"];
+            /** @description What the next sweep would expire and delete, oldest first, bounded by the sweep's own ceiling. */
+            expiring?: components["schemas"]["RetentionCandidate"][];
+            /**
+             * @description Backups that are past their expiry and will not be deleted, each carrying the reason. This is
+             *      the half of the answer that stops "why is that one still there" being a question only the
+             *      source code answers.
+             */
+            protected?: components["schemas"]["RetentionCandidate"][];
+            /**
+             * @description Backups already marked expired whose artifact is still in object storage — the state a sweep
+             *      interrupted between its two steps leaves behind. The next sweep finishes them (ADR-0030).
+             */
+            pending_deletion?: components["schemas"]["RetentionCandidate"][];
+            /** @description How much object storage the next sweep would release. */
+            reclaimable_bytes?: string;
+        };
         Principal: {
             name?: string;
             /**
@@ -1206,6 +1253,34 @@ export interface components {
             /** @description The principal may grant this privilege onward. */
             grantable?: boolean;
             granted_by?: string;
+        };
+        /** @description RetentionCandidate is one backup the sweep has an opinion about. */
+        RetentionCandidate: {
+            backup_id?: string;
+            instance_id?: string;
+            instance_name?: string;
+            /** Format: date-time */
+            completed_at?: string;
+            /** Format: date-time */
+            expires_at?: string;
+            size_bytes?: string;
+            /**
+             * @description Why this backup will not be deleted, in a sentence a human can act on. Empty on a backup the
+             *      sweep would remove.
+             */
+            protected_reason?: string;
+        };
+        /**
+         * @description RetentionPolicy is the configured shape of the sweep, not a per-instance setting. Retention is an
+         *      estate-wide property; what varies per backup is the expiry stamped on it (ADR-0031).
+         */
+        RetentionPolicy: {
+            enabled?: boolean;
+            interval?: string;
+            /** Format: int32 */
+            min_keep?: number;
+            /** Format: int32 */
+            max_per_sweep?: number;
         };
         RunBackupRequest: {
             instance_id?: string;
@@ -1485,6 +1560,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GetBackupAdherenceResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    BackupService_PreviewRetention: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Restrict to one instance. Empty previews the whole estate, which is the question an operator
+                 *      about to enable retention actually asks.
+                 */
+                instance_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewRetentionResponse"];
                 };
             };
             /** @description Default error response */

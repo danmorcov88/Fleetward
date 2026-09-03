@@ -941,6 +941,7 @@ const (
 	BackupService_GetPITRWindow_FullMethodName        = "/fleetward.v1.BackupService/GetPITRWindow"
 	BackupService_ObserveBackupHistory_FullMethodName = "/fleetward.v1.BackupService/ObserveBackupHistory"
 	BackupService_GetBackupAdherence_FullMethodName   = "/fleetward.v1.BackupService/GetBackupAdherence"
+	BackupService_PreviewRetention_FullMethodName     = "/fleetward.v1.BackupService/PreviewRetention"
 )
 
 // BackupServiceClient is the client API for BackupService service.
@@ -967,6 +968,14 @@ type BackupServiceClient interface {
 	// against the backups actually recorded, of either origin, and is computed on read — no verdict
 	// is stored, so there is nothing that can go stale.
 	GetBackupAdherence(ctx context.Context, in *GetBackupAdherenceRequest, opts ...grpc.CallOption) (*GetBackupAdherenceResponse, error)
+	// PreviewRetention reports what the next retention sweep would delete, and what it would refuse
+	// to delete and why. It is read-only and changes nothing.
+	//
+	// It exists because retention is the only thing Fleetward does that destroys something, and an
+	// operator has to be able to see the answer before it is acted on rather than afterwards in a
+	// log. There is no job row per sweep to inspect (ADR-0030), so this is the surface that replaces
+	// one.
+	PreviewRetention(ctx context.Context, in *PreviewRetentionRequest, opts ...grpc.CallOption) (*PreviewRetentionResponse, error)
 }
 
 type backupServiceClient struct {
@@ -1057,6 +1066,16 @@ func (c *backupServiceClient) GetBackupAdherence(ctx context.Context, in *GetBac
 	return out, nil
 }
 
+func (c *backupServiceClient) PreviewRetention(ctx context.Context, in *PreviewRetentionRequest, opts ...grpc.CallOption) (*PreviewRetentionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewRetentionResponse)
+	err := c.cc.Invoke(ctx, BackupService_PreviewRetention_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BackupServiceServer is the server API for BackupService service.
 // All implementations must embed UnimplementedBackupServiceServer
 // for forward compatibility.
@@ -1081,6 +1100,14 @@ type BackupServiceServer interface {
 	// against the backups actually recorded, of either origin, and is computed on read — no verdict
 	// is stored, so there is nothing that can go stale.
 	GetBackupAdherence(context.Context, *GetBackupAdherenceRequest) (*GetBackupAdherenceResponse, error)
+	// PreviewRetention reports what the next retention sweep would delete, and what it would refuse
+	// to delete and why. It is read-only and changes nothing.
+	//
+	// It exists because retention is the only thing Fleetward does that destroys something, and an
+	// operator has to be able to see the answer before it is acted on rather than afterwards in a
+	// log. There is no job row per sweep to inspect (ADR-0030), so this is the surface that replaces
+	// one.
+	PreviewRetention(context.Context, *PreviewRetentionRequest) (*PreviewRetentionResponse, error)
 	mustEmbedUnimplementedBackupServiceServer()
 }
 
@@ -1114,6 +1141,9 @@ func (UnimplementedBackupServiceServer) ObserveBackupHistory(context.Context, *O
 }
 func (UnimplementedBackupServiceServer) GetBackupAdherence(context.Context, *GetBackupAdherenceRequest) (*GetBackupAdherenceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBackupAdherence not implemented")
+}
+func (UnimplementedBackupServiceServer) PreviewRetention(context.Context, *PreviewRetentionRequest) (*PreviewRetentionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PreviewRetention not implemented")
 }
 func (UnimplementedBackupServiceServer) mustEmbedUnimplementedBackupServiceServer() {}
 func (UnimplementedBackupServiceServer) testEmbeddedByValue()                       {}
@@ -1280,6 +1310,24 @@ func _BackupService_GetBackupAdherence_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BackupService_PreviewRetention_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewRetentionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BackupServiceServer).PreviewRetention(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BackupService_PreviewRetention_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BackupServiceServer).PreviewRetention(ctx, req.(*PreviewRetentionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BackupService_ServiceDesc is the grpc.ServiceDesc for BackupService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1318,6 +1366,10 @@ var BackupService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetBackupAdherence",
 			Handler:    _BackupService_GetBackupAdherence_Handler,
+		},
+		{
+			MethodName: "PreviewRetention",
+			Handler:    _BackupService_PreviewRetention_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

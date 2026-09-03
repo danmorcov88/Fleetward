@@ -48,6 +48,31 @@ type Runner interface {
 	// RunDiscoveryJob probes one instance and records its health, so that the estate's health is
 	// an answer somebody can put a date on rather than whatever the last human left behind.
 	RunDiscoveryJob(ctx context.Context, in DiscoveryJob) error
+	// SweepRetention deletes the artifacts of managed backups that have outlived the retention
+	// their schedule declared.
+	//
+	// It is the one thing on this interface that is not a job. Retention is an estate-wide property
+	// rather than a per-instance one, and it is idempotent in a way a backup is not — the state
+	// transition is its own guard, so two control planes sweeping at once is not a race to lose and
+	// no lease is needed (ADR-0030).
+	SweepRetention(ctx context.Context) (RetentionOutcome, error)
+}
+
+// RetentionOutcome is what one sweep did. There is no job row behind a sweep, so this is what the
+// log line is made of, and the log line plus the rows themselves are the whole account.
+type RetentionOutcome struct {
+	Expired          int
+	ArtifactsDeleted int
+	BytesReclaimed   int64
+	// Unreachable counts artifacts that could not be deleted this time and stay queued for the next
+	// sweep. Nothing is lost when this is non-zero; it is here so an object store that has been
+	// refusing all week is visible rather than silent.
+	Unreachable int
+}
+
+// Empty reports whether the sweep did nothing, which is the ordinary case.
+func (o RetentionOutcome) Empty() bool {
+	return o.Expired == 0 && o.ArtifactsDeleted == 0 && o.Unreachable == 0
 }
 
 // BackupJob is one scheduled backup, assembled from the job row alone.
@@ -57,6 +82,9 @@ type BackupJob struct {
 	InstanceID string
 	MethodID   string
 	Options    map[string]string
+	// RetentionDays becomes the stamped expiry on the artifact this run produces (ADR-0031). Zero
+	// stamps none, and an artifact with no expiry is never deleted by retention.
+	RetentionDays int32
 }
 
 // VerificationJob is one scheduled verification.
@@ -94,6 +122,11 @@ type Scheduler struct {
 	owner   string
 	tenetID string
 
+	// retention paces the one estate-wide thing on the tick that is not a job. Only Enabled and
+	// Interval are read here; what a sweep may actually delete is the runner's business, and the two
+	// sides refuse independently.
+	retention config.RetentionConfig
+
 	// slots bounds jobs running in this process. A verification holds a container and a spooled
 	// artifact, so fifty instances verifying at 02:00 is a resource incident rather than a busy
 	// night; this is the knob that prevents it.
@@ -106,24 +139,35 @@ type Scheduler struct {
 	// lastTick is read by HealthCheck. A tick loop that has stopped advancing is the failure this
 	// component can suffer without anything else noticing, so it is reported rather than inferred.
 	lastTick atomic.Int64
+
+	// lastSweep and sweeping pace retention. It runs on the tick beside the reaper rather than as a
+	// scheduled job (ADR-0030), but far less often than the tick: a sweep is estate-wide and it
+	// destroys things, and there is no reason for an artifact to disappear within seconds of its
+	// expiry rather than within the hour. Zero means "not yet", so the first tick after a start
+	// sweeps — which is also how a sweep interrupted by a crash gets finished promptly.
+	lastSweep atomic.Int64
+	// sweeping keeps one process to one sweep at a time. Two concurrent sweeps would be correct —
+	// the design does not rely on this — but they would do the same work twice.
+	sweeping atomic.Bool
 }
 
 // New builds a scheduler. It does not start until Start is called.
-func New(pool *pgxpool.Pool, runner Runner, cfg config.SchedulerConfig, log *slog.Logger) *Scheduler {
+func New(pool *pgxpool.Pool, runner Runner, cfg config.SchedulerConfig, retention config.RetentionConfig, log *slog.Logger) *Scheduler {
 	owner := newOwnerID()
 	slots := cfg.MaxConcurrentJobs
 	if slots <= 0 {
 		slots = 1
 	}
 	return &Scheduler{
-		pool:    pool,
-		runner:  runner,
-		log:     log.With(slog.String("component", "scheduler"), slog.String("lease_owner", owner)),
-		cfg:     cfg,
-		owner:   owner,
-		tenetID: metadb.DefaultTenantID,
-		slots:   make(chan struct{}, slots),
-		stopped: make(chan struct{}),
+		pool:      pool,
+		runner:    runner,
+		log:       log.With(slog.String("component", "scheduler"), slog.String("lease_owner", owner)),
+		cfg:       cfg,
+		owner:     owner,
+		retention: retention,
+		tenetID:   metadb.DefaultTenantID,
+		slots:     make(chan struct{}, slots),
+		stopped:   make(chan struct{}),
 	}
 }
 
@@ -143,7 +187,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 		slog.Duration("poll_interval", s.cfg.PollInterval),
 		slog.Duration("lease_ttl", s.cfg.LeaseTTL),
 		slog.Duration("lease_heartbeat", s.cfg.LeaseHeartbeat),
-		slog.Int("max_concurrent_jobs", cap(s.slots)))
+		slog.Int("max_concurrent_jobs", cap(s.slots)),
+		slog.Bool("retention_enabled", s.retention.Enabled),
+		slog.Duration("retention_interval", s.retention.Interval))
 
 	go s.loop(loopCtx)
 }
@@ -197,7 +243,60 @@ func (s *Scheduler) tick(ctx context.Context) {
 			slog.Int64("count", n))
 	}
 
+	s.maybeSweepRetention(ctx)
+
 	s.dispatch(ctx)
+}
+
+// maybeSweepRetention starts a retention sweep if one is due and none is already running here.
+//
+// It runs in the background rather than inline, because a sweep deletes up to MaxPerSweep objects
+// over the network and a tick that waited for that would stop claiming jobs meanwhile. It joins
+// s.running so that Close still waits for it: a sweep cut off between expiring a row and deleting
+// its object leaves a leftover, and while that leftover is designed to be picked up by the next
+// sweep, a clean shutdown has no business creating one.
+func (s *Scheduler) maybeSweepRetention(ctx context.Context) {
+	if !s.retention.Enabled {
+		return
+	}
+	interval := s.retention.Interval
+	if interval <= 0 {
+		interval = time.Hour
+	}
+	if last := s.lastSweep.Load(); last != 0 && time.Since(time.Unix(0, last)) < interval {
+		return
+	}
+	if !s.sweeping.CompareAndSwap(false, true) {
+		return
+	}
+	s.lastSweep.Store(time.Now().UnixNano())
+
+	s.running.Add(1)
+	go func() {
+		defer s.running.Done()
+		defer s.sweeping.Store(false)
+
+		started := time.Now()
+		outcome, err := s.runner.SweepRetention(ctx)
+		if err != nil {
+			s.log.ErrorContext(ctx, "the retention sweep did not finish",
+				slog.String("error", err.Error()),
+				slog.Duration("ran_for", time.Since(started)))
+			return
+		}
+		if outcome.Empty() {
+			return // nothing happened, and an hourly line saying so is noise
+		}
+		// Info rather than warn: unlike a reaped job, everything counted here is what the operator
+		// asked for. It is logged at all because deleting an artifact is the one thing this product
+		// does that cannot be undone, and there is no job row to read afterwards.
+		s.log.InfoContext(ctx, "retention sweep finished",
+			slog.Int("expired", outcome.Expired),
+			slog.Int("artifacts_deleted", outcome.ArtifactsDeleted),
+			slog.Int64("bytes_reclaimed", outcome.BytesReclaimed),
+			slog.Int("unreachable", outcome.Unreachable),
+			slog.Duration("duration", time.Since(started)))
+	}()
 }
 
 // dispatch claims and starts jobs until the concurrency budget is full or nothing is due.

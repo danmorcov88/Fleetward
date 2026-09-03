@@ -36,6 +36,7 @@ the decisions with the longest reach and links back to the entries they came fro
 | [B2](B2-sqlserver-plugin.md) — SQL Server, and the claim it was written to test | 2026-09-02 | [brief](../slices/B2-sqlserver-plugin.md) |
 | [B3](B3-observed-backups.md) — reporting on backups Fleetward did not take | 2026-09-02 | [brief](../slices/B3-observed-backups.md) |
 | [B4](B4-estate-overview.md) — fifty servers at a glance, and a contract the client can trust | 2026-09-03 | [brief](../slices/B4-estate-overview.md) |
+| [B5](B5-retention-and-expiry.md) — the first slice that can destroy data | 2026-09-03 | [brief](../slices/B5-retention-and-expiry.md) |
 
 ## Writing an entry
 

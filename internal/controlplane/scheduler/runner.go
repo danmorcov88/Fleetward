@@ -23,7 +23,7 @@ import (
 func (s *Scheduler) materialize(ctx context.Context) (int, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, instance_id, kind, cron_expression, timezone, method_id, options,
-		       verify_policy, verify_sample_percent, next_run_at
+		       verify_policy, verify_sample_percent, retention_days, next_run_at
 		FROM   schedules
 		WHERE  tenant_id = $1 AND is_enabled AND next_run_at IS NOT NULL AND next_run_at <= now()
 		ORDER  BY next_run_at`, s.tenetID)
@@ -35,13 +35,14 @@ func (s *Scheduler) materialize(ctx context.Context) (int, error) {
 		id, instanceID, kind, expr, timezone, methodID, policy string
 		options                                                map[string]string
 		samplePct                                              int32
+		retentionDays                                          int32
 		nextRunAt                                              time.Time
 	}
 	var pending []due
 	for rows.Next() {
 		var d due
 		if err := rows.Scan(&d.id, &d.instanceID, &d.kind, &d.expr, &d.timezone, &d.methodID,
-			&d.options, &d.policy, &d.samplePct, &d.nextRunAt); err != nil {
+			&d.options, &d.policy, &d.samplePct, &d.retentionDays, &d.nextRunAt); err != nil {
 			rows.Close()
 			return 0, fmt.Errorf("scheduler: read a due schedule: %w", err)
 		}
@@ -86,6 +87,7 @@ func (s *Scheduler) materialize(ctx context.Context) (int, error) {
 			Options:             d.options,
 			VerifyPolicy:        d.policy,
 			VerifySamplePercent: d.samplePct,
+			RetentionDays:       d.retentionDays,
 		}.encode()
 		if err != nil {
 			return created, err
@@ -274,6 +276,8 @@ func (s *Scheduler) runBackup(ctx context.Context, job *claimedJob, p jobPayload
 		InstanceID: job.InstanceID,
 		MethodID:   p.MethodID,
 		Options:    p.Options,
+
+		RetentionDays: p.RetentionDays,
 	})
 	if err != nil {
 		return err

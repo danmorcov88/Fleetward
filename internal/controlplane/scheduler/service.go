@@ -504,6 +504,11 @@ type jobPayload struct {
 	// looking at the row rather than by reading this package.
 	VerifyPolicy        string `json:"verify_policy,omitempty"`
 	VerifySamplePercent int32  `json:"verify_sample_percent,omitempty"`
+	// RetentionDays is how long the artifact this run produces is kept. It is here for the same
+	// reason as the two fields above and one stronger one: it becomes the backup's stamped expiry,
+	// so it is the value that will eventually authorise deleting the artifact. A schedule edited or
+	// deleted between this snapshot and the run's completion changes nothing about it (ADR-0031).
+	RetentionDays int32 `json:"retention_days,omitempty"`
 	// BackupID is set on a verify job and names what it must prove.
 	BackupID string `json:"backup_id,omitempty"`
 }

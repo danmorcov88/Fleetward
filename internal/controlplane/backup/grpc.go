@@ -133,6 +133,18 @@ func (g *GRPCServer) GetVerification(ctx context.Context, req *fwv1.GetVerificat
 	return &fwv1.GetVerificationResponse{Verification: verification}, nil
 }
 
+// PreviewRetention reports what the next retention sweep would delete, and what it would not.
+//
+// Read-only, and deliberately available whether or not the sweep is enabled: an operator deciding
+// whether to turn retention on is exactly the person who needs to see the answer.
+func (g *GRPCServer) PreviewRetention(ctx context.Context, req *fwv1.PreviewRetentionRequest) (*fwv1.PreviewRetentionResponse, error) {
+	out, err := g.svc.PreviewRetention(ctx, PreviewRetentionInput{InstanceID: req.GetInstanceId()})
+	if err != nil {
+		return nil, g.fail(ctx, "preview retention", err)
+	}
+	return out, nil
+}
+
 // GetPITRWindow is phase B, and depends on WAL archiving that no method produces yet.
 func (g *GRPCServer) GetPITRWindow(context.Context, *fwv1.GetPITRWindowRequest) (*fwv1.GetPITRWindowResponse, error) {
 	return nil, status.Error(codes.Unimplemented,

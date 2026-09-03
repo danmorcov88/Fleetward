@@ -12,40 +12,37 @@ and everything with a longer lifetime lives elsewhere: rationale in the
 
 ## Current position
 
-**Slice B4 is complete. Next is B5 — retention and expiry.**
+**Slice B5 is complete. Next is B6 — the authorization spine.**
 
-Fleetward now answers its two questions on one screen. Fifty rows, four columns, and neither
-question needs a click:
+Fleetward now deletes things, and that is a different kind of product from the one that shipped
+yesterday. Every slice before this one read, reported, or added; from here on the worst a bug can do
+is not report something untrue but destroy a backup.
 
-| Instance | Health | Backup | Verified |
-|---|---|---|---|
-| prod-1 · sqlserver | healthy · 2m ago | adherent — last 6h ago | **verification failed** |
-| prod-2 · postgresql | healthy · 3m ago | missed — last 9d ago | — |
-| prod-3 · postgresql | down · 4h ago | adherent — last 5h ago | n/a — not ours |
-| prod-4 · postgresql | healthy · 1m ago | nothing declared — last 2h ago | never verified |
+A managed backup that has outlived the retention its schedule declared loses its artifact. Nothing
+else does, and the "nothing else" is where the slice went:
 
-The order is the argument. A backup that succeeded and was proven bad sits above one that never
-happened, because a backup believed good and proven bad is the more dangerous of the two
-(`CLAUDE.md` §5), and an instance nobody has declared anything for sits above the ones that are
-fine. Origin has no column: it decides what the Verified cell *says*, so `n/a — not ours` and
-`never verified` cannot be read apart ([ADR-0015](../adr/0015-observed-and-managed-backups.md)).
+| The thing | What stops it |
+|---|---|
+| deleting a backup Fleetward did not take | a `CHECK` constraint, not a `WHERE` clause — a query that forgets the filter raises 23514 |
+| deleting an instance's last working backup | a floor of two rows: the newest successful one, and the newest proven restorable |
+| deleting a year of history the first time somebody upgrades | expiries are stamped at backup time, so every backup that already exists carries none |
+| leaving a row that claims an artifact which is gone | the row is expired and committed *first*; the object goes second; the row is never deleted |
+| deleting an artifact something is restoring from | a backup with a verification or a restore in flight — or merely queued — is not eligible |
 
-Two things arrived with it that are not the screen.
+Three decisions were worth records rather than comments:
+[ADR-0030](../adr/0030-retention-sweeps-the-estate-and-never-deletes-a-row.md) — the sweep is
+estate-wide, runs on the scheduler's tick beside the reaper, and holds **no lease**, because
+retention is idempotent in a way a backup is not;
+[ADR-0031](../adr/0031-an-expiry-is-stamped-when-a-backup-is-taken.md) — an expiry is stamped when
+the backup is taken and never recomputed, so a report may change its mind and a deletion may not;
+[ADR-0032](../adr/0032-retention-never-deletes-the-last-good-backup.md) — the floor, and why
+verification decides it rather than deciding what is eligible.
 
-**The health in that second column moves on its own.** `discovery` joined `backup` and `observe` as
-a schedule kind — no migration, because both CHECK constraints already permitted it — so an estate's
-health is an answer with a date on it rather than whatever the last person to run `instance test`
-left behind. The cell renders that date, which is what keeps it honest when the probe is behind.
+The operational surface is `fleetward-cli backup retention`, which reads through the same SQL the
+sweep does. It exists because there is no job row per sweep to inspect afterwards, and because this
+is the one feature where seeing the answer before it is acted on matters.
 
-**The web app's types are generated from the contract, and the document they come from is now true.**
-`api/openapi/openapi.yaml` had been generated, committed and diffed by CI since the contract
-existed — and it described `instanceId` where the server sends `instance_id`, integers where the
-server sends enum names, and gRPC status errors where the server sends problem details. Stable, and
-wrong. Two generator options fixed it, and the first thing the generated types found was a field the
-System screen had been rendering blank since it was written
-([ADR-0029](../adr/0029-the-openapi-document-is-generated-to-match-the-wire.md)).
-
-Session protocol: [`slices/README.md`](slices/README.md). B5's brief is not written yet; briefs are
+Session protocol: [`slices/README.md`](slices/README.md). B6's brief is not written yet; briefs are
 written when the slice starts.
 
 ## Phases
@@ -54,7 +51,7 @@ written when the slice starts.
 |---|---|
 | Foundation — contract, control plane, dev stack | ✅ [journal](journal/00-foundation.md) |
 | A — prove the loop (PostgreSQL), A1–A6 | ✅ [journal](journal/README.md) |
-| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B4 done, B5 next |
+| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B5 done, B6 next |
 | Access compliance, structural drift, query editor | deferred — see [roadmap](../roadmap.md#deferred-deliberately) |
 
 There is no Phase F. Production readiness is a property of every slice
@@ -73,6 +70,20 @@ Listed so that no session has to re-derive them, and so that no document has to 
 - **Five of the eight engines are still binaries that only handshake.** MySQL, MongoDB, and Redis
   declare no capabilities; Oracle, ClickHouse, and Cassandra have no binary at all. PostgreSQL and
   SQL Server are real. **B11–B16.**
+- **There is no way to delete one named backup, and no way to reclaim what the retention floor
+  pins.** The floor keeps between one and two artifacts per instance forever
+  ([ADR-0032](../adr/0032-retention-never-deletes-the-last-good-backup.md)), and the only escape is
+  removing the instance. A `DeleteBackup` action needs confirmation, an audit record and RBAC, so it
+  belongs after **B6**.
+- **Deleting an instance orphans its artifacts.** `backups.instance_id` is `ON DELETE CASCADE`, so
+  the rows go and the objects stay, and `DeleteInstance(delete_artifacts=true)` is declared in the
+  contract and unimplemented. Since B5 this is the only remaining way to orphan an object. Keys are
+  `tenants/<t>/instances/<i>/backups/<b>/artifact`, so reconciling a bucket against the rows is
+  straightforward whenever somebody wants it.
+- **Lowering a schedule's `retention_days` does not shorten what is already stored.** Deliberate: an
+  expiry is stamped when a backup is taken and never recomputed, which is what keeps an edit to a
+  number from destroying artifacts on the next tick. Re-stamping existing backups on purpose is a
+  separate action with its own confirmation surface, and it is not built.
 - **A renamed backup file is a second backup.** PostgreSQL's observation reads a directory, which
   assigns no identity, so the plugin derives one from the file name and declares that it did. Core
   reports the caveat on every answer that rests on it rather than inventing a matching heuristic
@@ -91,29 +102,26 @@ Listed so that no session has to re-derive them, and so that no document has to 
   of a backup or a restore, including failure, but a plugin killed between the two leaks an
   artifact-sized file on the share. A sandbox's own directory is removed with the sandbox; a real
   instance's is not. It has the shape slice A3 solved for containers with a startup sweep, and it
-  does not have that sweep.
+  does not have that sweep. Unrelated to retention, which only ever deletes objects in the bucket.
 - **A SQL Server manifest is exact only on a quiescent database.** `BACKUP DATABASE` is consistent at
   the LSN it ends on, and a `COUNT(*)` cannot be tied to that LSN without writing to the monitored
   instance. The plugin brackets the counting pass and flags an object that changed underneath it, and
   a mismatch on a flagged object is `INCONCLUSIVE` rather than `FAILED`. So a busy database verifies
   more weakly than a quiet one, and says so in its report.
-- **Artifacts accumulate forever, and nothing expires an observed one on purpose.**
-  `backups.expires_at`, `schedules.retention_days`, the `expired` state, and `idx_backups_expiring`
-  all exist; `retention_days` is stored on every schedule and read by nothing. An observed backup is
-  somebody else's file and Fleetward must never delete it, which is a distinction B5 has to carry.
-  **B5.**
 - **Nothing is delivered anywhere.** `alert_rules`, `alerts`, and `notifiers` exist in the schema
-  and no Go code touches them. A failed verification, a missed backup window, and a schedule that has
-  silently stopped firing are all visible only by polling the API. **B7.**
+  and no Go code touches them. A failed verification, a missed backup window, a schedule that has
+  silently stopped firing, and a retention sweep whose object store has been refusing all week are
+  all visible only by polling the API or reading the log. **B7.**
 - **Fleetward cannot be observed.** OpenTelemetry is wired in `internal/telemetry/otel.go` with
   zero call sites: no span is started and no meter obtained. There is no `/metrics`. The scheduler
-  emits log lines and a readiness component, and nothing else. **B8.**
+  and the retention sweep emit log lines and a readiness component, and nothing else. **B8.**
 - **Nothing has been released.** No tag, no published container image, no signed artifact —
   `release.yml` installs cosign and never invokes it. `docker-compose.yml` is a development
   configuration by its own declaration. **B9.**
 - **The web UI is one screen and a status page.** The Estate Overview reads the estate and reports
   on it; nothing in it changes anything. Adding or editing an instance, managing schedules and jobs,
-  and any view of an individual backup's verification report are all still CLI-only.
+  any view of an individual backup's verification report, and anything at all about retention are
+  CLI-only.
 - **A verification carried on the estate view omits its per-check detail.** `GetBackupAdherence`
   attaches the verdict and when it was reached, in one batched query; the checks and discrepancies
   behind that verdict come from `GetBackup`, one backup at a time. Deliberate — no column renders
@@ -139,6 +147,12 @@ Listed so that no session has to re-derive them, and so that no document has to 
   `health`, `health_message`, `engine_version` and `last_seen_at` through the same `TestConnection` a
   human runs — and an instance that is *down* is a successful probe. What fails the job is not being
   able to ask at all.
+- **Retention is not a schedule kind and never will be one.** Looking for a `retention` row in
+  `schedules` is the mistake worth naming: the sweep is estate-wide, runs on the scheduler's tick
+  beside the reaper, and has no schedule row, no job row and no lease
+  ([ADR-0030](../adr/0030-retention-sweeps-the-estate-and-never-deletes-a-row.md)). The consequence
+  is that `job list` cannot answer "did retention run last night"; `backup retention` and the log
+  line can.
 
 ## Environment notes
 
@@ -157,11 +171,9 @@ Listed so that no session has to re-derive them, and so that no document has to 
   worktree created with `core.autocrlf=false` before believing any of them.
 - **Regenerating `api/openapi/openapi.yaml` on Windows corrupts it, and the corruption is invisible
   to `git diff`.** The generator embeds `.proto` comments as YAML string literals, so a CRLF checkout
-  produces literal `
-` escapes *inside* the strings, which no line-ending normalization touches.
+  produces literal `\r\n` escapes *inside* the strings, which no line-ending normalization touches.
   CI regenerates on Linux and rejects the diff. Regenerate in an LF worktree, or normalize the
-  sources under `api/proto/` to LF first — `grep -cF '
-' api/openapi/openapi.yaml` must print 0.
+  sources under `api/proto/` to LF first — `grep -cF '\r\n' api/openapi/openapi.yaml` must print 0.
 - **Which conformance cases run here depends on what a case needs, not on which engine it is.** The
   SQL Server plugin shells out to nothing, so every case runs for it. PostgreSQL's backup and restore
   cases skip for want of `pg_dump`, `pg_restore` and `psql` on `PATH` — but its **backup-history case
@@ -169,7 +181,11 @@ Listed so that no session has to re-derive them, and so that no document has to 
   path alone. Read the skip reasons rather than the exit code.
 - `mcr.microsoft.com/mssql/server:2022-latest` is 625 MB and becomes ready in about nine seconds
   warm. A full conformance run takes a little under three minutes on this machine with the image
-  already pulled — 167 seconds at B3.
+  already pulled — 164 seconds at B5.
+- **The `web` image occasionally fails to build here** with `failed to prepare extraction snapshot …
+  parent snapshot does not exist`. It is a Docker Desktop containerd-snapshotter fault, not a
+  Dockerfile one; `docker compose up --build <the other services>` works, and a `docker builder
+  prune` clears it. Recorded because it is easy to mistake for a broken web build.
 - **Two integration tests fail on this machine for reasons that are the machine's.** Both were
   reproduced on `origin/main` at f0c604f before being blamed on anything.
   `sandbox.TestSandboxLifecycle` connects to its sandbox as `localhost`, which resolves to both

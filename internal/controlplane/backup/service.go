@@ -114,6 +114,11 @@ type Service struct {
 	// control plane with no container runtime, which makes verification unavailable rather than
 	// making the whole service unusable — a backup can still be taken and reported.
 	sandboxes sandbox.Provider
+	// retention is what a sweep is allowed to do. It is configuration rather than a request
+	// parameter because there is one answer per control plane, and because both the sweep and the
+	// preview must be reading the same one — a preview that disagreed with the sweep would be worse
+	// than none, since it would be believed.
+	retention RetentionPolicy
 	log       *slog.Logger
 	tenantID  string
 
@@ -127,7 +132,7 @@ type Service struct {
 }
 
 // New builds the service. The tenant is fixed until OIDC lands in phase F, exactly as in inventory.
-func New(pool *pgxpool.Pool, store objstore.ObjectStore, plugins Router, resolver Resolver, sandboxes sandbox.Provider, log *slog.Logger) *Service {
+func New(pool *pgxpool.Pool, store objstore.ObjectStore, plugins Router, resolver Resolver, sandboxes sandbox.Provider, retention RetentionPolicy, log *slog.Logger) *Service {
 	runCtx, cancel := context.WithCancel(context.Background())
 	return &Service{
 		pool:      pool,
@@ -135,6 +140,7 @@ func New(pool *pgxpool.Pool, store objstore.ObjectStore, plugins Router, resolve
 		plugins:   plugins,
 		resolver:  resolver,
 		sandboxes: sandboxes,
+		retention: retention,
 		log:       log.With(slog.String("component", "backup")),
 		tenantID:  metadb.DefaultTenantID,
 		runCtx:    runCtx,
@@ -170,6 +176,11 @@ type RunBackupInput struct {
 	JobID string
 	// ScheduleID records which recurring intent produced this backup. Empty for a manual run.
 	ScheduleID string
+	// RetentionDays is how long the artifact this run produces should be kept, snapshotted from the
+	// schedule when the job was materialized. Zero stamps no expiry, and a backup with no expiry is
+	// never removed by retention (ADR-0031) — which is the manual path, and every backup taken
+	// before retention existed.
+	RetentionDays int32
 }
 
 // prepared is everything resolved before a run starts, while the caller's context was still alive.
@@ -266,6 +277,8 @@ func (s *Service) RunBackup(ctx context.Context, in RunBackupInput) (backupID, j
 			options:    in.Options,
 			databases:  in.Databases,
 			verify:     in.VerifyOnCompletion,
+
+			retentionDays: in.RetentionDays,
 		})
 	}()
 
@@ -319,6 +332,8 @@ func (s *Service) RunBackupSync(ctx context.Context, in RunBackupInput) (backupI
 		// policy behind it is visible in the job table and so that it competes for the same
 		// concurrency budget as everything else.
 		verify: false,
+
+		retentionDays: in.RetentionDays,
 	})
 }
 
@@ -331,6 +346,9 @@ type runRequest struct {
 	options    map[string]string
 	databases  []string
 	verify     bool
+	// retentionDays travels with the run so the expiry is stamped from the value that was in force
+	// when the backup was asked for, not from whatever the schedule says by the time it finishes.
+	retentionDays int32
 }
 
 // execute performs the run and records its outcome.
@@ -714,9 +732,24 @@ func (s *Service) recordSuccess(ctx context.Context, req runRequest, result *fwv
 		externalID = id
 	}
 
+	// The expiry is written here, once, from the retention this run was asked for — never
+	// recomputed from the schedule afterwards (ADR-0031).
+	//
+	// Three consequences follow from stamping rather than computing, and all three are the point.
+	// Deleting the schedule cannot change what may be destroyed, because the value is already
+	// written. Editing `retention_days` applies from the next backup rather than retroactively
+	// destroying artifacts that already exist. And a run with no retention behind it — a manual
+	// backup, or any backup taken before this column was ever written — gets NULL, which retention
+	// never selects. That last one is why upgrading to this version deletes nothing.
+	var expiresAt any
+	if stamp := stampedExpiry(req.retentionDays, time.Now()); stamp != nil {
+		expiresAt = *stamp
+	}
+
 	_, err = tx.Exec(ctx, `
 		UPDATE backups
 		SET state              = 'succeeded',
+		    expires_at         = $14,
 		    bucket             = $1,
 		    object_key         = $2,
 		    size_bytes         = $3,
@@ -742,7 +775,7 @@ func (s *Service) recordSuccess(ctx context.Context, req runRequest, result *fwv
 		metadataOrEmpty(result.GetMetadata()),
 		externalID,
 		result.GetDuration().AsDuration().Milliseconds(),
-		req.backupID, s.tenantID)
+		req.backupID, s.tenantID, expiresAt)
 	if err != nil {
 		return fmt.Errorf("backup: record success: %w", err)
 	}

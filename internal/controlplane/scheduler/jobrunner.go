@@ -32,11 +32,12 @@ var _ Runner = (*JobRunner)(nil)
 // RunBackupJob runs a scheduled backup to completion.
 func (r *JobRunner) RunBackupJob(ctx context.Context, in BackupJob) (string, error) {
 	return r.backups.RunBackupSync(ctx, backup.RunBackupInput{
-		InstanceID: in.InstanceID,
-		MethodID:   in.MethodID,
-		Options:    in.Options,
-		JobID:      in.JobID,
-		ScheduleID: in.ScheduleID,
+		InstanceID:    in.InstanceID,
+		MethodID:      in.MethodID,
+		Options:       in.Options,
+		JobID:         in.JobID,
+		ScheduleID:    in.ScheduleID,
+		RetentionDays: in.RetentionDays,
 		// The whole point of this slice: nobody asked for this one.
 		TriggeredManually: false,
 	})
