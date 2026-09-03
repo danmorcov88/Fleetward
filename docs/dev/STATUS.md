@@ -208,7 +208,12 @@ Listed so that no session has to re-derive them, and so that no document has to 
   path alone. Read the skip reasons rather than the exit code.
 - `mcr.microsoft.com/mssql/server:2022-latest` is 625 MB and becomes ready in about nine seconds
   warm. A full conformance run takes a little under three minutes on this machine with the image
-  already pulled — 164 seconds at B5.
+  already pulled — 164 seconds at B5, 306 seconds at B6 on a cold image cache.
+- **Git Bash rewrites a Unix-looking argument into a Windows path.** `--backup-dir-local /app/share`
+  reaches the CLI as `C:/Program Files/Git/app/share`, and the failure surfaces much later as a
+  plugin that cannot write its backup file. Prefix the command with `MSYS_NO_PATHCONV=1`. It is a
+  shell artefact and not a product defect, and it costs twenty minutes to diagnose from the far
+  end.
 - **The `web` image occasionally fails to build here** with `failed to prepare extraction snapshot …
   parent snapshot does not exist`. It is a Docker Desktop containerd-snapshotter fault, not a
   Dockerfile one; `docker compose up --build <the other services>` works, and a `docker builder

@@ -26,7 +26,7 @@ go vet -tags=integration ./...     ok
 go vet -tags=conformance ./...     ok
 go test ./...                      ok, no failures
 go test -tags=integration ./...    ok, bar the two known machine failures
-go test -tags=conformance ./test/conformance/...   ok
+go test -tags=conformance ./test/conformance/...   ok, 306.4s
 go run ./tools/docscheck           81 markdown files, no problems
 go mod tidy                        no drift
 golangci-lint run                  0 issues   (LF worktree)
