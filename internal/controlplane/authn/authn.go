@@ -193,17 +193,26 @@ type Authenticator interface {
 
 // Chain tries each authenticator in order and returns the first principal anybody recognises.
 //
-// Order matters and is fixed at construction: session cookie, then bearer token, then the bootstrap
-// token. A browser presents a cookie, a script presents a token, and the operator presents the
-// break-glass credential; nothing presents two, so the ordering is about cost rather than
-// precedence.
+// Order matters and is fixed at construction: session cookie, then the configured break-glass
+// credential, then the token store. It is not a preference, and getting it wrong is not a subtle
+// failure — with the store ahead of the bootstrap link, the break-glass credential did not work on
+// any installation with any value, and a fresh `docker compose up` produced something nobody could
+// sign in to.
+//
+// The reason is an asymmetry between the links. One that compares against a single known string can
+// report "not mine" and let the chain continue. **The token store cannot**: a bearer value it has
+// never seen is an *invalid credential* rather than somebody else's, and an invalid credential stops
+// the chain — as it must, or a revoked token would be retried against every later link until
+// something accepted it.
+//
+// So the store is terminal, and anything that needs to see a bearer value goes in front of it.
 type Chain []Authenticator
 
 // Authenticate implements Authenticator.
 //
-// A credential that is presented and rejected stops the chain. Falling through to the next
-// authenticator after an invalid token would let a wrong bearer token be silently upgraded to
-// whatever the bootstrap token grants, which is the opposite of what a chain is for.
+// A credential that is presented and rejected stops the chain. Falling through after an invalid one
+// would mean a revoked token could be silently upgraded to whatever the next link grants, which is
+// the opposite of what a chain is for.
 func (c Chain) Authenticate(ctx context.Context, r *http.Request) (Principal, error) {
 	for _, a := range c {
 		p, err := a.Authenticate(ctx, r)

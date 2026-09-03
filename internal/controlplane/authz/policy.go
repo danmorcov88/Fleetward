@@ -18,8 +18,14 @@
 // request that names no scope is asking about the whole tenant.** `ListBackups` with an
 // `instance_id` is a question about one instance and an instance-scoped grant answers it;
 // `ListBackups` with nothing set is a question about the estate and needs a grant that covers the
-// estate. That one rule replaces what would otherwise have been per-RPC special cases, and it means
-// no list endpoint can leak a row from outside the caller's scope.
+// estate. That one rule replaces what would otherwise have been per-RPC special cases.
+//
+// Two listings carry `ScopeFiltered` and are the exception, because the rule alone did not restrict
+// a scoped caller — it locked them out. `ListInstances` and `GetBackupAdherence` answer anybody
+// holding the role somewhere and return only the rows that caller's grants cover, which is what
+// makes a scoped grant usable at all: the CLI resolves an instance *name* by listing, and the estate
+// view is a listing. The filtering itself lives in those services, because a guard can only answer
+// yes or no to a whole request (ADR-0035).
 package authz
 
 import (
