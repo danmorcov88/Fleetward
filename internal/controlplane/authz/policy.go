@@ -82,6 +82,18 @@ type Rule struct {
 	// one method sets it: any caller may ask who it is, and a caller who cannot ask cannot be shown
 	// a useful error either.
 	AnyAuthenticated bool
+	// ScopeFiltered marks a listing that filters its own rows.
+	//
+	// Such a method may be called by anybody holding MinRole *anywhere*, because the service
+	// returns only what the caller's grants cover. Without it, a request that names no scope needs
+	// a tenant-wide grant — and that turned out to mean a person granted `dba` on their three
+	// servers could not address any of them, since the CLI resolves an instance name by listing and
+	// the estate view *is* a listing.
+	//
+	// It is set on exactly the two methods that filter, and setting it on one that does not would
+	// hand a scoped caller the whole estate. The integration suite asserts the filtering rather
+	// than trusting the flag.
+	ScopeFiltered bool
 }
 
 // Policies is the whole authorization surface of the control plane, in one place a reviewer can
@@ -103,7 +115,7 @@ var Policies = map[string]Rule{
 		Action: "environment.create", ResourceType: "environment",
 	},
 	"/fleetward.v1.InventoryService/ListInstances": {
-		MinRole: RoleViewer, Scope: ScopeRequestEnvironment,
+		MinRole: RoleViewer, Scope: ScopeRequestEnvironment, ScopeFiltered: true,
 		Action: "instance.list", ResourceType: "instance",
 	},
 	"/fleetward.v1.InventoryService/GetInstance": {
@@ -194,7 +206,7 @@ var Policies = map[string]Rule{
 		Action: "backup.observe", ResourceType: "instance",
 	},
 	"/fleetward.v1.BackupService/GetBackupAdherence": {
-		MinRole: RoleViewer, Scope: ScopeRequestInstanceOrEnvironment,
+		MinRole: RoleViewer, Scope: ScopeRequestInstanceOrEnvironment, ScopeFiltered: true,
 		Action: "backup.get_adherence", ResourceType: "instance",
 	},
 	// Reading what the next sweep would destroy is a dba question, not a viewer's. It changes
@@ -251,6 +263,13 @@ func ValidatePolicies(ranks map[string]int) error {
 		// something they may not have — so every method needs a word to record it under.
 		if rule.Action == "" || rule.ResourceType == "" {
 			return fmt.Errorf("authz: %s has no audit action or resource type", name)
+		}
+		// A resource type nobody has mapped to a request field records no id at all, which is a
+		// silently emptier audit log rather than a wrong one. Refusing at startup is better.
+		if _, ok := resourceIDField[rule.ResourceType]; !ok {
+			return fmt.Errorf(
+				"authz: %s has resource type %q, which resourceIDField does not map to a request field",
+				name, rule.ResourceType)
 		}
 		if rule.AnyAuthenticated {
 			continue

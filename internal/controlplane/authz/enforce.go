@@ -120,11 +120,18 @@ func (e *Enforcer) recordOutcome(ctx context.Context, d Decision, resp proto.Mes
 
 	resourceID := d.ResourceID
 	if callErr == nil {
-		// A create names nothing on the way in: the resource it produced does not exist yet. The
-		// response is where its identity first appears, so that is where the record's resource_id
-		// comes from.
 		if created := responseResourceID(resp); created != "" {
-			resourceID = created
+			if resourceID == "" {
+				// A create names nothing on the way in — the resource does not exist yet — so the
+				// response is where its identity first appears.
+				resourceID = created
+			} else {
+				// Everything else acted on something that already existed, and *also* produced
+				// something. `backup.run` acts on an instance and produces a backup. Overwriting
+				// resource_id with the new thing would make the row say `instance` beside a
+				// backup's id, which is what the B6 walk found; the new id belongs here instead.
+				details["created"] = created
+			}
 		}
 	}
 
@@ -137,14 +144,22 @@ func (e *Enforcer) recordOutcome(ctx context.Context, d Decision, resp proto.Mes
 	})
 }
 
+// addScope records which grant answered the request, which is not the same thing as what the
+// request was about.
+//
+// The key is `authorized_by` rather than `scope`, and the distinction is the point. A tenant-wide
+// grant is checked first and returns before any scope is resolved, so a `dba` with one running a
+// backup on a named instance leaves an empty Scope here — and a key called `scope` reading "tenant"
+// on a request that plainly named one instance is a misleading row in a table that cannot be
+// corrected. What the request acted on is in `resource_id`; this says what let it through.
 func addScope(details map[string]string, s Scope) {
 	switch {
 	case s.InstanceID != "":
-		details["scope"] = "instance:" + s.InstanceID
+		details["authorized_by"] = "a grant covering instance " + s.InstanceID
 	case s.EnvironmentID != "":
-		details["scope"] = "environment:" + s.EnvironmentID
+		details["authorized_by"] = "a grant covering environment " + s.EnvironmentID
 	default:
-		details["scope"] = "tenant"
+		details["authorized_by"] = "a tenant-wide grant"
 	}
 }
 

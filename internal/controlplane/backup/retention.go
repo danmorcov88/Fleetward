@@ -12,6 +12,9 @@ import (
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
 	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/storage/objstore"
+	"strconv"
+
+	"github.com/danmorcov88/fleetward/internal/controlplane/audit"
 )
 
 // Retention removes the artifacts of managed backups that have outlived the retention their
@@ -317,6 +320,23 @@ func (s *Service) deleteExpiredArtifacts(ctx context.Context, policy RetentionPo
 				slog.String("error", delErr.Error()))
 			continue
 		}
+
+		// The answer to "who deleted this artifact", written where the bytes actually go.
+		//
+		// It is recorded before the row is marked rather than after, for the same reason B5 expires
+		// the row before deleting the object: of the two orders, this is the one whose failure mode
+		// is a record of something that happened rather than silence about something that did.
+		s.auditAutomatic(ctx, audit.Entry{
+			Action:       "backup.expire",
+			ResourceType: "backup",
+			ResourceID:   p.backupID,
+			Succeeded:    true,
+			Details: map[string]string{
+				"object_key":    p.objectKey,
+				"bytes":         strconv.FormatInt(p.sizeBytes, 10),
+				"authorized_by": "the retention sweep, which is not a person",
+			},
+		})
 
 		if _, markErr := s.pool.Exec(ctx, `
 			UPDATE backups

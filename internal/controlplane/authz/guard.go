@@ -159,6 +159,15 @@ func (g *Guard) Check(ctx context.Context, method string, req proto.Message) (De
 	d.Scope = scope
 
 	if scope.TenantWide() {
+		// A listing that filters its own rows needs the role somewhere rather than everywhere: the
+		// service returns only what this caller's grants cover, so answering is not a leak.
+		if rule.ScopeFiltered {
+			if r := bestRank(p.Grants, func(authn.Grant) bool { return true }); r >= required {
+				d.Allowed = true
+				d.EffectiveRole = roleAtLeast(p.Grants, r)
+				return d, nil
+			}
+		}
 		d.Reason = fmt.Sprintf(
 			"this request is about the whole estate and the caller holds no tenant-wide %s grant",
 			rule.MinRole)
@@ -279,11 +288,39 @@ func highestRole(grants []authn.Grant) string {
 func HighestRole(grants []authn.Grant) string { return highestRole(grants) }
 
 // resourceID names what an action acted on, for the audit record.
+// resourceIDField maps a rule's resource type onto the request field that names one.
+//
+// The mapping is explicit rather than "the first id-shaped field on the message", which is what it
+// was until the B6 walk read the audit log and found rows saying `resource_type = instance` beside
+// a *backup's* id. An investigator filtering on an instance would have missed every backup ever run
+// against it, and the record would have looked perfectly plausible while doing it.
+var resourceIDField = map[string]string{
+	"instance":     "instance_id",
+	"backup":       "backup_id",
+	"schedule":     "schedule_id",
+	"verification": "verification_id",
+	"api_token":    "token_id",
+	"environment":  "environment_id",
+	"job":          "instance_id",
+	"audit_log":    "",
+	"caller":       "",
+}
+
+// resourceID names what an action acted on, for the audit record.
+//
+// What was acted on, not what was produced: `backup.run` acts on an instance, and the backup it
+// creates goes in `details.created` instead. A create — which names nothing on the way in, because
+// the thing does not exist yet — is the one case where the response supplies the id, and
+// recordOutcome handles that.
 func resourceID(rule Rule, req proto.Message) string {
-	for _, field := range []string{"instance_id", "backup_id", "schedule_id", "verification_id", "token_id", "environment_id"} {
-		if id := stringField(req, field); id != "" {
-			return id
-		}
+	field, known := resourceIDField[rule.ResourceType]
+	if !known {
+		// A resource type nobody has mapped. Recording no id is better than recording a plausible
+		// wrong one, and the coverage test refuses the type before it can ship.
+		return ""
 	}
-	return ""
+	if field == "" {
+		return ""
+	}
+	return stringField(req, field)
 }

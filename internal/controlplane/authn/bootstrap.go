@@ -55,8 +55,9 @@ func (a *BootstrapAuthenticator) Authenticate(_ context.Context, r *http.Request
 	}
 	got := sha256.Sum256([]byte(presented))
 	if subtle.ConstantTimeCompare(a.hash[:], got[:]) != 1 {
-		// Not ours. A bearer token that is not the bootstrap token is a token the store already
-		// declined, so this is the end of the chain rather than a reason to keep looking.
+		// Not ours, rather than not valid. This link can tell the difference — it compares against
+		// one known string — which is exactly why it sits in front of the token store rather than
+		// behind it: the store cannot, so the store has to be last.
 		return Principal{}, ErrNoCredential
 	}
 	return Principal{

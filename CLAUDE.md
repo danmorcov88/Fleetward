@@ -116,6 +116,10 @@ supersedes the old.
 | Retention | An estate-wide sweep on the scheduler's tick, holding no lease; the artifact is deleted behind an `expired` row that is never removed, and an observed backup cannot reach that state | [0030](docs/adr/0030-retention-sweeps-the-estate-and-never-deletes-a-row.md) |
 | Expiry | Stamped when a backup is taken, from the retention in force then, and never recomputed — so a schedule edited or deleted changes nothing, and an upgrade deletes nothing | [0031](docs/adr/0031-an-expiry-is-stamped-when-a-backup-is-taken.md) |
 | The retention floor | An instance's most recent successful backup and its most recent proven-restorable one are never deleted; verification decides the floor, never eligibility | [0032](docs/adr/0032-retention-never-deletes-the-last-good-backup.md) |
+| Who is calling | Hashed API tokens; the browser exchanges one for an `HttpOnly` session it cannot read; the first credential is configuration and never a database row | [0033](docs/adr/0033-the-bootstrap-credential-is-configuration-and-never-a-row.md) |
+| Resolving a grant | Grants are additive and the highest rank covering the request wins — never "most specific", which would make `role_grants` a deny mechanism the schema cannot express | [0034](docs/adr/0034-grants-are-additive-and-the-highest-rank-wins.md) |
+| Where enforcement lives | A policy table keyed on the RPC, applied by a decorator per service; scope comes from the request, and a request naming no scope is asking about the whole tenant | [0035](docs/adr/0035-enforcement-is-a-policy-table-and-a-decorator.md) |
+| Automatic work | The scheduler and the retention sweep are actor strings with no user row and no credential; the tenant comes from the principal on the context, not from a constant | [0036](docs/adr/0036-the-scheduler-is-an-actor-and-not-a-user.md) |
 
 ### Product and scope decisions
 

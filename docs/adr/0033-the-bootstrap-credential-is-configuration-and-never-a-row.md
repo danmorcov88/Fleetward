@@ -64,9 +64,9 @@ contract ([ADR-0029](0029-the-openapi-document-is-generated-to-match-the-wire.md
 `bootstrap` with tenant-wide `admin`.
 
 **The seam is one interface**, `authn.Authenticator`, and a chain of implementations tried in order:
-session cookie, bearer token, bootstrap token. B10 adds one implementation and one branch inside the
-session handler — exchange an authorization code instead of a token — and changes nothing about
-roles, grants, scope resolution, the audit log, or the UI.
+session cookie, the configured bootstrap credential, then the token store. B10 adds one
+implementation and one branch inside the session handler — exchange an authorization code instead of
+a token — and changes nothing about roles, grants, scope resolution, the audit log, or the UI.
 
 ## Consequences
 
@@ -85,9 +85,17 @@ nobody is reminded about is one that stays configured for a year.
 cost, it is real, and it is why the recommended sequence in `docs/ops/authorization.md` is: start,
 issue a proper admin token, remove the setting, restart.
 
-**The bootstrap link is last in the chain, and that ordering is load-bearing.** A bearer credential
-only reaches it after the token store has already declined it, so a revoked real token cannot be
-silently upgraded to administrator by the configured one happening to be presented the same way.
+**The token store is last in the chain, and that ordering is load-bearing.** The chain stops on a
+credential that is presented and rejected, so a revoked token cannot fall through to whatever comes
+next — and the store is the only link that produces that verdict, because a bearer value it has
+never seen is *invalid* rather than somebody else's. Every link that has to see a bearer value must
+therefore sit in front of it.
+
+The B6 walk found this the hard way, with the store ahead of the bootstrap link: a bootstrap
+credential is by definition a bearer value the database has never seen, so the store called it
+invalid and the chain stopped. The break-glass credential did not work on any installation, with any
+value, and every test passed. `internal/controlplane/authn/authn_test.go` now pins both directions
+of the ordering.
 
 **Recovering from losing every admin token means editing configuration**, not clicking anything.
 Set a bootstrap token, restart, issue a new token. That is a deliberate trade against the

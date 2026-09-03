@@ -67,6 +67,11 @@ const (
 	probeGrace = 5 * time.Second
 	// discoverTimeout bounds discovery, which enumerates databases and is heavier than a probe.
 	discoverTimeout = 60 * time.Second
+	// anyGrant is the rank floor a listing filters on. `viewer` is the lowest seeded role, so any
+	// grant at all implies at least read access; naming the zero says that out loud, so that adding
+	// a role below viewer — which needs its own migration and decision — is a change somebody has
+	// to come here to make.
+	anyGrant = 0
 	// secretNamePrefix namespaces a connection's credentials inside the SecretsProvider.
 	secretNamePrefix = "connection/"
 )
@@ -433,14 +438,31 @@ func (s *Service) ListInstances(ctx context.Context, filter ListInstancesFilter)
 	}
 	engineType := nullableText(strings.ToLower(strings.TrimSpace(filter.EngineType)))
 
+	// A listing returns what the caller's grants cover, and nothing else.
+	//
+	// This is the one place row-level scope is applied, and it is here rather than in the guard
+	// because the guard can only say yes or no to a whole request. Without it, "a scoped grant
+	// cannot enumerate the estate" meant a person granted `dba` on their three servers could not
+	// address any of them: the CLI resolves an instance *name* by listing, and the estate view is a
+	// listing (ADR-0035).
+	//
+	// `visible.All` is the common case — anybody with a tenant-wide grant — and it makes both
+	// predicates below constant-fold to TRUE.
+	visible := authn.VisibilityFor(ctx, anyGrant)
+	if visible.Empty() {
+		return nil, Page{}, nil
+	}
+
 	var total int32
 	if err := s.pool.QueryRow(ctx, `
 		SELECT count(*)::int
 		FROM instances
 		WHERE tenant_id = $1
 		  AND ($2::uuid IS NULL OR environment_id = $2::uuid)
-		  AND ($3::text IS NULL OR engine_type = $3::text)`,
-		authn.Tenant(ctx), environmentID, engineType).Scan(&total); err != nil {
+		  AND ($3::text IS NULL OR engine_type = $3::text)
+		  AND ($4::boolean OR environment_id = ANY($5::uuid[]) OR id = ANY($6::uuid[]))`,
+		authn.Tenant(ctx), environmentID, engineType,
+		visible.All, visible.EnvironmentIDs, visible.InstanceIDs).Scan(&total); err != nil {
 		return nil, Page{}, fmt.Errorf("inventory: count instances: %w", err)
 	}
 
@@ -452,9 +474,11 @@ func (s *Service) ListInstances(ctx context.Context, filter ListInstancesFilter)
 		  AND ($2::uuid IS NULL OR environment_id = $2::uuid)
 		  AND ($3::text IS NULL OR engine_type = $3::text)
 		  AND ($4::timestamptz IS NULL OR (created_at, id) > ($4::timestamptz, $5::uuid))
+		  AND ($6::boolean OR environment_id = ANY($7::uuid[]) OR id = ANY($8::uuid[]))
 		ORDER BY created_at, id
-		LIMIT $6`,
-		authn.Tenant(ctx), environmentID, engineType, cursor.after(), cursor.afterID(), limit+1)
+		LIMIT $9`,
+		authn.Tenant(ctx), environmentID, engineType, cursor.after(), cursor.afterID(),
+		visible.All, visible.EnvironmentIDs, visible.InstanceIDs, limit+1)
 	if err != nil {
 		return nil, Page{}, fmt.Errorf("inventory: list instances: %w", err)
 	}

@@ -67,6 +67,20 @@ A tenant-wide grant is checked first and is the only path that performs no query
 the estate view's path, sixty times a minute across fifty rows. An environment lookup happens only
 when the caller actually holds an environment-scoped grant.
 
+**Two listings are the exception, and they earn it by filtering their own rows.**
+`ListInstances` and `GetBackupAdherence` are marked `ScopeFiltered`: they may be called by anybody
+holding the role *somewhere*, and the service returns only the instances the caller's grants cover.
+
+That exception exists because the rule above, applied without it, did not merely restrict a scoped
+caller — it locked them out. The B6 walk found it: the CLI resolves an instance *name* by listing
+instances, and the estate view **is** a listing, so a person granted `dba` on the three servers they
+operate could not address any of them or see any of them. A rule whose effect is that a granted
+permission cannot be exercised is not a conservative rule; it is a broken one.
+
+The flag is set on exactly the two methods that filter, and the integration suite asserts the
+filtering itself — on the rows and on the page total — rather than trusting the flag. Setting it on
+a method that did not filter would hand a scoped caller the whole estate.
+
 ### What is audited
 
 **A refusal is audited when it names a principal, and not otherwise.**
@@ -104,10 +118,17 @@ turning it off globally would make every additive change to `plugin.proto` break
 plugin at compile time. That is precisely the forward compatibility `CONTRIBUTING.md` promises plugin
 authors, so the runtime default plus the coverage test is what replaces it.
 
-**A scoped grant cannot enumerate the estate.** An instance-scoped `viewer` gets 200 on
-`GetInstance` for their instance and 403 on `ListInstances` with no filter. That is restrictive
-rather than permissive — the safe direction — and it is the honest consequence of not implementing
-per-row filtering of list results, which is named in `STATUS.md` rather than left to be found.
+**A scoped grant sees its own scope and no more.** `ListInstances` and `GetBackupAdherence` filter
+their rows, so a scoped caller gets a working CLI and a working estate view showing exactly the
+servers they were granted. Every *other* listing — `ListBackups`, `ListSchedules`, `ListJobs` —
+still needs either a tenant-wide grant or an explicit `instance_id` filter, which is usable and is
+named in `STATUS.md` rather than left to be found.
+
+The row-level filter lives in the services rather than in the guard, and that split is worth
+stating: a guard can only answer yes or no to a whole request, so anything finer has to be a
+predicate in the query. That means each filtered listing is a place where the filter could be
+forgotten, which is why the assertions are on the rows returned rather than on the flag that
+enables them.
 
 **`audit_log` grows and nothing prunes it.** Roughly 150 rows a day on an estate of fifty — a
 nightly backup, its verification and an observation poll each — so about 55,000 a year and tens of
@@ -135,11 +156,12 @@ reference and its wiki from source, so a generator would fit the culture. Reject
 one-line methods that a test proves complete are cheaper than a generator, and the generator would
 have to be maintained through B10's changes.
 
-**Filtering list results by the caller's scope instead of requiring a tenant-wide grant.** The more
-useful behaviour, and the more invasive: seven queries would each grow a visible-instance filter,
-including the retention preview, which is the code that decides what gets destroyed. Deferred
-deliberately, and recorded so that "lists are not filtered" is understood as a decision rather than
-an oversight.
+**Filtering every listing by the caller's scope.** Seven queries would each grow a visible-instance
+predicate, including the retention preview — the code that decides what gets destroyed. Two of them
+were done, because without them a scoped grant could not be used at all; the rest were not, because
+`--instance` already makes them usable and a predicate in the retention preview is a change to the
+code that deletes things. Recorded so that "most lists are not filtered" is understood as a
+decision rather than an oversight.
 
 **Auditing 401s too.** Rejected on the arithmetic: the rows carry no principal, and an unauthenticated
 scanner would fill an append-only table nothing can prune with entries naming nobody.

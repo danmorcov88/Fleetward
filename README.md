@@ -104,8 +104,22 @@ rather than failing it, so a MinIO outage does not take the estate view offline.
 
 > [!WARNING]
 > The compose stack is **development configuration**. Every credential in it is published in this
-> repository, TLS is disabled on every listener, and authentication is off by default. Never expose
-> it to a network you do not fully control. See [SECURITY.md](.github/SECURITY.md).
+> repository — including the bootstrap token that grants tenant-wide administrator — and TLS is
+> disabled on every listener. Never expose it to a network you do not fully control. See
+> [SECURITY.md](.github/SECURITY.md).
+
+### Sign in
+
+The stack runs with authorization on. It starts with one credential, the bootstrap token, which is
+configuration rather than a stored row:
+
+```bash
+export FLEETWARD_TOKEN=fwt_devbootstrap_0000000000000000
+```
+
+Paste the same string into the web UI the first time it asks. On a real installation you generate
+your own, issue yourself a proper token, and then remove the bootstrap setting —
+[docs/ops/authorization.md](docs/ops/authorization.md) has the four commands.
 
 ### Add your first server
 
@@ -361,8 +375,8 @@ on that cadence is a polling problem, and it reads nothing from your databases t
 above has not already collected.
 
 > The screen reports and changes nothing. Adding a server, editing a schedule and triggering a
-> backup are CLI-only, and there is no login — every API route is open to anyone who can reach the
-> port, so the UI says nothing about who is looking at it.
+> backup are CLI-only. It does ask who you are: paste an API token once and the browser holds a
+> session cookie it cannot read, with your name and role in the sidebar.
 
 ---
 
@@ -458,9 +472,8 @@ fleetward/
 └── .github/                  # CI, contributing, security policy, templates
 ```
 
-The tree above is what exists, not what is planned — `internal/controlplane/` gains `auth` and
-`rbac` in B6, and a Helm chart waits on the Kubernetes sandbox provider. Directories are added by
-the slice that fills them.
+The tree above is what exists, not what is planned — a Helm chart waits on the Kubernetes sandbox
+provider. Directories are added by the slice that fills them.
 
 The repository root holds only files their tooling requires to be there. Anything with a legitimate
 home elsewhere lives in that home.
@@ -519,12 +532,13 @@ engine does not mean modifying core; Fleetward now reports on backups it did not
 that already backs itself up gets an answer on the day it is installed; all of it is readable on
 one screen, where a backup proven unrestorable is the loudest thing on the page; and artifacts that
 have outlived the retention their schedule declared are now deleted, which is the first thing this
-product does that cannot be undone.
+product does that cannot be undone; and every route now requires a credential and a role, with a
+record of who did what that cannot be edited.
 
-Not yet built, stated plainly because a reference document should not imply otherwise: there is no
-authentication, so every API route is open to anyone who can reach the port; nothing is delivered
-anywhere, so a failed verification is visible only by polling; and five of the eight engines are
-still binaries that only handshake.
+Not yet built, stated plainly because a reference document should not imply otherwise: sign-in is an
+API token rather than your own identity provider; nothing is delivered anywhere, so a failed
+verification is visible only by polling; and five of the eight engines are still binaries that only
+handshake.
 
 The full list, and which slice owns each item, is in [docs/dev/STATUS.md](docs/dev/STATUS.md).
 

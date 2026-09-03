@@ -251,8 +251,17 @@ func TestARefusalNeverEchoesTheRequest(t *testing.T) {
 		Name:          "prod-1",
 		Connection:    &fwv1.ConnectionSpec{Username: "fleetward", Password: "hunter2"},
 	}
-	if got := resourceID(Policies["/fleetward.v1.InventoryService/CreateInstance"], req); got != "env-1" {
-		t.Fatalf("resourceID = %q, want the environment id", got)
+	// CreateInstance produces an instance that does not exist yet, so there is nothing to name on
+	// the way in and the response supplies the id. What must *not* happen is the environment id
+	// being recorded beside `resource_type = instance`, which is the shape the B6 walk found in
+	// the audit log and which reads as perfectly plausible.
+	if got := resourceID(Policies["/fleetward.v1.InventoryService/CreateInstance"], req); got != "" {
+		t.Fatalf("resourceID = %q, want empty: an instance being created has no id yet", got)
+	}
+	// RunBackup acts on an instance that does exist, and that is what the row names.
+	run := &fwv1.RunBackupRequest{InstanceId: "instance-7"}
+	if got := resourceID(Policies["/fleetward.v1.BackupService/RunBackup"], run); got != "instance-7" {
+		t.Fatalf("resourceID = %q, want the instance it acts on", got)
 	}
 
 	// Everything the audit path can learn about a request is one of these fields. If a future

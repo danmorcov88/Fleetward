@@ -218,3 +218,55 @@ func (c Chain) Authenticate(ctx context.Context, r *http.Request) (Principal, er
 	}
 	return Principal{}, ErrNoCredential
 }
+
+// Visibility describes the instances a caller may see, as a filter a query can apply.
+//
+// It exists because "a scoped grant cannot enumerate the estate" turned out to mean "a scoped grant
+// cannot use Fleetward at all": the CLI resolves an instance *name* by listing instances, and the
+// estate view is a listing. A person granted `dba` on the three servers they operate could not
+// address any of them.
+//
+// So a listing is not refused for want of a tenant-wide grant. It returns the rows the caller's
+// grants cover, and All is the common case that costs nothing.
+type Visibility struct {
+	// All is true when a tenant-wide grant of sufficient rank covers everything.
+	All bool
+	// EnvironmentIDs and InstanceIDs are the scopes the caller holds, when All is false.
+	EnvironmentIDs []string
+	InstanceIDs    []string
+}
+
+// Empty reports a caller who can see nothing at all.
+func (v Visibility) Empty() bool {
+	return !v.All && len(v.EnvironmentIDs) == 0 && len(v.InstanceIDs) == 0
+}
+
+// VisibilityFor computes what the principal on ctx may see at or above minRank.
+//
+// A system or bootstrap caller sees everything: neither holds grants, both are trusted by
+// construction, and a scheduler that could not list the estate could not do its job.
+func VisibilityFor(ctx context.Context, minRank int) Visibility {
+	p, ok := From(ctx)
+	if !ok {
+		return Visibility{}
+	}
+	if p.Kind == KindSystem || p.Kind == KindBootstrap {
+		return Visibility{All: true}
+	}
+
+	var v Visibility
+	for _, g := range p.Grants {
+		if g.Rank < minRank {
+			continue
+		}
+		switch {
+		case g.TenantWide():
+			return Visibility{All: true}
+		case g.InstanceID != "":
+			v.InstanceIDs = append(v.InstanceIDs, g.InstanceID)
+		case g.EnvironmentID != "":
+			v.EnvironmentIDs = append(v.EnvironmentIDs, g.EnvironmentID)
+		}
+	}
+	return v
+}

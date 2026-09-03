@@ -35,6 +35,7 @@ import (
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
 	"github.com/danmorcov88/fleetward/internal/config"
+	"github.com/danmorcov88/fleetward/internal/controlplane/audit"
 	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 	"github.com/danmorcov88/fleetward/internal/storage/objstore"
@@ -62,6 +63,7 @@ type harness struct {
 	resolver  *stubResolver
 	log       *slog.Logger
 	instance  string
+	auditor   *recordingAuditor
 }
 
 func newHarness(t *testing.T) *harness {
@@ -87,14 +89,17 @@ func newHarness(t *testing.T) *harness {
 	// their production defaults. A test that needs different limits rebuilds the service through
 	// withRetention rather than reaching into the field, so what it changed is visible at the call
 	// site.
+	auditor := &recordingAuditor{}
 	svc := New(pool, store, router, &stubResolver{instanceID: instanceID}, sandboxes,
-		RetentionPolicy{Enabled: true, Interval: time.Hour, MinKeep: 1, MaxPerSweep: 500}, log)
+		RetentionPolicy{Enabled: true, Interval: time.Hour, MinKeep: 1, MaxPerSweep: 500},
+		auditor, log)
 	t.Cleanup(func() { _ = svc.Close() })
 
 	return &harness{
 		svc: svc, pool: pool, store: store, plugin: plugin, router: router,
 		sandboxes: sandboxes, instance: instanceID, log: log,
 		resolver: &stubResolver{instanceID: instanceID},
+		auditor:  auditor,
 	}
 }
 
@@ -103,7 +108,7 @@ func newHarness(t *testing.T) *harness {
 // where it can be read rather than mutating the harness underneath the other tests.
 func (h *harness) withRetention(t *testing.T, policy RetentionPolicy) *Service {
 	t.Helper()
-	svc := New(h.pool, h.store, h.router, h.resolver, h.sandboxes, policy, h.log)
+	svc := New(h.pool, h.store, h.router, h.resolver, h.sandboxes, policy, h.auditor, h.log)
 	t.Cleanup(func() { _ = svc.Close() })
 	return svc
 }
@@ -644,3 +649,23 @@ func (s *stubStream) CloseSend() error             { return nil }
 func (s *stubStream) Context() context.Context     { return s.ctx }
 func (s *stubStream) SendMsg(any) error            { return nil }
 func (s *stubStream) RecvMsg(any) error            { return io.EOF }
+
+// recordingAuditor captures what the service records for work nobody asked for — a scheduled backup
+// and a retention deletion — so a test can assert that the majority of this product's mutating work
+// leaves a trace, which §7.5 requires and which the API guard cannot provide.
+type recordingAuditor struct {
+	mu      sync.Mutex
+	entries []audit.Entry
+}
+
+func (r *recordingAuditor) Record(_ context.Context, entry audit.Entry) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.entries = append(r.entries, entry)
+}
+
+func (r *recordingAuditor) all() []audit.Entry {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]audit.Entry(nil), r.entries...)
+}

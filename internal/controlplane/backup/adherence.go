@@ -210,8 +210,16 @@ func caveatsFor(b *fwv1.Backup) []string {
 // what this server's backups should look like" is a finding on an estate of fifty, and dropping the
 // row would hide it.
 func (s *Service) loadExpectations(ctx context.Context, in GetAdherenceInput) ([]*expectation, error) {
-	args := []any{authn.Tenant(ctx)}
-	filters := ""
+	// The estate view is a listing, so it carries the same row-level scope filter that
+	// inventory's does: a caller granted `dba` on three servers sees those three and no others.
+	// Without it the screen would 403 for everybody who is not tenant-wide (ADR-0035).
+	visible := authn.VisibilityFor(ctx, 0)
+	if visible.Empty() {
+		return nil, nil
+	}
+
+	args := []any{authn.Tenant(ctx), visible.All, visible.EnvironmentIDs, visible.InstanceIDs}
+	filters := " AND ($2::boolean OR i.environment_id = ANY($3::uuid[]) OR i.id = ANY($4::uuid[]))"
 	if in.InstanceID != "" {
 		id, err := requireUUID("instance_id", in.InstanceID)
 		if err != nil {

@@ -66,12 +66,18 @@ server"; the way to achieve it is to grant instance by instance instead of grant
 
 `GET /api/v1/backups?instance_id=…` is a question about one instance, and an instance-scoped grant
 answers it. `GET /api/v1/backups` with no filter is a question about the estate, and needs a grant
-that covers the estate. The practical consequence:
+that covers the estate.
 
-> A scoped grant can read and act on what it covers, and **cannot enumerate the estate**. Somebody
-> whose only grant is on three instances gets 403 from the estate view. Give them a tenant-wide
-> `viewer` alongside their scoped `dba` if they need the overview — that is the intended shape, and
-> it is why grants add up.
+**Two listings are the exception**, because everything else depends on them: `GET /api/v1/instances`
+and `GET /api/v1/backup-adherence` return the instances your grants cover, rather than refusing.
+That is what makes a scoped grant usable at all — the CLI resolves an instance *name* by listing,
+and the estate view is a listing — so somebody granted `dba` on three servers sees those three in
+the UI and can address them by name.
+
+> The other listings — backups, schedules, jobs — are not filtered per row. A scoped caller passes
+> `--instance` and gets an answer; asking about the whole estate gets a 403. Give somebody a
+> tenant-wide `viewer` alongside their scoped `dba` if they need the unfiltered view: grants add up,
+> so that widens what they can read without narrowing anything.
 
 ## Getting the first credential into a fresh installation
 
@@ -204,8 +210,9 @@ comes to be written from the architecture rather than from the code
 
 Stated here rather than left to be discovered.
 
-- **A scoped grant cannot list the estate.** Restrictive rather than permissive, and the reasoning
-  is under *Scope* above. List results are not filtered per row.
+- **Most listings are not filtered per row.** Instances and adherence are; backups, schedules and
+  jobs are not, and need a tenant-wide grant or an explicit `--instance`. The reasoning is under
+  *Scope* above.
 - **A session outlives the revocation of the token it was minted from**, until it expires.
 - **A restart signs everybody out** unless `AUTH_SESSION_KEY_FILE` is set, because the signing key is
   generated per process by default.

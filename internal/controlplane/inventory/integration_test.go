@@ -33,8 +33,10 @@ import (
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
 	"github.com/danmorcov88/fleetward/internal/config"
+	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 	"github.com/danmorcov88/fleetward/internal/storage/secrets"
+	"sort"
 )
 
 const (
@@ -944,3 +946,93 @@ func (s *stubEngine) ListBackupHistory(context.Context, *fwv1.ListBackupHistoryR
 var errNotInThisSlice = errors.New("not implemented in slice A2")
 
 var _ fwv1.EnginePluginClient = (*stubEngine)(nil)
+
+// TestListInstancesReturnsOnlyWhatTheCallerMaySee is the half of the scope story that a policy flag
+// cannot prove.
+//
+// The guard marks this method as filtering its own rows, which is what lets a caller with a narrow
+// grant call it at all. If the query then returned the whole estate, that flag would be a hole
+// rather than a feature — a scoped viewer would see every server in the company. So the assertion
+// is on the rows, not on the flag.
+func TestListInstancesReturnsOnlyWhatTheCallerMaySee(t *testing.T) {
+	h := newHarness(t)
+	production := h.environment(t, "production")
+	staging := h.environment(t, "staging")
+	mine := h.instance(t, production, "prod-1")
+	h.instance(t, production, "prod-2")
+	stage := h.instance(t, staging, "stage-1")
+
+	names := func(ctx context.Context) []string {
+		t.Helper()
+		got, _, err := h.svc.ListInstances(ctx, ListInstancesFilter{})
+		if err != nil {
+			t.Fatalf("ListInstances: %v", err)
+		}
+		out := make([]string, 0, len(got))
+		for _, i := range got {
+			out = append(out, i.GetName())
+		}
+		sort.Strings(out)
+		return out
+	}
+
+	scoped := func(grants ...authn.Grant) context.Context {
+		return authn.WithPrincipal(context.Background(), authn.Principal{
+			Kind:     authn.KindUser,
+			UserID:   "11111111-1111-1111-1111-111111111111",
+			Actor:    "scoped@example.com",
+			TenantID: metadb.DefaultTenantID,
+			Grants:   grants,
+		})
+	}
+
+	t.Run("a tenant-wide grant sees the estate", func(t *testing.T) {
+		got := names(scoped(authn.Grant{Role: "viewer", Rank: 10}))
+		if len(got) != 3 {
+			t.Fatalf("saw %v, want all three instances", got)
+		}
+	})
+
+	t.Run("an instance grant sees one instance", func(t *testing.T) {
+		got := names(scoped(authn.Grant{Role: "dba", Rank: 30, InstanceID: mine.GetId()}))
+		if len(got) != 1 || got[0] != "prod-1" {
+			t.Fatalf("saw %v, want only prod-1", got)
+		}
+	})
+
+	t.Run("an environment grant sees that environment", func(t *testing.T) {
+		got := names(scoped(authn.Grant{Role: "viewer", Rank: 10, EnvironmentID: production}))
+		if len(got) != 2 || got[0] != "prod-1" || got[1] != "prod-2" {
+			t.Fatalf("saw %v, want production's two instances", got)
+		}
+	})
+
+	t.Run("two scopes see the union, because grants add up", func(t *testing.T) {
+		got := names(scoped(
+			authn.Grant{Role: "viewer", Rank: 10, EnvironmentID: staging},
+			authn.Grant{Role: "dba", Rank: 30, InstanceID: mine.GetId()},
+		))
+		if len(got) != 2 || got[0] != "prod-1" || got[1] != "stage-1" {
+			t.Fatalf("saw %v, want prod-1 and stage-1", got)
+		}
+	})
+
+	t.Run("no grants see nothing", func(t *testing.T) {
+		if got := names(scoped()); len(got) != 0 {
+			t.Fatalf("a caller with no grants saw %v", got)
+		}
+	})
+
+	// And the count that goes with the page has to agree with it. A total_size of three beside one
+	// visible row would tell a scoped caller exactly how many servers they are not allowed to see.
+	t.Run("the total agrees with the rows", func(t *testing.T) {
+		ctx := scoped(authn.Grant{Role: "dba", Rank: 30, InstanceID: stage.GetId()})
+		got, page, err := h.svc.ListInstances(ctx, ListInstancesFilter{})
+		if err != nil {
+			t.Fatalf("ListInstances: %v", err)
+		}
+		if len(got) != 1 || page.TotalSize != 1 {
+			t.Fatalf("rows = %d, total_size = %d; want 1 and 1", len(got), page.TotalSize)
+		}
+	})
+}

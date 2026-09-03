@@ -37,6 +37,7 @@ the decisions with the longest reach and links back to the entries they came fro
 | [B3](B3-observed-backups.md) — reporting on backups Fleetward did not take | 2026-09-02 | [brief](../slices/B3-observed-backups.md) |
 | [B4](B4-estate-overview.md) — fifty servers at a glance, and a contract the client can trust | 2026-09-03 | [brief](../slices/B4-estate-overview.md) |
 | [B5](B5-retention-and-expiry.md) — the first slice that can destroy data | 2026-09-03 | [brief](../slices/B5-retention-and-expiry.md) |
+| [B6](B6-authorization-spine.md) — the slice where a stranger could | 2026-09-03 | [brief](../slices/B6-authorization-spine.md) |
 
 ## Writing an entry
 

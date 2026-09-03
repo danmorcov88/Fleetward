@@ -497,3 +497,97 @@ type refusingBackupService struct {
 func (s *refusingBackupService) RunBackup(context.Context, *fwv1.RunBackupRequest) (*fwv1.RunBackupResponse, error) {
 	return nil, errors.New("the guard let an unauthorized request through to the service")
 }
+
+// -------------------------------------------------------------------------------------------------
+// A listing that filters its own rows
+// -------------------------------------------------------------------------------------------------
+
+// TestAScopedCallerMayListAndSeesOnlyItsOwn is the fix for what the B6 walk found: "a scoped grant
+// cannot enumerate the estate" meant a person granted `dba` on their three servers could not address
+// any of them, because the CLI resolves an instance name by listing and the estate view *is* a
+// listing.
+//
+// The guard's part is asserted here; that the service actually filters its rows is asserted in the
+// inventory suite, because a flag saying "this one filters" is worth nothing if the query does not.
+func TestAScopedCallerMayListAndSeesOnlyItsOwn(t *testing.T) {
+	h := newHarness(t)
+	env := h.environment(t, "production")
+	mine := h.instance(t, env, "prod-1")
+	h.instance(t, env, "prod-2")
+
+	userID := h.user(t, "scoped@example.com")
+	h.grant(t, userID, RoleDBA, "", mine)
+	p := h.principal(t, userID, "scoped@example.com")
+
+	for _, method := range []string{
+		"/fleetward.v1.InventoryService/ListInstances",
+		"/fleetward.v1.BackupService/GetBackupAdherence",
+	} {
+		if !Policies[method].ScopeFiltered {
+			t.Fatalf("%s is expected to filter its own rows and is not marked ScopeFiltered", method)
+		}
+	}
+
+	if _, err := h.guard.Check(h.ctx(p), "/fleetward.v1.InventoryService/ListInstances",
+		&fwv1.ListInstancesRequest{}); err != nil {
+		t.Fatalf("a scoped caller was refused a listing it is allowed to see part of: %v", err)
+	}
+	if _, err := h.guard.Check(h.ctx(p), "/fleetward.v1.BackupService/GetBackupAdherence",
+		&fwv1.GetBackupAdherenceRequest{}); err != nil {
+		t.Fatalf("a scoped caller was refused the estate view: %v", err)
+	}
+
+	// A listing that does *not* filter still needs the estate, because answering it in full would
+	// hand a scoped caller rows they may not see.
+	if _, err := h.guard.Check(h.ctx(p), "/fleetward.v1.BackupService/ListBackups",
+		&fwv1.ListBackupsRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("an unfiltered listing answered a scoped caller: %v", err)
+	}
+}
+
+// TestVisibilityIsWhatTheGrantsCover pins the filter itself, which is what the queries apply.
+func TestVisibilityIsWhatTheGrantsCover(t *testing.T) {
+	h := newHarness(t)
+	env := h.environment(t, "production")
+	mine := h.instance(t, env, "prod-1")
+
+	t.Run("a tenant-wide grant sees everything", func(t *testing.T) {
+		id := h.user(t, "wide@example.com")
+		h.grant(t, id, RoleViewer, "", "")
+		v := authn.VisibilityFor(h.ctx(h.principal(t, id, "wide@example.com")), 0)
+		if !v.All {
+			t.Fatal("a tenant-wide grant did not produce Visibility.All")
+		}
+	})
+
+	t.Run("a scoped grant sees its scopes", func(t *testing.T) {
+		id := h.user(t, "narrow@example.com")
+		h.grant(t, id, RoleDBA, "", mine)
+		h.grant(t, id, RoleViewer, env, "")
+		v := authn.VisibilityFor(h.ctx(h.principal(t, id, "narrow@example.com")), 0)
+		switch {
+		case v.All:
+			t.Fatal("a scoped grant produced Visibility.All; it would see the whole estate")
+		case len(v.InstanceIDs) != 1 || v.InstanceIDs[0] != mine:
+			t.Fatalf("instances = %v, want just the granted one", v.InstanceIDs)
+		case len(v.EnvironmentIDs) != 1 || v.EnvironmentIDs[0] != env:
+			t.Fatalf("environments = %v, want just the granted one", v.EnvironmentIDs)
+		}
+	})
+
+	t.Run("no grants at all sees nothing", func(t *testing.T) {
+		id := h.user(t, "nothing@example.com")
+		v := authn.VisibilityFor(h.ctx(h.principal(t, id, "nothing@example.com")), 0)
+		if !v.Empty() {
+			t.Fatal("a caller with no grants can see something")
+		}
+	})
+
+	t.Run("a system caller sees everything", func(t *testing.T) {
+		ctx := authn.WithPrincipal(context.Background(),
+			authn.System("scheduler", metadb.DefaultTenantID))
+		if !authn.VisibilityFor(ctx, 0).All {
+			t.Fatal("the scheduler cannot see the estate it schedules")
+		}
+	})
+}

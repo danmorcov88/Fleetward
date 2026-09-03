@@ -30,6 +30,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
+	"github.com/danmorcov88/fleetward/internal/controlplane/audit"
 	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
 	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
 	"github.com/danmorcov88/fleetward/internal/controlplane/sandbox"
@@ -105,6 +106,14 @@ type Resolver interface {
 	ResolveConnection(ctx context.Context, instanceID string) (*inventory.Connection, error)
 }
 
+// Recorder is the slice of the audit writer this service needs.
+//
+// An interface rather than *audit.Writer so the tests can assert what automatic work records, and
+// so this package does not take a construction dependency on the audit package.
+type Recorder interface {
+	Record(ctx context.Context, entry audit.Entry)
+}
+
 // Service runs backups and answers questions about them.
 type Service struct {
 	pool     *pgxpool.Pool
@@ -121,6 +130,11 @@ type Service struct {
 	// than none, since it would be believed.
 	retention RetentionPolicy
 	log       *slog.Logger
+	// audit records what Fleetward does on its own. The API layer's guard already records every
+	// request; this is for the two thirds of the product's mutating work that arrives through no
+	// request at all — a scheduled backup, and a retention sweep deleting an artifact. §7.5 says
+	// *every* mutating action lands in the audit log, and without this the majority would not.
+	audit Recorder
 
 	// runCtx outlives the request that started a backup: an HTTP request cannot stay open for the
 	// hours a real backup takes, so RunBackup returns as soon as the rows exist and the work
@@ -136,7 +150,7 @@ type Service struct {
 // There is no tenant here any more. It used to be a field holding metadb.DefaultTenantID; since B6
 // it comes from the principal on each call's context, so a query can no longer read a tenant that
 // nobody asked about (ADR-0008).
-func New(pool *pgxpool.Pool, store objstore.ObjectStore, plugins Router, resolver Resolver, sandboxes sandbox.Provider, retention RetentionPolicy, log *slog.Logger) *Service {
+func New(pool *pgxpool.Pool, store objstore.ObjectStore, plugins Router, resolver Resolver, sandboxes sandbox.Provider, retention RetentionPolicy, recorder Recorder, log *slog.Logger) *Service {
 	runCtx, cancel := context.WithCancel(context.Background())
 	return &Service{
 		pool:      pool,
@@ -145,10 +159,26 @@ func New(pool *pgxpool.Pool, store objstore.ObjectStore, plugins Router, resolve
 		resolver:  resolver,
 		sandboxes: sandboxes,
 		retention: retention,
+		audit:     recorder,
 		log:       log.With(slog.String("component", "backup")),
 		runCtx:    runCtx,
 		cancelRun: cancel,
 	}
+}
+
+// auditAutomatic records an action only when nobody asked for it.
+//
+// The guard in front of the API records every request, so recording here as well would put two rows
+// in an append-only table for one action. What this catches is the other path: the scheduler and the
+// retention sweep, which reach these services directly and would otherwise leave no trace at all.
+func (s *Service) auditAutomatic(ctx context.Context, entry audit.Entry) {
+	if s.audit == nil {
+		return
+	}
+	if p, ok := authn.From(ctx); !ok || p.Kind != authn.KindSystem {
+		return
+	}
+	s.audit.Record(ctx, entry)
 }
 
 // background derives the context a run continues on after its request has returned.
@@ -730,6 +760,26 @@ func (s *Service) createRows(ctx context.Context, instanceID, methodID string, i
 	if err := tx.Commit(ctx); err != nil {
 		return "", "", fmt.Errorf("backup: commit: %w", err)
 	}
+
+	// Recorded here rather than in either caller, because both of them arrive at this one function
+	// and only one of them is a request. RunBackup serves the API, whose guard has already written
+	// a row naming the person; RunBackupSync serves the scheduler, which asks nobody and would
+	// otherwise leave the majority of this product's mutating work unrecorded — which §7.5 forbids
+	// in as many words. auditAutomatic is what tells the two apart (ADR-0036).
+	s.auditAutomatic(ctx, audit.Entry{
+		Action:       "backup.run",
+		ResourceType: "instance",
+		ResourceID:   instanceID,
+		Succeeded:    true,
+		Details: map[string]string{
+			"created":       backupID,
+			"job":           jobID,
+			"method":        methodID,
+			"schedule":      in.ScheduleID,
+			"authorized_by": "the scheduler, which is not a person",
+		},
+	})
+
 	return jobID, backupID, nil
 }
 

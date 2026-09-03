@@ -150,11 +150,30 @@ func newTokenCreateCommand(serverURL *string, timeout *time.Duration, token *str
 	return cmd
 }
 
+// strongest returns the grant with the highest rank, which is the one that decides what a
+// credential can actually do.
+//
+// Not the last one in the list, which is what this used to be and which the B6 walk caught: a
+// person holding `dba` on an environment and `viewer` on one instance inside it was listed as a
+// viewer. Grants add up and the highest wins (ADR-0034), so any other choice understates a
+// credential's reach — and understating access is the direction that gets somebody hurt.
+func strongest(grants []grantView) (grantView, bool) {
+	best := -1
+	var out grantView
+	for _, g := range grants {
+		if g.Rank > best {
+			best, out = g.Rank, g
+		}
+	}
+	return out, best >= 0
+}
+
 func scopeOf(grants []grantView) string {
-	if len(grants) == 0 {
+	g, ok := strongest(grants)
+	if !ok {
 		return "no scope"
 	}
-	return grants[len(grants)-1].scope()
+	return g.scope()
 }
 
 func newTokenListCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
@@ -189,9 +208,14 @@ func newTokenListCommand(serverURL *string, timeout *time.Duration, token *strin
 			fmt.Fprintln(w, "ID\tWHO\tROLE\tSCOPE\tLAST USED\tSTATE")
 			for _, t := range resp.Tokens {
 				role, scope := "—", "—"
-				if len(t.Grants) > 0 {
-					role = t.Grants[len(t.Grants)-1].Role
-					scope = t.Grants[len(t.Grants)-1].scope()
+				if g, ok := strongest(t.Grants); ok {
+					role, scope = g.Role, g.scope()
+					// The strongest grant is what the credential can actually do; the count says
+					// this row is a summary rather than the whole picture, and `whoami` prints the
+					// whole picture.
+					if n := len(t.Grants) - 1; n > 0 {
+						scope = fmt.Sprintf("%s (+%d more)", scope, n)
+					}
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 					short(t.ID), t.Email, role, scope, orNever(t.LastUsedAt), tokenState(t))

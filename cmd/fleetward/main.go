@@ -290,7 +290,7 @@ func run() error {
 		Interval:    cfg.Retention.Interval,
 		MinKeep:     cfg.Retention.MinKeep,
 		MaxPerSweep: cfg.Retention.MaxPerSweep,
-	}, log)
+	}, auditor, log)
 	defer func() { _ = backupSvc.Close() }()
 
 	if err := fwv1.RegisterBackupServiceHandlerServer(ctx, gateway,
@@ -335,13 +335,15 @@ func run() error {
 
 // buildAuthenticator assembles the chain that decides who is calling.
 //
-// The order is fixed and is about cost rather than precedence: a browser presents a cookie, a script
-// presents a bearer token, and the operator presents the break-glass credential. Nothing presents
-// two.
+// The order is fixed: session cookie, then the configured break-glass credential, then the token
+// store. A browser presents a cookie and a script presents a bearer value, so nothing presents two
+// — but the *bearer* links have to be ordered against each other, and only one order works.
 //
-// The bootstrap link is last for a reason worth stating: it is only reached by a bearer credential
-// the token store has already declined, so a real token that has been revoked cannot be silently
-// upgraded to tenant-wide admin by the configured one having the same shape.
+// The bootstrap link compares the whole presented string against the one configured, in constant
+// time, and reports "not mine" on anything else. The token store cannot do that: a bearer value it
+// has never seen is an invalid credential rather than somebody else's, and a chain that kept going
+// after an invalid credential would let a revoked token fall through to whatever comes next. So the
+// store is terminal, and anything that has to see a bearer value goes in front of it.
 func buildAuthenticator(cfg config.AuthConfig, sessions *authn.Sessions, tokens *authn.TokenStore, log *slog.Logger) (authn.Authenticator, error) {
 	if !cfg.Enabled {
 		// The escape hatch, shipped with its limits, which is what ADR-0024 asks of every slice.
@@ -353,7 +355,7 @@ func buildAuthenticator(cfg config.AuthConfig, sessions *authn.Sessions, tokens 
 		return authn.NewDisabledAuthenticator(metadb.DefaultTenantID), nil
 	}
 
-	chain := authn.Chain{sessions, authn.NewBearerAuthenticator(tokens)}
+	chain := authn.Chain{sessions}
 
 	bootstrapToken, err := authn.LoadBootstrapToken(cfg.BootstrapToken, cfg.BootstrapTokenFile)
 	if err != nil {
@@ -370,6 +372,14 @@ func buildAuthenticator(cfg config.AuthConfig, sessions *authn.Sessions, tokens 
 		log.Info("no bootstrap credential is configured",
 			slog.String("consequence", "only tokens already in the database can authenticate"))
 	}
+
+	// The token store goes last, and the ordering is not a preference. It is the only link that
+	// answers "this is a credential and it is wrong" rather than "this is not mine" — a bearer
+	// value it has never seen is invalid, full stop — so anything after it is unreachable. The
+	// walk found that the hard way: with the store ahead of the bootstrap link, the break-glass
+	// credential never worked at all, because it is by definition a bearer value the database has
+	// never seen.
+	chain = append(chain, authn.NewBearerAuthenticator(tokens))
 	return chain, nil
 }
 
