@@ -162,6 +162,178 @@ service BackupService {
   }
 }
 
+// IdentityService covers who is calling, the tokens that let them call, and the record of what
+// everyone did.
+//
+// Session establishment is deliberately absent: `POST /api/v1/sessions` exchanges a token for an
+// HttpOnly cookie and `DELETE /api/v1/sessions` clears it, both hand-written HTTP handlers on the
+// control plane's own mux. A cookie is a transport concern that this contract cannot express, and
+// the same reasoning already keeps `/readyz` outside it (ADR-0029).
+service IdentityService {
+  // GetMe reports the calling principal and the roles it holds. It is the one authenticated RPC
+  // that never fails on authorization: any principal may ask who it is.
+  rpc GetMe(GetMeRequest) returns (GetMeResponse) {
+    option (google.api.http) = {get: "/api/v1/me"};
+  }
+  // CreateToken mints an API token for a principal, creating the user and the role grant if they
+  // do not exist yet. The secret is returned once and never again: only its hash is stored.
+  rpc CreateToken(CreateTokenRequest) returns (CreateTokenResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/tokens"
+      body: "*"
+    };
+  }
+  rpc ListTokens(ListTokensRequest) returns (ListTokensResponse) {
+    option (google.api.http) = {get: "/api/v1/tokens"};
+  }
+  // RevokeToken stops a token working. The row is kept so the audit log's references resolve.
+  rpc RevokeToken(RevokeTokenRequest) returns (RevokeTokenResponse) {
+    option (google.api.http) = {delete: "/api/v1/tokens/{token_id}"};
+  }
+  // ListAuditLog reads the append-only record of who did what. It is the operational surface of
+  // the audit log, which is otherwise only visible by querying the database directly.
+  rpc ListAuditLog(ListAuditLogRequest) returns (ListAuditLogResponse) {
+    option (google.api.http) = {get: "/api/v1/audit"};
+  }
+}
+
+// -----------------------------------------------------------------------------------------------
+// Identity
+// -----------------------------------------------------------------------------------------------
+
+// CallerKind separates a person from the control plane's own automatic work. A system caller has
+// no credential and no user row, so nothing can ever present one at the HTTP surface (ADR-0036).
+//
+// Named Caller rather than Principal because `Principal` in this package is already taken by
+// access compliance — the accounts on a *monitored* database (ADR-0017). Same English word, an
+// unrelated feature, and one namespace.
+enum CallerKind {
+  CALLER_KIND_UNSPECIFIED = 0;
+  // A human or a script authenticated by an API token or a session.
+  CALLER_KIND_USER = 1;
+  // The scheduler, the retention sweep, or the job reaper acting on nobody's behalf.
+  CALLER_KIND_SYSTEM = 2;
+  // The break-glass credential supplied as configuration, which is never a database row.
+  CALLER_KIND_BOOTSTRAP = 3;
+}
+
+// Caller is who is making this request.
+message Caller {
+  CallerKind kind = 1;
+  // Empty for system and bootstrap callers, which have no row in `users`.
+  string user_id = 2;
+  // The name that appears in audit_log.actor. Stable, and never a credential.
+  string actor = 3;
+  string display_name = 4;
+  string email = 5;
+  string tenant_id = 6;
+}
+
+// RoleGrant binds a caller to a role within a scope. Exactly one of environment_id and instance_id
+// is set, or neither, which means the grant covers the whole tenant.
+message RoleGrant {
+  string role = 1;
+  int32 rank = 2;
+  string environment_id = 3;
+  string instance_id = 4;
+}
+
+message GetMeRequest {}
+
+message GetMeResponse {
+  Caller caller = 1;
+  repeated RoleGrant grants = 2;
+  // The highest role this caller holds anywhere, which is what a UI renders beside a name. It is
+  // not permission to do anything in particular: scope decides that, per request.
+  string highest_role = 3;
+}
+
+// ApiToken is a credential's record. The secret itself appears exactly once, in
+// CreateTokenResponse, and is stored only as a hash.
+message ApiToken {
+  string id = 1;
+  string user_id = 2;
+  string description = 3;
+  string created_by = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp expires_at = 6;
+  google.protobuf.Timestamp last_used_at = 7;
+  google.protobuf.Timestamp revoked_at = 8;
+  // The user's grants, so `token list` can answer "what may this credential do".
+  repeated RoleGrant grants = 9;
+  string display_name = 10;
+  string email = 11;
+}
+
+message CreateTokenRequest {
+  // Identifies the user this token belongs to. Created on first use, so issuing a token to a new
+  // colleague is one command rather than two.
+  string email = 1;
+  string display_name = 2;
+  // One of the seeded roles: viewer, operator, dba, admin.
+  string role = 3;
+  // The scope of the granted role. At most one may be set; neither means the whole tenant.
+  string environment_id = 4;
+  string instance_id = 5;
+  string description = 6;
+  // Optional lifetime. Zero means the token does not expire on its own.
+  google.protobuf.Duration ttl = 7;
+}
+
+message CreateTokenResponse {
+  ApiToken token = 1;
+  // The only time the secret is ever returned. Storing it is the caller's problem from here.
+  string secret = 2;
+}
+
+message ListTokensRequest {
+  // Include tokens that have been revoked or have expired.
+  bool include_inactive = 1;
+}
+
+message ListTokensResponse {
+  repeated ApiToken tokens = 1;
+}
+
+message RevokeTokenRequest {
+  string token_id = 1;
+}
+
+message RevokeTokenResponse {}
+
+// AuditEntry is one row of the append-only record. `actor` is text beside `user_id` so the record
+// survives the user being deleted.
+message AuditEntry {
+  int64 id = 1;
+  string actor = 2;
+  string user_id = 3;
+  string action = 4;
+  string resource_type = 5;
+  string resource_id = 6;
+  // Never contains a credential. Assembled from an allow-list per action, never from the request.
+  map<string, string> details = 7;
+  string source_ip = 8;
+  string request_id = 9;
+  bool succeeded = 10;
+  google.protobuf.Timestamp occurred_at = 11;
+}
+
+message ListAuditLogRequest {
+  string actor = 1;
+  string action = 2;
+  string resource_type = 3;
+  string resource_id = 4;
+  // Return only refusals, which is the query an investigation starts with.
+  bool failures_only = 5;
+  int32 page_size = 6;
+  string page_token = 7;
+}
+
+message ListAuditLogResponse {
+  repeated AuditEntry entries = 1;
+  string next_page_token = 2;
+}
+
 // -----------------------------------------------------------------------------------------------
 // System
 // -----------------------------------------------------------------------------------------------
