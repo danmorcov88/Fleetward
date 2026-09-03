@@ -431,9 +431,9 @@ func (c *client) authError(statusCode int, raw []byte) error {
 
 	switch {
 	case statusCode == http.StatusForbidden:
-		return fmt.Errorf("%w\n\n\nThe credential is valid; the role it holds in this scope is not "+
+		return fmt.Errorf("%w\n\nThe credential is valid; the role it holds in this scope is not "+
 			"enough for this action.\nAsk an administrator to widen the grant, or to run this "+
-			"themselves.", base)
+			"themselves", base)
 	case c.token == "":
 		return fmt.Errorf("%w\n\nNo credential was sent. Set one of:\n"+
 			"  FLEETWARD_TOKEN_FILE=/path/to/token   preferred: anything that can read the\n"+
@@ -444,7 +444,7 @@ func (c *client) authError(statusCode int, raw []byte) error {
 			"  fleetward token create --email you@example.com --role dba", base)
 	default:
 		return fmt.Errorf("%w\n\nThe credential that was sent is not valid: unknown, revoked, or "+
-			"expired.\nAsk an administrator for a new one.", base)
+			"expired.\nAsk an administrator for a new one", base)
 	}
 }
 

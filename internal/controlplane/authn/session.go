@@ -85,7 +85,13 @@ func (s *Sessions) Issue(p Principal) (*http.Cookie, error) {
 	}
 
 	encoded := base64.RawURLEncoding.EncodeToString(payload)
-	return &http.Cookie{
+	// gosec G124 flags Secure being a variable rather than a literal true, and it is right to look.
+	// It is operator configuration, not a default: the cookie is Secure exactly when the control
+	// plane is serving TLS. Hardcoding true would make the development stack — plain HTTP, by its
+	// own declaration — silently fail to keep anybody signed in, which is a worse outcome than an
+	// operator who has already chosen to serve without TLS also getting a cookie without Secure.
+	// HttpOnly and SameSite=Strict are unconditional, and they are the two doing the work here.
+	return &http.Cookie{ //nolint:gosec // G124: Secure follows the server's own TLS setting
 		Name:  SessionCookieName,
 		Value: encoded + "." + s.sign(encoded),
 		Path:  "/",
@@ -104,7 +110,7 @@ func (s *Sessions) Issue(p Principal) (*http.Cookie, error) {
 
 // Clear builds the cookie that ends a session.
 func (s *Sessions) Clear() *http.Cookie {
-	return &http.Cookie{
+	return &http.Cookie{ //nolint:gosec // G124: as in Issue — Secure follows the server's TLS setting
 		Name:     SessionCookieName,
 		Value:    "",
 		Path:     "/",

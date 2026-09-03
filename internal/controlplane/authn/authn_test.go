@@ -34,7 +34,7 @@ func (s *stubAuthenticator) Authenticate(context.Context, *http.Request) (Princi
 
 func request(t *testing.T, header string) *http.Request {
 	t.Helper()
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/instances", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/instances", nil)
 	if header != "" {
 		r.Header.Set("Authorization", header)
 	}
@@ -156,7 +156,8 @@ func TestBearerIsReadFromTheHeaderAndNowhereElse(t *testing.T) {
 
 	// A token in a query string would be recorded by the access log, which prints the path of every
 	// request. Nothing reads one from there, and this asserts it.
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/instances?token=fwt_a_b", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+		"/api/v1/instances?token=fwt_a_b", nil)
 	if _, ok := BearerFrom(r); ok {
 		t.Fatal("a credential was read from the query string; the access log prints that path")
 	}
