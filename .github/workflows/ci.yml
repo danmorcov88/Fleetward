@@ -327,6 +327,26 @@ jobs:
       - name: Check the web UI is served
         run: curl -fsS -o /dev/null http://localhost:3000
 
+      # The two assertions this slice exists for, made against the real stack rather than a mock.
+      # The dev stack runs with authorization ON precisely so that these can run at all: a
+      # quickstart with it off would mean the enforcement was never exercised by anything, which is
+      # how a security claim comes to be written from the architecture instead of from the code.
+      - name: An unauthenticated request is refused
+        run: |
+          set -euo pipefail
+          status=$(curl -s -o /tmp/body.json -w '%{http_code}' http://localhost:8080/api/v1/instances)
+          cat /tmp/body.json
+          if [ "$status" != "401" ]; then
+            echo "::error::GET /api/v1/instances returned $status without a credential, expected 401"
+            exit 1
+          fi
+
+      - name: An authenticated request is served
+        run: |
+          set -euo pipefail
+          curl -fsS -H "Authorization: Bearer fwt_devbootstrap_0000000000000000"             http://localhost:8080/api/v1/instances | jq .
+          curl -fsS -H "Authorization: Bearer fwt_devbootstrap_0000000000000000"             http://localhost:8080/api/v1/me | jq -e '.highest_role == "admin"'
+
       - name: Dump logs on failure
         if: failure()
         run: docker compose logs --no-color

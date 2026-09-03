@@ -445,7 +445,8 @@ fleetward/
 │   └── plugins/*/            # thin plugin mains
 ├── internal/
 │   ├── config/               # env-driven configuration, shared by server and CLI
-│   ├── controlplane/         # api · inventory · backup · sandbox · scheduler
+│   ├── controlplane/         # api · authn · authz · audit · identity · inventory
+│   │                         # backup · sandbox · scheduler
 │   ├── plugin/{manager,sdk}/ # process supervision · the plugin author's harness
 │   ├── storage/              # metadb · tsdb · objstore · secrets
 │   └── telemetry/            # slog + OpenTelemetry

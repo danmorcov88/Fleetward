@@ -135,7 +135,14 @@ func (g *Guard) Check(ctx context.Context, method string, req proto.Message) (De
 
 	// 1. A tenant-wide grant covers everything, so it is checked first and it is the only path that
 	//    performs no query at all. That is the estate view's path, sixty times a minute.
-	if best := bestRank(p.Grants, func(gr authn.Grant) bool { return gr.TenantWide() }); best >= required {
+	//
+	//    The rank is kept rather than discarded when it is not enough, and that detail is not
+	//    cosmetic: a tenant-wide `viewer` refused a backup holds the viewer role *here*, and an
+	//    audit record saying they held none would be describing a person who does not exist. It is
+	//    also what the additive rule means — every grant that covers the request counts, and the
+	//    highest of them wins (ADR-0034).
+	best := bestRank(p.Grants, func(gr authn.Grant) bool { return gr.TenantWide() })
+	if best >= required {
 		d.Allowed = true
 		d.EffectiveRole = roleAtLeast(p.Grants, best)
 		return d, nil
@@ -158,11 +165,14 @@ func (g *Guard) Check(ctx context.Context, method string, req proto.Message) (De
 		return d, status.Error(codes.PermissionDenied, permissionDeniedMessage(rule))
 	}
 
-	// 2. A grant on exactly this instance or exactly this environment.
-	best := bestRank(p.Grants, func(gr authn.Grant) bool {
+	// 2. A grant on exactly this instance or exactly this environment, if it beats what the caller
+	//    already holds tenant-wide.
+	if r := bestRank(p.Grants, func(gr authn.Grant) bool {
 		return (scope.InstanceID != "" && gr.InstanceID == scope.InstanceID) ||
 			(scope.EnvironmentID != "" && gr.EnvironmentID == scope.EnvironmentID)
-	})
+	}); r > best {
+		best = r
+	}
 
 	// 3. An environment grant covering the instance this request names. Resolved only when the
 	//    caller actually holds an environment-scoped grant, so the common cases pay for no query.

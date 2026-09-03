@@ -18,7 +18,7 @@ import (
 const pollInterval = 2 * time.Second
 
 // newBackupCommand builds the `backup` group.
-func newBackupCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newBackupCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "backup",
 		Short: "Take and inspect backups",
@@ -31,18 +31,18 @@ func newBackupCommand(serverURL *string, timeout *time.Duration) *cobra.Command 
 			"would delete of its own, before it deletes any of it.",
 	}
 	cmd.AddCommand(
-		newBackupRunCommand(serverURL, timeout),
-		newBackupShowCommand(serverURL, timeout),
-		newBackupVerifyCommand(serverURL, timeout),
-		newBackupHistoryCommand(serverURL, timeout),
-		newBackupObserveCommand(serverURL, timeout),
-		newBackupAdherenceCommand(serverURL, timeout),
-		newBackupRetentionCommand(serverURL, timeout),
+		newBackupRunCommand(serverURL, timeout, token),
+		newBackupShowCommand(serverURL, timeout, token),
+		newBackupVerifyCommand(serverURL, timeout, token),
+		newBackupHistoryCommand(serverURL, timeout, token),
+		newBackupObserveCommand(serverURL, timeout, token),
+		newBackupAdherenceCommand(serverURL, timeout, token),
+		newBackupRetentionCommand(serverURL, timeout, token),
 	)
 	return cmd
 }
 
-func newBackupRunCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newBackupRunCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var (
 		instanceName string
 		methodID     string
@@ -65,7 +65,7 @@ func newBackupRunCommand(serverURL *string, timeout *time.Duration) *cobra.Comma
 				return err
 			}
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 
 			startCtx, cancelStart := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancelStart()
@@ -145,7 +145,7 @@ func newBackupRunCommand(serverURL *string, timeout *time.Duration) *cobra.Comma
 	return cmd
 }
 
-func newBackupShowCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newBackupShowCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var showManifest bool
 
 	cmd := &cobra.Command{
@@ -156,7 +156,7 @@ func newBackupShowCommand(serverURL *string, timeout *time.Duration) *cobra.Comm
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			var resp backupResponse
 			if err := c.get(ctx, "/api/v1/backups/"+args[0], nil, &resp); err != nil {
 				return err

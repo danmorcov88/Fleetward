@@ -4,7 +4,8 @@
 // never directly to the metadata store: a CLI holding the metadata database's password would put it
 // on every operator's laptop and duplicate authorization in a second place.
 //
-// Today that is `health`, `environment`, `instance`, `backup`, `schedule`, and `job`.
+// Today that is `health`, `environment`, `instance`, `backup`, `schedule`, `job`, `token`, and
+// `audit`.
 package main
 
 import (
@@ -32,6 +33,11 @@ func newRootCommand() *cobra.Command {
 	var (
 		serverURL string
 		timeout   time.Duration
+		// token is resolved once, in PersistentPreRunE, so that a bad --token-file is one clear
+		// error at startup rather than the same error repeated by whichever command ran.
+		token       string
+		tokenInline string
+		tokenFile   string
 	)
 
 	root := &cobra.Command{
@@ -53,15 +59,34 @@ func newRootCommand() *cobra.Command {
 	root.PersistentFlags().DurationVar(&timeout, "timeout", 30*time.Second,
 		"how long to wait for the control plane to respond")
 
+	// Two forms, and the file one is preferred for the reason `keygen` already gives about the
+	// secrets master key: anything that can read the process environment can read a variable, and
+	// on a shared machine that is a longer list of things than it looks.
+	root.PersistentFlags().StringVar(&tokenInline, "token", envOr("FLEETWARD_TOKEN", ""),
+		"API token (prefer --token-file, or FLEETWARD_TOKEN_FILE)")
+	root.PersistentFlags().StringVar(&tokenFile, "token-file", envOr("FLEETWARD_TOKEN_FILE", ""),
+		"file holding an API token")
+
+	root.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
+		resolved, err := resolveToken(tokenInline, tokenFile)
+		if err != nil {
+			return err
+		}
+		token = resolved
+		return nil
+	}
+
 	root.AddCommand(
 		newVersionCommand(),
-		newHealthCommand(&serverURL, &timeout),
+		newHealthCommand(&serverURL, &timeout, &token),
 		newKeygenCommand(),
-		newEnvironmentCommand(&serverURL, &timeout),
-		newInstanceCommand(&serverURL, &timeout),
-		newBackupCommand(&serverURL, &timeout),
-		newScheduleCommand(&serverURL, &timeout),
-		newJobCommand(&serverURL, &timeout),
+		newEnvironmentCommand(&serverURL, &timeout, &token),
+		newInstanceCommand(&serverURL, &timeout, &token),
+		newBackupCommand(&serverURL, &timeout, &token),
+		newScheduleCommand(&serverURL, &timeout, &token),
+		newJobCommand(&serverURL, &timeout, &token),
+		newTokenCommand(&serverURL, &timeout, &token),
+		newAuditCommand(&serverURL, &timeout, &token),
 	)
 
 	return root
@@ -88,7 +113,7 @@ func newVersionCommand() *cobra.Command {
 	return cmd
 }
 
-func newHealthCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newHealthCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "health",
 		Short: "Check control plane readiness",

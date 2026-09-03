@@ -21,7 +21,7 @@ const verifyPollInterval = 3 * time.Second
 // It is a subcommand of `backup` rather than a group of its own, because a verification is not a
 // thing an operator has independently of the backup it proves. The question being asked is always
 // "is this backup any good".
-func newBackupVerifyCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newBackupVerifyCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var (
 		backupID    string
 		checks      []string
@@ -43,7 +43,7 @@ func newBackupVerifyCommand(serverURL *string, timeout *time.Duration) *cobra.Co
 			startCtx, cancelStart := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancelStart()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 
 			body := map[string]any{}
 			if len(checks) > 0 {

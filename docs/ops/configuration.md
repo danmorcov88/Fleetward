@@ -145,14 +145,19 @@ Parsed and validated, and read by nothing. **There is no authentication yet, and
 
 | Variable                        | Default                                      |                           | Notes |
 | ------------------------------- | -------------------------------------------- | ------------------------- | --- |
+| `AUTH_BOOTSTRAP_TOKEN`          | *(empty)*                                    |                           | BootstrapToken is the break-glass credential that gets the first real token out of a fresh installation. It is configuration and never a database row, so removing the setting removes the access and leaves nothing behind to find later (ADR-0033). The file form is preferred for the reason `fleetward-cli keygen` already gives about the master key. |
+| `AUTH_BOOTSTRAP_TOKEN_FILE`     | *(empty)*                                    |                           |  |
 | `AUTH_CLIENT_ID`                | `fleetward`                                  |                           |  |
 | `AUTH_CLIENT_SECRET`            | *(empty)*                                    |                           |  |
 | `AUTH_ENABLED`                  | `false`                                      | constrained in production | Enabled may be false only in development. The server refuses to start in production with authentication disabled. |
 | `AUTH_GROUPS_CLAIM`             | `groups`                                     |                           |  |
 | `AUTH_ISSUER_URL`               | *(empty)*                                    | **required**              |  |
+| `AUTH_PRINCIPAL_CACHE_TTL`      | `15s`                                        | validated                 | PrincipalCacheTTL bounds how long a verified credential is reused without going back to the database, and therefore how long a revoked one keeps working on a replica that did not perform the revocation. Deliberately short rather than convenient: the alternative is a join across three tables on every request of a dashboard that refetches every thirty seconds. |
 | `AUTH_REDIRECT_URL`             | `http://localhost:8080/api/v1/auth/callback` |                           |  |
 | `AUTH_SCOPES`                   | `openid,profile,email,groups`                |                           |  |
-| `AUTH_SESSION_TTL`              | `12h`                                        |                           |  |
+| `AUTH_SESSION_KEY`              | *(empty)*                                    |                           | SessionKey signs the session cookie. When neither form is set the control plane generates one at startup, which means a restart signs everybody out — the right default for a single node, and the reason a multi-replica installation configures it. |
+| `AUTH_SESSION_KEY_FILE`         | *(empty)*                                    |                           |  |
+| `AUTH_SESSION_TTL`              | `12h`                                        |                           | SessionTTL bounds the cookie the UI holds after exchanging a token for one. |
 | `AUTH_SKIP_ISSUER_VERIFICATION` | `false`                                      | constrained in production | SkipIssuerVerification tolerates a development IdP whose external and internal issuer URLs differ, as Dex does in docker-compose. |
 | `AUTH_USERNAME_CLAIM`           | `email`                                      |                           | UsernameClaim and GroupsClaim map ID token claims onto Fleetward principals. |
 

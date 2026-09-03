@@ -162,7 +162,7 @@ fleetward/
 
   internal/
     config/                          # shared by the server and the CLI
-    controlplane/{api,inventory,backup,sandbox,scheduler}/
+    controlplane/{api,authn,authz,audit,identity,inventory,backup,sandbox,scheduler}/
     plugin/{manager,sdk}/            # sdk = harness plugin authors implement against
     storage/{metadb,tsdb,objstore,secrets}/
       metadb/migrations/             # golang-migrate SQL, go:embed-ed into the binary

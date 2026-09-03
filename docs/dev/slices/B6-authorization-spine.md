@@ -365,14 +365,14 @@ what kind of credential this is remains the honest version of it.
 | `internal/controlplane/authz/policy.go` | The RPC → (minimum role, scope source) table |
 | `internal/controlplane/authz/guard.go` | Grant resolution, maximum-rank rule, `Check` |
 | `internal/controlplane/authz/scope.go` | Scope extraction from a request message by reflection |
-| `internal/controlplane/authz/decorator_*.go` | One decorator per served service |
+| `internal/controlplane/authz/decorators.go` | One decorator per served service |
 | `internal/controlplane/authz/coverage_test.go` | The ADR-0024 §4 reflection test |
 | `internal/controlplane/audit/audit.go` | The append-only writer and its allow-listed `details` |
 | `internal/controlplane/identity/` | Users, grants, tokens: create, list, revoke; `me` |
 | `cmd/fleetward-cli/token.go`, `audit.go` | `token generate/create/list/revoke`, `audit list` |
-| `web/src/routes/sign-in.tsx` (or equivalent) | Token exchange screen and the identity header |
+| `web/src/auth/` | Token exchange screen, the gate in front of the app, the session context |
 | `docs/ops/authorization.md` | Roles, scopes, tokens, bootstrap, what is audited |
-| `docs/adr/0033-…` … `0036-…` | See "Done when" |
+| Four decision records | See "Done when" |
 
 ### Modified
 
@@ -532,8 +532,7 @@ one, all four in seams every other check passed. This one must show:
     it — and the browser's `document.cookie` **not** containing the session.
 11. `docker compose logs fleetward` searched for the token, finding nothing.
 
-Close-out, per the protocol: `STATUS.md` rewritten, a journal entry at
-`docs/dev/journal/B6-authorization-spine.md`, `README.md` and `.github/SECURITY.md` corrected, and
+Close-out, per the protocol: `STATUS.md` rewritten, a journal entry under `docs/dev/journal/`, `README.md` and `.github/SECURITY.md` corrected, and
 ADRs for the four things a future session could reasonably undo — **the bootstrap credential is
 configuration and never a row**, **grants are additive and the maximum rank wins**, **enforcement is
 a policy table and a decorator that fails to compile when the contract grows**, and **the scheduler

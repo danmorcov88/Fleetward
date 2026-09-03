@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -21,12 +22,18 @@ import (
 type client struct {
 	baseURL string
 	http    *http.Client
+	// token is presented as `Authorization: Bearer`. It is carried here and nowhere else — never
+	// appended to a URL, never put in a body — because the control plane's access log records the
+	// method and path of every request, and a credential in a query string would end the property
+	// that no log line can leak one (ADR-0033).
+	token string
 }
 
-func newClient(baseURL string, timeout time.Duration) *client {
+func newClient(baseURL string, timeout time.Duration, token string) *client {
 	return &client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		http:    &http.Client{Timeout: timeout},
+		token:   token,
 	}
 }
 
@@ -69,6 +76,9 @@ func (c *client) do(ctx context.Context, method, path string, body, out any) err
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -82,6 +92,9 @@ func (c *client) do(ctx context.Context, method, path string, body, out any) err
 		return fmt.Errorf("read response: %w", err)
 	}
 
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return c.authError(resp.StatusCode, raw)
+	}
 	if resp.StatusCode >= http.StatusBadRequest {
 		return apiError(resp.StatusCode, raw)
 	}
@@ -405,4 +418,48 @@ func humanBytes(size int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(size)/float64(div), "KMGTPE"[exp])
+}
+
+// authError turns a 401 or a 403 into an answer rather than a status code.
+//
+// This is the error every operator will meet on the day authorization lands, and "control plane
+// returned 401" tells them nothing about what to do next. A 401 means the CLI sent no credential or
+// a bad one; a 403 means it sent a good one that is not allowed to do this, which is a different
+// problem with a different fix.
+func (c *client) authError(statusCode int, raw []byte) error {
+	base := apiError(statusCode, raw)
+
+	switch {
+	case statusCode == http.StatusForbidden:
+		return fmt.Errorf("%w\n\n\nThe credential is valid; the role it holds in this scope is not "+
+			"enough for this action.\nAsk an administrator to widen the grant, or to run this "+
+			"themselves.", base)
+	case c.token == "":
+		return fmt.Errorf("%w\n\nNo credential was sent. Set one of:\n"+
+			"  FLEETWARD_TOKEN_FILE=/path/to/token   preferred: anything that can read the\n"+
+			"                                        environment can read a variable\n"+
+			"  FLEETWARD_TOKEN=fwt_...\n"+
+			"  --token fwt_...\n\n"+
+			"An administrator issues one with:\n"+
+			"  fleetward token create --email you@example.com --role dba", base)
+	default:
+		return fmt.Errorf("%w\n\nThe credential that was sent is not valid: unknown, revoked, or "+
+			"expired.\nAsk an administrator for a new one.", base)
+	}
+}
+
+// resolveToken reads the credential, preferring the file form.
+//
+// The file is preferred for the reason `fleetward keygen` already gives about the secrets master
+// key: anything that can read the process environment can read an environment variable, and on a
+// shared machine that is a longer list than it looks.
+func resolveToken(inline, file string) (string, error) {
+	if file != "" {
+		raw, err := os.ReadFile(file) //nolint:gosec // G304: operator-supplied token file path
+		if err != nil {
+			return "", fmt.Errorf("read token file %q: %w", file, err)
+		}
+		return strings.TrimSpace(string(raw)), nil
+	}
+	return strings.TrimSpace(inline), nil
 }

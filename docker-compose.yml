@@ -187,14 +187,28 @@ services:
       FLEETWARD_SANDBOX_SHARED_DIR_VOLUME: fleetward_sandbox-share
       FLEETWARD_SANDBOX_SHARED_DIR_LOCAL: /app/share
 
-      # Authentication is off in the default dev stack so the quickstart needs no login round trip.
-      # Set to "true" to exercise the full OIDC flow against Dex; the control plane refuses to start
-      # in production with it disabled.
-      FLEETWARD_AUTH_ENABLED: "false"
+      # Authorization is ON in the development stack, and that is deliberate.
+      #
+      # It used to be off, so the quickstart needed no login round trip. The cost of that was that
+      # the enforcement nothing else in the product depends on was never exercised by anything —
+      # not by a developer, not by the CI smoke test — which is the exact mechanism that once let
+      # SECURITY.md claim an authorization layer that had never been built (ADR-0024).
+      #
+      # The credential below is the bootstrap token: configuration, never a database row, and
+      # tenant-wide administrator. It is a known value in a file in a public repository, which is
+      # fine for a stack you started on your own machine and is the reason a real installation
+      # generates one and removes it after issuing a proper token. See docs/ops/authorization.md.
+      FLEETWARD_AUTH_ENABLED: "true"
+      FLEETWARD_AUTH_BOOTSTRAP_TOKEN: fwt_devbootstrap_0000000000000000
+      # Fixed so that restarting the control plane does not sign the browser out mid-demo. A real
+      # installation either sets its own or accepts that a restart means signing in again.
+      FLEETWARD_AUTH_SESSION_KEY: ZGV2ZWxvcG1lbnQtb25seS1zZXNzaW9uLWtleS0zMmJ5dGVzIQ==
       FLEETWARD_AUTH_ISSUER_URL: http://dex:5556/dex
       FLEETWARD_AUTH_CLIENT_ID: fleetward
       FLEETWARD_AUTH_CLIENT_SECRET: fleetward-dev-secret
       FLEETWARD_AUTH_REDIRECT_URL: http://localhost:8080/api/v1/auth/callback
+      # Dex is in the stack and nothing talks to it yet: OIDC arrives in B10, behind the spine B6
+      # built. These settings are what it will read.
       FLEETWARD_AUTH_SKIP_ISSUER_VERIFICATION: "true"
     depends_on:
       postgres:

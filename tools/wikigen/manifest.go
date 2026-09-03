@@ -43,6 +43,7 @@ var explicit = []page{
 	{source: "docs/roadmap.md", wiki: "Roadmap", title: "Roadmap", audience: "evaluate"},
 
 	{source: "docs/ops/configuration.md", wiki: "Configuration-Reference", title: "Configuration reference", audience: "run"},
+	{source: "docs/ops/authorization.md", wiki: "Authorization", title: "Authentication, authorization and the audit log", audience: "run"},
 	{source: "docs/ops/scheduling.md", wiki: "Scheduling", title: "Scheduling", audience: "run"},
 	{source: "docs/ops/retention.md", wiki: "Retention", title: "Retention and expiry", audience: "run"},
 

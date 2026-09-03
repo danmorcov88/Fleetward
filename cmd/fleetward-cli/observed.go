@@ -14,7 +14,7 @@ import (
 )
 
 // newBackupHistoryCommand lists backups of both origins.
-func newBackupHistoryCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newBackupHistoryCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var (
 		instanceName string
 		origin       string
@@ -36,7 +36,7 @@ func newBackupHistoryCommand(serverURL *string, timeout *time.Duration) *cobra.C
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			query := url.Values{}
 
 			if instanceName != "" {
@@ -75,7 +75,7 @@ func newBackupHistoryCommand(serverURL *string, timeout *time.Duration) *cobra.C
 }
 
 // newBackupObserveCommand reads one instance's backup history now.
-func newBackupObserveCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newBackupObserveCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "observe <instance>",
 		Short: "Read an instance's own record of backups Fleetward did not take",
@@ -89,7 +89,7 @@ func newBackupObserveCommand(serverURL *string, timeout *time.Duration) *cobra.C
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			inst, err := resolveInstance(ctx, c, args[0])
 			if err != nil {
 				return err
@@ -117,7 +117,7 @@ func newBackupObserveCommand(serverURL *string, timeout *time.Duration) *cobra.C
 }
 
 // newBackupAdherenceCommand answers the question the product exists for.
-func newBackupAdherenceCommand(serverURL *string, timeout *time.Duration) *cobra.Command {
+func newBackupAdherenceCommand(serverURL *string, timeout *time.Duration, token *string) *cobra.Command {
 	var (
 		instanceName string
 		problemsOnly bool
@@ -138,7 +138,7 @@ func newBackupAdherenceCommand(serverURL *string, timeout *time.Duration) *cobra
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			c := newClient(*serverURL, *timeout)
+			c := newClient(*serverURL, *timeout, *token)
 			query := url.Values{}
 			if instanceName != "" {
 				inst, err := resolveInstance(ctx, c, instanceName)
