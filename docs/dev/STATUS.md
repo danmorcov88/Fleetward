@@ -12,56 +12,47 @@ and everything with a longer lifetime lives elsewhere: rationale in the
 
 ## Current position
 
-**Slice B6 is complete. Next is D1 — the demo**, then B7 — alert rules and delivery.
+**Slice D1 is complete. Next is B7 — alert rules and delivery.**
 
-Until this slice, every route under `/api/v1/` was open to anyone who could reach the port —
-including the ones that add an instance, store its credentials, trigger a restore, and configure
-what retention deletes. B5 was the slice where a bug could destroy data; this was the slice where a
-stranger could.
-
-Every request now names a caller, every route decides on that caller's role within the scope it acts
-on, and every mutating action lands in a record that cannot be edited. The schema for all of it had
-existed since migration 000001 and had never held a row.
+Six slices had shipped and none of them had ever been shown to anybody. `make demo` now tells the
+product's story on a real stack in one command, ending with a backup that fails verification on
+purpose — and `make demo-check` runs the same program in CI on every pull request, so it cannot
+quietly stop working. `test/e2e/` had been empty since the foundation, holding a package comment
+that described this slice and no test; it holds the test now.
 
 | The thing | What holds it |
 |---|---|
-| a route added and left unguarded | it falls through to the embedded Unimplemented and is refused; the coverage test names the file to edit |
-| a route nobody has decided about | a method with no policy entry is denied to everybody, administrators included |
-| a database password in the audit log | there is no function in the audit package that takes a request message |
-| the first credential becoming a permanent back door | it is configuration and never a row: delete the setting and the access is gone |
-| a grant quietly *removing* permission | grants are additive and the highest rank wins; "most specific" would be a deny mechanism the schema cannot express |
-| a query reading the wrong tenant | the tenant comes from the caller, and a path without one is refused by Postgres rather than served the default |
+| a demo that quietly stops matching the product | it *is* the end-to-end test; a renamed field fails `End-to-end demo` on the pull request that renamed it |
+| a demo that shows something not built | act 7 prints that alerts do not exist and names B7 |
+| a fixture passed off as live | every seeded sentence goes through `Narrator.Seeded` and comes out marked, on screen and in `docs/demo.md` |
+| the retention sweep blanking the estate mid-demo | seeded backups carry no expiry; exactly five on one instance are stamped, deliberately, and acts 5 and 6 are built out of them |
+| the demo writing to somebody's own database | the one place it writes to a monitored instance goes through `docker compose exec`, never a published port |
+| a second run confused by the first | the seeder clears the previous demo estate before it seeds; run twice and the second is not confused |
 
-Four decisions were worth records:
-[ADR-0033](../adr/0033-the-bootstrap-credential-is-configuration-and-never-a-row.md) — a principal
-is a token, a session is minted from one, and the break-glass credential is configuration;
-[ADR-0034](../adr/0034-grants-are-additive-and-the-highest-rank-wins.md) — grants add up, and why
-the obvious rule would have been worse;
-[ADR-0035](../adr/0035-enforcement-is-a-policy-table-and-a-decorator.md) — a policy table and a
-decorator, scope from the request, and what a refusal records;
-[ADR-0036](../adr/0036-the-scheduler-is-an-actor-and-not-a-user.md) — the scheduler is an actor
-string with no credential, and the tenant stops being a constant.
+One decision was worth a record:
+[ADR-0037](../adr/0037-the-demo-and-the-end-to-end-test-are-one-program.md) — the demo and the
+end-to-end test are one program, because whichever of a split pair CI does not run is the one that
+lies.
 
-The operational surface is `fleetward-cli token`, `fleetward-cli audit`, and a sign-in screen that
-asks for a token and then holds none. **The development stack now runs with authorization on**, and
-CI asserts both a 401 and a 200 against it — because enforcement that nothing exercises is exactly
-how a security claim comes to be written from the architecture rather than from the code.
+The operational surface is `make demo`, `make demo-keep` and `make demo-check`, all three of which
+are `go run ./tools/demo` or `go test -tags=e2e` underneath, so a machine without `make` loses
+nothing. The page is [`../demo.md`](../demo.md), and its first section is what is seeded rather than
+what is impressive.
 
 ## What comes next, and why that order
 
-Six slices have shipped and none of them has ever been shown to anybody. **D1** turns the walk each
-slice ends with into `make demo` — one command, on a real stack, ending with a backup that fails
-verification on purpose — and runs the same script in CI so it cannot quietly rot. It fills
-`test/e2e/`, which has been empty since the foundation with a package comment describing exactly
-this. Brief: [`slices/D1-the-demo.md`](slices/D1-the-demo.md).
+**B7 — alert rules and delivery.** `alert_rules`, `alerts` and `notifiers` have existed in the schema
+since migration 000001 and no Go code touches them. Today a failed verification, a missed backup
+window, a schedule that has silently stopped firing and a retention sweep whose object store has
+been refusing all week are visible only by polling the API or reading the log — which is the
+difference between a dashboard and monitoring.
 
-It ships no product capability, which is why it is numbered outside the B-sequence. What it costs is
-that the demo cannot show an alert firing until B7; what it buys is that every slice after it
-inherits an end-to-end test, and that the work becomes something a stranger can run.
+It also fills act 7. The demo's most dramatic beat is an alert firing on the artifact act 4
+corrupts, and the act list was written so that inserting it is an addition rather than a rewrite.
 
 Session protocol: [`slices/README.md`](slices/README.md). B7's brief is not written yet; briefs are
-written when the slice starts, and D1's is the one exception — written ahead, deliberately, so a
-fresh session can start it cold.
+written when the slice starts, and D1's was the one exception — written ahead, deliberately, so a
+fresh session could start it cold.
 
 ## Phases
 
@@ -70,6 +61,7 @@ fresh session can start it cold.
 | Foundation — contract, control plane, dev stack | ✅ [journal](journal/00-foundation.md) |
 | A — prove the loop (PostgreSQL), A1–A6 | ✅ [journal](journal/README.md) |
 | B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B6 done, B7 next |
+| D1 — the demo, and the end-to-end test it is | ✅ [journal](journal/D1-the-demo.md) |
 | Access compliance, structural drift, query editor | deferred — see [roadmap](../roadmap.md#deferred-deliberately) |
 
 There is no Phase F. Production readiness is a property of every slice
@@ -148,6 +140,20 @@ Listed so that no session has to re-derive them, and so that no document has to 
   instance. The plugin brackets the counting pass and flags an object that changed underneath it, and
   a mismatch on a flagged object is `INCONCLUSIVE` rather than `FAILED`. So a busy database verifies
   more weakly than a quiet one, and says so in its report.
+- **The demo asserts nothing through a browser.** `make demo` drives the REST API and the metadata
+  database; the compose smoke test is what asserts the web UI is served, and the web unit tests are
+  what assert the estate view renders the two-part status. If that screen stopped rendering a failed
+  verification correctly, the demo would still pass. Deliberate — see the scope fence in
+  [`slices/D1-the-demo.md`](slices/D1-the-demo.md) — and worth knowing before trusting the demo as
+  proof of the UI.
+- **`make demo-check` must not run beside `make conformance` or `make test-integration`.** All three
+  start containers and contend for one Docker daemon, and the result is a screenful of failures that
+  are not real. CI sequences the `End-to-end demo` job after `Dev stack smoke test` for the same
+  reason; locally it is a habit rather than a guard.
+- **A demo run interrupted between act 4's corruption and its verification leaves a corrupted
+  artifact** in the bucket of a stack started with `--keep`. The next run clears the estate, and the
+  object goes with `docker compose down --volumes`. It is a development stack and the artifact is one
+  the demo took itself.
 - **Nothing is delivered anywhere.** `alert_rules`, `alerts`, and `notifiers` exist in the schema
   and no Go code touches them. A failed verification, a missed backup window, a schedule that has
   silently stopped firing, and a retention sweep whose object store has been refusing all week are
@@ -231,6 +237,23 @@ Listed so that no session has to re-derive them, and so that no document has to 
   parent snapshot does not exist`. It is a Docker Desktop containerd-snapshotter fault, not a
   Dockerfile one; `docker compose up --build <the other services>` works, and a `docker builder
   prune` clears it. Recorded because it is easy to mistake for a broken web build.
+- **The `web` container exits 133 when the Docker VM is under pressure**, with `Fatal process out of
+  memory: Failed to reserve virtual memory for CodeRange` from Node. It starts normally once the VM
+  has room — see the note below. The demo reports any container that did not start, by name, and
+  carries on, because nothing it asserts goes through a browser; the cost is that the estate view is
+  unreachable and act 4's screen going red is the beat that run cannot show.
+- **This machine already runs a PostgreSQL on 5432 and a SQL Server on 1433**, and on Windows both a
+  local server and Docker's port proxy can bind the same port at once, so a connection reaches
+  whichever answers. `.env` therefore needs `FLEETWARD_POSTGRES_PORT=55432`; the demo reads `.env`
+  the way compose does, and refuses with that instruction if the database on the port is not
+  Fleetward's. It is also why every host-side connection in the demo says `127.0.0.1` rather than
+  `localhost`, which resolves to `::1` first and finds the machine's own PostgreSQL there.
+- **Docker Desktop degrades under a full VM and does not say so usefully.** With the VM out of space
+  every container start failed with `read init-p: connection reset by peer` or
+  `no space left on device: /var/run/desktop-containerd/…` — including the verification sandbox,
+  which the product correctly reported as `INCONCLUSIVE` rather than `FAILED`.
+  `docker system prune -af --volumes` and then `wsl --shutdown` cleared it. Recorded because the
+  first symptom looks like a sandbox provider defect.
 - **Two integration tests fail on this machine for reasons that are the machine's.** Both were
   reproduced on `origin/main` at f0c604f before being blamed on anything.
   `sandbox.TestSandboxLifecycle` connects to its sandbox as `localhost`, which resolves to both

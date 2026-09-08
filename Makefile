@@ -119,6 +119,27 @@ conformance: build-plugins ## Run the plugin conformance suite against every plu
 	# containers, so each case pays for an image pull, an engine's first boot, and a full restore.
 	go test -race -tags=conformance -timeout 60m ./test/conformance/...
 
+# --- Demo ----------------------------------------------------------------------------------------
+#
+# `demo` and `demo-check` run the same acts from the same package (ADR-0037). The demo narrates and
+# pauses; the check does neither and asserts exactly the same things, which is what keeps the demo
+# from quietly drifting away from the product.
+#
+# Neither may run beside `conformance` or `test-integration`: all three start containers, and
+# contending for one Docker daemon produces a screenful of failures that are not real.
+
+.PHONY: demo
+demo: ## Tell the product's story on a real stack, ending with a backup that fails verification
+	go run ./tools/demo
+
+.PHONY: demo-keep
+demo-keep: ## Run the demo and leave the stack up, so the estate view can still be clicked around
+	go run ./tools/demo -keep
+
+.PHONY: demo-check
+demo-check: ## Run the demo's acts as an end-to-end test, without narration (requires Docker)
+	go test -tags=e2e -timeout 45m -count=1 ./test/e2e/...
+
 .PHONY: cover
 cover: ## Run tests with coverage and open the report
 	go test -race -coverprofile=coverage.out -covermode=atomic $(GO_PACKAGES)

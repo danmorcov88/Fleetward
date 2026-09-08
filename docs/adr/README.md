@@ -10,7 +10,7 @@ the top of the affected record ([ADR-0001](0001-record-architecture-decisions.md
 
 Each carries Context, Decision, Consequences, and the alternatives that were rejected. `make docs-check` enforces that.
 
-<!-- adr-count -->36<!-- /adr-count --> records.
+<!-- adr-count -->37<!-- /adr-count --> records.
 
 | ADR                                                                           | Decision                                                                                                                  |                    | Date |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------ | --- |
@@ -50,6 +50,7 @@ Each carries Context, Decision, Consequences, and the alternatives that were rej
 | [0034](0034-grants-are-additive-and-the-highest-rank-wins.md)                 | Grants are additive and the highest rank wins, because the schema has no way to say "deny"                                |                    | 2026-09-03 |
 | [0035](0035-enforcement-is-a-policy-table-and-a-decorator.md)                 | Enforcement is a policy table and a decorator, scope comes from the request, and a refusal that names somebody is audited |                    | 2026-09-03 |
 | [0036](0036-the-scheduler-is-an-actor-and-not-a-user.md)                      | The scheduler is an actor string and not a user, and the tenant comes from the caller                                     |                    | 2026-09-03 |
+| [0037](0037-the-demo-and-the-end-to-end-test-are-one-program.md)              | The demo and the end-to-end test are one program                                                                          |                    | 2026-09-08 |
 
 ## Reading the older records
 

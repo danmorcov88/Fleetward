@@ -53,7 +53,7 @@ that sentence; anything that is not has been moved behind it.
 | B4 | Estate Overview screen + an API client generated from the OpenAPI document | Fifty servers at a glance; the CLI is a poor surface for that |
 | B5 | Retention and expiry | Untracked artifact growth on a company bucket |
 | B6 | Authorization spine: principal, RBAC over `role_grants`, tenancy, audit log | Every route is currently open to anyone who can reach the port |
-| D1 | `make demo`: the whole loop on a real stack in one command, and the same script as an end-to-end test in CI | Six slices have shipped and none of them has ever been shown to anybody |
+| D1 | `make demo`: the whole loop on a real stack in one command, and the same program as an end-to-end test in CI | Six slices have shipped and none of them has ever been shown to anybody |
 | B7 | Alert rules and delivery (webhook, SMTP) | The difference between a dashboard and monitoring |
 | B8 | Self-observability: `/metrics` and spans on four operations | "How do I monitor the thing that monitors my backups" |
 | B9 | Production deployment artifact, signed release, `v0.1.0` | There is no tag and no published image today |
@@ -63,6 +63,10 @@ and an end-to-end guard every later slice inherits. It is numbered separately so
 which journals and decision records refer to, stay where they are. Its cost is that the demo cannot
 show an alert firing, which is the most dramatic beat this product will ever have; the act list
 leaves the slot for B7 to fill.
+
+It is done. [`docs/demo.md`](demo.md) is the page, `make demo` is the command, and the demo and the
+end-to-end test are one program so that neither can drift from the other
+([ADR-0037](adr/0037-the-demo-and-the-end-to-end-test-are-one-program.md)).
 
 **Exit: a pilot installation.** After B9 the remaining work is engines and the identity provider.
 

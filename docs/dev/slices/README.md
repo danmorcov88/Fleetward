@@ -41,7 +41,7 @@ what is next; the briefs are the authority on how.
 
 ### 2. Branch
 
-`main` is protected: no direct pushes, no force pushes, and all ten CI jobs must pass before a
+`main` is protected: no direct pushes, no force pushes, and all eleven CI jobs must pass before a
 pull request can merge.
 
 ```bash
@@ -155,7 +155,7 @@ If you write a new one, follow this shape — it is what makes a cold start poss
 | B4 | [Estate Overview](B4-estate-overview.md) | [entry](../journal/B4-estate-overview.md) | ✅ |
 | B5 | [Retention and expiry](B5-retention-and-expiry.md) | [entry](../journal/B5-retention-and-expiry.md) | ✅ |
 | B6 | [Authorization spine](B6-authorization-spine.md) | [entry](../journal/B6-authorization-spine.md) | ✅ |
-| D1 | [The demo](D1-the-demo.md) | — | ◐ brief written, not started |
+| D1 | [The demo](D1-the-demo.md) | [entry](../journal/D1-the-demo.md) | ✅ |
 
 Phase A is complete and Phase B has started. What comes next is in
 [`../../roadmap.md`](../../roadmap.md). A brief is written when its slice starts — writing them all
