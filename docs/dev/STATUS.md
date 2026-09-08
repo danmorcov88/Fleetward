@@ -12,7 +12,7 @@ and everything with a longer lifetime lives elsewhere: rationale in the
 
 ## Current position
 
-**Slice B6 is complete. Next is B7 — alert rules and delivery.**
+**Slice B6 is complete. Next is D1 — the demo**, then B7 — alert rules and delivery.
 
 Until this slice, every route under `/api/v1/` was open to anyone who could reach the port —
 including the ones that add an instance, store its credentials, trigger a restore, and configure
@@ -47,8 +47,21 @@ asks for a token and then holds none. **The development stack now runs with auth
 CI asserts both a 401 and a 200 against it — because enforcement that nothing exercises is exactly
 how a security claim comes to be written from the architecture rather than from the code.
 
+## What comes next, and why that order
+
+Six slices have shipped and none of them has ever been shown to anybody. **D1** turns the walk each
+slice ends with into `make demo` — one command, on a real stack, ending with a backup that fails
+verification on purpose — and runs the same script in CI so it cannot quietly rot. It fills
+`test/e2e/`, which has been empty since the foundation with a package comment describing exactly
+this. Brief: [`slices/D1-the-demo.md`](slices/D1-the-demo.md).
+
+It ships no product capability, which is why it is numbered outside the B-sequence. What it costs is
+that the demo cannot show an alert firing until B7; what it buys is that every slice after it
+inherits an end-to-end test, and that the work becomes something a stranger can run.
+
 Session protocol: [`slices/README.md`](slices/README.md). B7's brief is not written yet; briefs are
-written when the slice starts.
+written when the slice starts, and D1's is the one exception — written ahead, deliberately, so a
+fresh session can start it cold.
 
 ## Phases
 

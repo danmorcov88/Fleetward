@@ -49,3 +49,10 @@ docs/adr/0031-an-expiry-is-stamped-when-a-backup-is-taken.md          docs/dev/s
 docs/adr/0032-retention-never-deletes-the-last-good-backup.md         docs/dev/slices/B5-retention-and-expiry.md  # the slice's Files table; the ADR numbers are provisional until the decisions are settled
 docs/ops/retention.md                                                 docs/dev/slices/B5-retention-and-expiry.md  # the reference page B5 writes, named in the Files table and the scope fence
 docs/dev/journal/B5-retention-and-expiry.md                           docs/dev/slices/B5-retention-and-expiry.md  # the close-out entry B5 writes
+
+# Slice D1 writes these. Scoped to the brief, and stale the moment the files exist — which is how
+# they get removed: docscheck reports an allowance nothing uses any more.
+tools/demo                        docs/dev/slices/D1-the-demo.md  # the demo driver D1 creates, named in its Files table
+test/e2e/demo_test.go             docs/dev/slices/D1-the-demo.md  # the end-to-end test D1 creates, which is the demo under a build tag
+docs/demo.md                      docs/dev/slices/D1-the-demo.md  # the page D1 writes, saying what the demo shows and what is seeded
+docs/dev/journal/D1-the-demo.md   docs/dev/slices/D1-the-demo.md  # the journal entry the protocol requires D1 to close out with
