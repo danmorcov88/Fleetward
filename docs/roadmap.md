@@ -53,9 +53,16 @@ that sentence; anything that is not has been moved behind it.
 | B4 | Estate Overview screen + an API client generated from the OpenAPI document | Fifty servers at a glance; the CLI is a poor surface for that |
 | B5 | Retention and expiry | Untracked artifact growth on a company bucket |
 | B6 | Authorization spine: principal, RBAC over `role_grants`, tenancy, audit log | Every route is currently open to anyone who can reach the port |
+| D1 | `make demo`: the whole loop on a real stack in one command, and the same script as an end-to-end test in CI | Six slices have shipped and none of them has ever been shown to anybody |
 | B7 | Alert rules and delivery (webhook, SMTP) | The difference between a dashboard and monitoring |
 | B8 | Self-observability: `/metrics` and spans on four operations | "How do I monitor the thing that monitors my backups" |
 | B9 | Production deployment artifact, signed release, `v0.1.0` | There is no tag and no published image today |
+
+**D1 is outside the B-sequence on purpose.** It ships no product capability — it ships evidence,
+and an end-to-end guard every later slice inherits. It is numbered separately so the B-numbers,
+which journals and decision records refer to, stay where they are. Its cost is that the demo cannot
+show an alert firing, which is the most dramatic beat this product will ever have; the act list
+leaves the slot for B7 to fill.
 
 **Exit: a pilot installation.** After B9 the remaining work is engines and the identity provider.
 
