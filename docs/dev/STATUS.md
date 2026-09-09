@@ -248,6 +248,12 @@ Listed so that no session has to re-derive them, and so that no document has to 
   the way compose does, and refuses with that instruction if the database on the port is not
   Fleetward's. It is also why every host-side connection in the demo says `127.0.0.1` rather than
   `localhost`, which resolves to `::1` first and finds the machine's own PostgreSQL there.
+- **`make vuln` reports stdlib vulnerabilities here that CI does not have.** The findings are real
+  and they are about the *toolchain*, not the code: this machine's Go is 1.25.6, CI resolves
+  `go-version: 1.25` to the newest patch, and every one of the twenty-three findings names a fix in
+  1.25.7 or later. Upgrade Go before believing a stdlib finding that CI is not also reporting.
+  `govulncheck` itself is pinned to v1.7.0 in both `ci.yml` and the Makefile — v1.8.0 raised its own
+  minimum to Go 1.26 and turned this job red on a commit that changed nothing.
 - **Docker Desktop degrades under a full VM and does not say so usefully.** With the VM out of space
   every container start failed with `read init-p: connection reset by peer` or
   `no space left on device: /var/run/desktop-containerd/…` — including the verification sandbox,
