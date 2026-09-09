@@ -22,6 +22,7 @@ Go 1.25+. `make` is not required: `go run ./tools/demo` is the same thing.
 | `make demo-keep` | leave the stack up, so the estate view can still be clicked around |
 | `make demo-check` | the same acts as an end-to-end test, without narration — what CI runs |
 | `go run ./tools/demo -compose=false` | run against a stack that is already up |
+| `go run ./tools/demo -cast x.cast` | record it, in asciinema's format — see [Recording it](#recording-it) |
 
 ---
 
@@ -133,14 +134,41 @@ this product will ever have, and it is not built. The act list leaves the slot a
 
 Three artifacts, all from one run:
 
-**The terminal.** `asciinema` if it is installed, and a plain transcript if it is not. No dependency
-is worth adding for this.
+**The terminal.** The demo records itself. `-cast` writes an
+[asciicast v2](https://docs.asciinema.org/manual/asciicast/v2/) file — the same format `asciinema`
+produces — and `-transcript` writes plain text:
 
 ```bash
-asciinema rec fleetward-demo.cast -c 'make demo'
-# or
-go run ./tools/demo -transcript fleetward-demo.txt
+go run ./tools/demo -keep -pause 4s   -cast fleetward-demo.cast -transcript fleetward-demo.txt
 ```
+
+It writes its own recording rather than being recorded, for a reason that is practical rather than
+clever: asciinema's CLI is Unix-only and this project is developed on Windows, and what a recorder
+produces is a JSON header plus one `[seconds, "o", text]` line per write — both halves of which the
+demo already has, being the thing doing the writing. Every timestamp in the file is when that line
+was actually printed. Nothing is re-enacted afterwards.
+
+**The video.** [`agg`](https://docs.asciinema.org/manual/agg/) is a single binary from the asciinema
+project — [releases here](https://github.com/asciinema/agg/releases), including
+`agg-x86_64-pc-windows-msvc.exe` — and turns the cast into a GIF:
+
+```bash
+agg --theme asciinema --font-size 16 --cols 100 --rows 46     --idle-time-limit 3 --last-frame-duration 4 --fps-cap 12     fleetward-demo.cast fleetward-demo.gif
+```
+
+`--rows 46` matters: the demo emits up to forty lines in one burst, and a shorter terminal scrolls
+the top of an act away before a frame is captured. `--idle-time-limit 3` is what makes it watchable
+— a verification honestly takes fifteen seconds, and fifteen seconds of a still frame is dead air.
+The gaps are shortened on playback and stay in the file, so the recording keeps the real timings.
+
+For an MP4, ffmpeg — and `pip install imageio-ffmpeg` ships one, so nothing has to be installed
+system-wide:
+
+```bash
+ffmpeg -i fleetward-demo.gif -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=12"        -c:v libx264 -crf 20 -pix_fmt yuv420p -movflags +faststart fleetward-demo.mp4
+```
+
+A run of the acts at `-pause 4s` gives about 46 seconds of video.
 
 **Two screenshots of the estate view**, taken by a human, at <http://localhost:3000>: the same rows
 before act 4 and after it. Run `make demo-keep` so the stack survives, and pause on act 4. The
