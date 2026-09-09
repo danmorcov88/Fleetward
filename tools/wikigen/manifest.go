@@ -41,6 +41,7 @@ var explicit = []page{
 	{source: "docs/architecture.md", wiki: "Architecture", title: "Architecture", audience: "evaluate"},
 	{source: "docs/engines.md", wiki: "Supported-Engines", title: "Supported engines", audience: "evaluate"},
 	{source: "docs/roadmap.md", wiki: "Roadmap", title: "Roadmap", audience: "evaluate"},
+	{source: "docs/demo.md", wiki: "The-Demo", title: "The demo", audience: "evaluate"},
 
 	{source: "docs/ops/configuration.md", wiki: "Configuration-Reference", title: "Configuration reference", audience: "run"},
 	{source: "docs/ops/authorization.md", wiki: "Authorization", title: "Authentication, authorization and the audit log", audience: "run"},

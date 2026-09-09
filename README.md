@@ -98,6 +98,22 @@ and restart loops during a brief outage make everything worse. `/readyz` is read
 dependencies. Only the metadata store and secrets provider are critical; the rest degrade readiness
 rather than failing it, so a MinIO outage does not take the estate view offline.
 
+### See the whole thing in one command
+
+```bash
+make demo
+```
+
+`make demo` brings the stack up, builds an estate of twelve instances with six weeks of history,
+takes a real backup, restores it into a throwaway container and checks it against the manifest —
+and then overwrites a byte of that artifact in object storage and shows the same check going red.
+It ends by naming what is not built. **The history is seeded so the estate view has something to
+say; everything from the backup onward is live.**
+
+It is the same program CI runs as an end-to-end test on every merge, which is what stops it drifting
+away from the product ([ADR-0037](docs/adr/0037-the-demo-and-the-end-to-end-test-are-one-program.md)).
+[`docs/demo.md`](docs/demo.md) says exactly what it shows and exactly what is seeded.
+
 > **Port already in use?** Every published port is overridable. Copy [`.env.example`](.env.example)
 > to `.env` and change what collides — developer machines routinely already run a Postgres or a
 > MinIO.
@@ -525,6 +541,8 @@ make build             # control plane, CLI, and all plugin binaries → ./bin
 make test              # Go unit tests
 make test-web          # the web app's tests
 make conformance       # the plugin conformance suite, against every plugin
+make demo              # the whole product on a real stack, ending with a verification that fails
+make demo-check        # the same acts as an end-to-end test, no narration
 make lint              # golangci-lint + buf lint + eslint
 make proto             # regenerate from api/proto — Go, OpenAPI, and the web app's types
 make vuln              # govulncheck
@@ -547,14 +565,17 @@ flowchart LR
     PR --> W["web lint + test + build"]
     PR --> DC["docscheck<br/>claims match the tree"]
     PR --> D["docker compose up<br/>readyz must be green"]
-    P & L & T & TW & B & C & V & W & DC & D --> M["mergeable"]
+    D --> E["end-to-end demo<br/>backup, verify, corrupt, verify"]
+    P & L & T & TW & B & C & V & W & DC & E --> M["mergeable"]
 
     style M fill:#1f5c3a,stroke:#2e8b57,color:#fff
 ```
 
 `buf breaking` guards the plugin contract against accidental breakage — it is a public interface
 third parties implement. The compose job asserts the quickstart in this README actually works, so
-it cannot quietly rot between releases.
+it cannot quietly rot between releases, and the end-to-end job runs `make demo`'s own acts for the
+same reason: a demo nothing checks is a claim about the product with no gate behind it. It runs
+after the compose job rather than beside it because both need the runner's one Docker daemon.
 
 ---
 

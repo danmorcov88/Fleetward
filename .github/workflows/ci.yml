@@ -258,6 +258,48 @@ jobs:
       - name: Conformance suite
         run: make conformance
 
+  # The demo, run as a test. It is the same program `make demo` runs (ADR-0037), which is what stops
+  # the demo from quietly drifting away from the product: a claim about what Fleetward does, in
+  # executable form, gets the same merge gate as every other claim in this repository.
+  #
+  # `needs: compose` is not about ordering for its own sake. This job and the smoke test both start
+  # the whole stack on the runner's single Docker daemon, and the conformance job stands up engines
+  # of its own; running them at once produces a screenful of failures that are not real. Sequencing
+  # after the smoke test also means that when the stack itself is broken, the shorter job says so.
+  demo:
+    name: End-to-end demo
+    runs-on: ubuntu-latest
+    needs: compose
+    # Bounded rather than inheriting the six-hour default. The run pulls SQL Server, starts the
+    # stack, takes two real backups and runs three real verifications, each of which starts a
+    # further container and restores into it.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # Same reason as the smoke test: the control plane runs unprivileged and reaches the Docker
+      # socket by group, and on a Linux runner that group is docker rather than root. Without it the
+      # demo fails in act 0 with a sentence saying exactly this, which is the point of pre-flighting
+      # it — but the job would still be red.
+      - name: Grant the control plane access to the Docker socket
+        run: echo "FLEETWARD_DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
+
+      - name: Run the demo's acts as an end-to-end test
+        run: make demo-check
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
   vuln:
     name: Vulnerability scan
     runs-on: ubuntu-latest
