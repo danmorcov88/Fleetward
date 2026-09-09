@@ -311,9 +311,17 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      # Pinned, not "latest", for the same reason golangci-lint is: a new release of the tool can
+      # turn CI red on a commit that changed nothing. govulncheck v1.8.0 raised its own minimum to
+      # Go 1.26 and this job went red on the next push, having scanned nothing at all.
+      #
+      # Pinning the scanner does not freeze what it knows about. The vulnerability database is
+      # fetched from vuln.go.dev on every run, so a report published tomorrow is found tomorrow;
+      # only the analysis code is held still. Bumping this is then a deliberate pull request with
+      # its own diff, alongside GO_VERSION.
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           govulncheck ./...
 
   web:
