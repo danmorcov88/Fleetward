@@ -59,7 +59,7 @@ func (n *Narrator) Say(format string, args ...any) {
 // Step writes one line of progress. A real restore takes tens of seconds, and a demo that looks
 // hung is a demo somebody stops watching.
 func (n *Narrator) Step(format string, args ...any) {
-	fmt.Fprintf(n.out, "  %s  %s\n", n.elapsed(), fmt.Sprintf(format, args...))
+	n.hanging("  "+n.elapsed()+"  ", fmt.Sprintf(format, args...))
 }
 
 // Seeded labels a fact as fixture rather than as something the product just did.
@@ -67,7 +67,15 @@ func (n *Narrator) Step(format string, args ...any) {
 // It is a method rather than a convention so that it cannot be forgotten: every sentence about
 // history that Fleetward did not observe goes through here and comes out marked.
 func (n *Narrator) Seeded(format string, args ...any) {
-	fmt.Fprintf(n.out, "  [seeded]  %s\n", fmt.Sprintf(format, args...))
+	n.hanging("  [seeded]  ", fmt.Sprintf(format, args...))
+}
+
+// hanging writes prefix once and wraps the rest under it, so a long line stays inside the terminal
+// the recording claims to be in rather than reflowing into a staircase.
+func (n *Narrator) hanging(prefix, text string) {
+	body := wrap(text, CastWidth-len(prefix))
+	fmt.Fprintf(n.out, "%s%s\n", prefix,
+		strings.ReplaceAll(body, "\n", "\n"+strings.Repeat(" ", len(prefix))))
 }
 
 // Table renders a fixed-width table. Used for the estate answers, which are the acts whose whole
@@ -85,15 +93,35 @@ func (n *Narrator) Table(headers []string, rows [][]string) {
 		}
 	}
 
+	// The last column is the one that carries a sentence — a retention reason, what an instance is
+	// here to show — and left to itself it makes a table two hundred columns wide, which is a table
+	// nobody can read and a recording nobody can watch. It gets whatever room is left and wraps
+	// inside itself, aligned under its own heading.
+	indent := 2
+	fixed := indent
+	for _, w := range widths[:len(widths)-1] {
+		fixed += w + 2
+	}
+	last := CastWidth - fixed
+	if last < 20 {
+		last = 20
+	}
+	if widths[len(widths)-1] > last {
+		widths[len(widths)-1] = last
+	}
+
 	render := func(cells []string) {
 		var b strings.Builder
-		b.WriteString("  ")
+		b.WriteString(strings.Repeat(" ", indent))
 		for i, cell := range cells {
 			if i >= len(widths) {
 				break
 			}
 			if i == len(cells)-1 {
-				b.WriteString(cell)
+				// Continuation lines are indented to the column the cell starts in, so a wrapped
+				// sentence still reads as belonging to its row.
+				b.WriteString(strings.ReplaceAll(wrap(cell, widths[i]), "\n",
+					"\n"+strings.Repeat(" ", fixed)))
 				break
 			}
 			b.WriteString(cell)
@@ -129,12 +157,27 @@ func (n *Narrator) elapsed() string {
 }
 
 // wrap breaks a sentence at width, so a narration line reads the same in a terminal as in a
-// transcript file.
+// transcript file and in a recording.
+//
+// A word longer than the whole width is broken rather than left to overflow. That case is not
+// hypothetical: an artifact's object key is a hundred and thirty characters of tenant, instance and
+// backup identifiers with no spaces in it, and it is worth showing in full.
 func wrap(s string, width int) string {
-	words := strings.Fields(s)
+	if width < 8 {
+		width = 8
+	}
+	var words []string
+	for _, w := range strings.Fields(s) {
+		for len(w) > width {
+			words = append(words, w[:width])
+			w = w[width:]
+		}
+		words = append(words, w)
+	}
 	if len(words) == 0 {
 		return ""
 	}
+
 	var b strings.Builder
 	line := words[0]
 	for _, w := range words[1:] {
