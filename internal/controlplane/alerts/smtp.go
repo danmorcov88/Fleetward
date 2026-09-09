@@ -69,10 +69,14 @@ func sendSMTP(ctx context.Context, dest destination, secret string, msg Message)
 		err  error
 	)
 	if mode == tlsImplicit {
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
-			ServerName: host,
-			MinVersion: tls.VersionTLS12,
-		})
+		// tls.Dialer rather than tls.DialWithDialer, so the handshake is bound to the delivery
+		// attempt's deadline like every other step. A TLS handshake with a server that accepts the
+		// connection and then says nothing is otherwise unbounded.
+		tlsDialer := &tls.Dialer{
+			NetDialer: dialer,
+			Config:    &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12},
+		}
+		conn, err = tlsDialer.DialContext(ctx, "tcp", addr)
 	} else {
 		conn, err = dialer.DialContext(ctx, "tcp", addr)
 	}

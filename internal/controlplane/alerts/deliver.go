@@ -379,7 +379,10 @@ func (d *Dispatcher) Test(ctx context.Context, tenantID, notifierID string) (boo
 	d.recordOutcome(ctx, dest.ID, sendErr)
 
 	if sendErr != nil {
-		return false, sendErr.Error(), took, nil
+		// Not an error return, deliberately: the question asked was "does this destination work",
+		// and "no, because the endpoint answered 502" is an answer to it rather than a failure to
+		// answer. An error here would be a 500 to a caller whose request succeeded.
+		return false, sendErr.Error(), took, nil //nolint:nilerr // a failed send is a successful answer
 	}
 	return true, "", took, nil
 }

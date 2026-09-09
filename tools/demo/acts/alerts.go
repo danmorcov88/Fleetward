@@ -282,9 +282,12 @@ func (d webhookDelivery) carriesSecret() bool {
 	return strings.Contains(string(d.raw), demoNotifierSecret)
 }
 
-// demoNotifierSecret is the credential the demo gives its notifier. Known, local, and thrown away
-// with the receiver — the point is not that it is secret, it is that the product treats it as one.
-const demoNotifierSecret = "demo-webhook-token"
+// demoNotifierSecret is the credential the demo gives its notifier.
+//
+// Known, local, and thrown away with the receiver at the end of the run. The point is not that it is
+// secret — it is that the *product* treats it as one, which is what act 7 asserts: it must arrive in
+// a header, must not appear in the body, and must not come back from `GET /api/v1/notifiers`.
+const demoNotifierSecret = "demo-webhook-token" //nolint:gosec // G101: a throwaway value for a listener this process owns
 
 // startWebhookReceiver listens on all interfaces so the control plane's container can reach it.
 //
@@ -292,7 +295,12 @@ const demoNotifierSecret = "demo-webhook-token"
 // and says what it could not, which is the whole discipline: an act that showed a webhook arriving
 // when none did would make every other claim in the demo worth less.
 func startWebhookReceiver() (*webhookReceiver, bool) {
-	listener, err := net.Listen("tcp", "0.0.0.0:0")
+	// All interfaces on purpose, and it is the whole reason this works: the control plane is a
+	// container, and a listener bound to 127.0.0.1 is unreachable from inside one however the
+	// daemon routes host.docker.internal. It is an ephemeral port on a developer's own machine,
+	// open for the two minutes the demo runs.
+	var lc net.ListenConfig
+	listener, err := lc.Listen(context.Background(), "tcp", "0.0.0.0:0") //nolint:gosec // G102: see above
 	if err != nil {
 		return nil, false
 	}
