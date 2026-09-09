@@ -4,6 +4,105 @@
  */
 
 export interface paths {
+    "/api/v1/alert-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["AlertService_ListAlertRules"];
+        put?: never;
+        /**
+         * @description CreateAlertRule declares a condition worth being told about. A kind with no evaluator is
+         *      refused rather than stored: a rule accepted and never evaluated is worse than one refused,
+         *      because the operator believes they are covered.
+         */
+        post: operations["AlertService_CreateAlertRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alert-rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["AlertService_DeleteAlertRule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alert-rules/{rule_id}/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description SetAlertRuleEnabled is the whole silencing story in this version. Disabling a rule resolves its
+         *      open alerts on the next pass, because "stop telling me" has to mean the row goes quiet rather
+         *      than that it is frozen forever.
+         */
+        post: operations["AlertService_SetAlertRuleEnabled"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ListAlerts reports open and recently resolved alerts. It filters its own rows by the caller's
+         *      grants, like ListInstances, so a person granted three servers sees those three servers' alerts
+         *      rather than a 403 (ADR-0035).
+         */
+        get: operations["AlertService_ListAlerts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alerts/{alert_id}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description AcknowledgeAlert silences one alert until its condition clears. The row does not become
+         *      resolved: acknowledging says "I know", never "it stopped".
+         */
+        post: operations["AlertService_AcknowledgeAlert"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audit": {
         parameters: {
             query?: never;
@@ -349,6 +448,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notifiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ListNotifiers reports where alerts are sent, and how that has been going lately. It is
+         *      administrator-only: `settings` is operator-supplied configuration for somebody else's system,
+         *      and a webhook URL that embeds its own credential lives there.
+         */
+        get: operations["AlertService_ListNotifiers"];
+        put?: never;
+        /**
+         * @description CreateNotifier stores a destination. The credential goes to the secrets provider and never into
+         *      `settings`, which is refused if it contains anything that looks like one.
+         */
+        post: operations["AlertService_CreateNotifier"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifiers/{notifier_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["AlertService_DeleteNotifier"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifiers/{notifier_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description TestNotifier sends a real message to a real endpoint, so that "is my webhook configured
+         *      correctly" is answerable before an outage rather than during one.
+         */
+        post: operations["AlertService_TestNotifier"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plugins": {
         parameters: {
             query?: never;
@@ -495,6 +655,90 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AcknowledgeAlertRequest: {
+            alert_id?: string;
+            /** @description Optional note, recorded in the audit record rather than on the alert. */
+            note?: string;
+        };
+        AcknowledgeAlertResponse: {
+            alert?: components["schemas"]["Alert"];
+        };
+        /** @description Alert is one condition that is, or was, true. */
+        Alert: {
+            id?: string;
+            /** @description Empty when the rule that produced this alert has since been deleted. */
+            rule_id?: string;
+            rule_name?: string;
+            /**
+             * Format: enum
+             * @enum {string}
+             */
+            kind?: "ALERT_KIND_UNSPECIFIED" | "ALERT_KIND_INSTANCE_DOWN" | "ALERT_KIND_VERIFICATION_FAILED" | "ALERT_KIND_BACKUP_FAILED" | "ALERT_KIND_BACKUP_MISSING" | "ALERT_KIND_STORAGE_THRESHOLD" | "ALERT_KIND_REPLICATION_LAG" | "ALERT_KIND_CUSTOM_PROMQL" | "ALERT_KIND_RETENTION_BLOCKED";
+            /** @description Empty for an estate-wide condition such as retention_blocked. */
+            instance_id?: string;
+            instance_name?: string;
+            /**
+             * Format: enum
+             * @enum {string}
+             */
+            severity?: "ALERT_SEVERITY_UNSPECIFIED" | "ALERT_SEVERITY_INFO" | "ALERT_SEVERITY_WARNING" | "ALERT_SEVERITY_CRITICAL";
+            /**
+             * Format: enum
+             * @enum {string}
+             */
+            state?: "ALERT_STATE_UNSPECIFIED" | "ALERT_STATE_FIRING" | "ALERT_STATE_ACKNOWLEDGED" | "ALERT_STATE_RESOLVED";
+            /** @description One line an operator can act on, and the detail behind it. */
+            summary?: string;
+            detail?: string;
+            /**
+             * @description The deduplication key. It identifies the *condition*, not the rule that found it, so two
+             *      overlapping rules describing one broken thing produce one alert rather than two pages at 3am.
+             */
+            fingerprint?: string;
+            /** Format: date-time */
+            started_at?: string;
+            /**
+             * Format: date-time
+             * @description Advanced by every pass on which the condition is still true. A rule that keeps firing updates
+             *      this and notifies nobody.
+             */
+            last_seen_at?: string;
+            /** Format: date-time */
+            acknowledged_at?: string;
+            acknowledged_by?: string;
+            /** Format: date-time */
+            resolved_at?: string;
+        };
+        /** @description AlertRule declares a condition worth being told about. */
+        AlertRule: {
+            id?: string;
+            name?: string;
+            description?: string;
+            /**
+             * Format: enum
+             * @enum {string}
+             */
+            kind?: "ALERT_KIND_UNSPECIFIED" | "ALERT_KIND_INSTANCE_DOWN" | "ALERT_KIND_VERIFICATION_FAILED" | "ALERT_KIND_BACKUP_FAILED" | "ALERT_KIND_BACKUP_MISSING" | "ALERT_KIND_STORAGE_THRESHOLD" | "ALERT_KIND_REPLICATION_LAG" | "ALERT_KIND_CUSTOM_PROMQL" | "ALERT_KIND_RETENTION_BLOCKED";
+            /**
+             * Format: enum
+             * @enum {string}
+             */
+            severity?: "ALERT_SEVERITY_UNSPECIFIED" | "ALERT_SEVERITY_INFO" | "ALERT_SEVERITY_WARNING" | "ALERT_SEVERITY_CRITICAL";
+            /**
+             * Format: double
+             * @description What the evaluator compares against, where its kind uses one. `retention_blocked` reads it as
+             *      an age in hours; the other evaluators ignore it.
+             */
+            threshold?: number;
+            /** @description Both empty means the rule covers the whole tenant, which is what the seeded rules do. */
+            environment_id?: string;
+            instance_id?: string;
+            is_enabled?: boolean;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
         /**
          * @description ApiToken is a credential's record. The secret itself appears exactly once, in
          *      CreateTokenResponse, and is stored only as a hash.
@@ -813,6 +1057,27 @@ export interface components {
              */
             shared_directory?: components["schemas"]["SharedDirectory"];
         };
+        CreateAlertRuleRequest: {
+            name?: string;
+            description?: string;
+            /**
+             * Format: enum
+             * @enum {string}
+             */
+            kind?: "ALERT_KIND_UNSPECIFIED" | "ALERT_KIND_INSTANCE_DOWN" | "ALERT_KIND_VERIFICATION_FAILED" | "ALERT_KIND_BACKUP_FAILED" | "ALERT_KIND_BACKUP_MISSING" | "ALERT_KIND_STORAGE_THRESHOLD" | "ALERT_KIND_REPLICATION_LAG" | "ALERT_KIND_CUSTOM_PROMQL" | "ALERT_KIND_RETENTION_BLOCKED";
+            /**
+             * Format: enum
+             * @enum {string}
+             */
+            severity?: "ALERT_SEVERITY_UNSPECIFIED" | "ALERT_SEVERITY_INFO" | "ALERT_SEVERITY_WARNING" | "ALERT_SEVERITY_CRITICAL";
+            /** Format: double */
+            threshold?: number;
+            environment_id?: string;
+            instance_id?: string;
+        };
+        CreateAlertRuleResponse: {
+            rule?: components["schemas"]["AlertRule"];
+        };
         CreateEnvironmentRequest: {
             name?: string;
             description?: string;
@@ -835,6 +1100,27 @@ export interface components {
         };
         CreateInstanceResponse: {
             instance?: components["schemas"]["Instance"];
+        };
+        CreateNotifierRequest: {
+            name?: string;
+            /** @description "webhook" or "smtp". */
+            kind?: string;
+            settings?: {
+                [key: string]: string;
+            };
+            /**
+             * @description The one credential this notifier needs: a webhook header value, or an SMTP password. Stored
+             *      through the secrets provider and never returned. Empty for a destination that needs none.
+             */
+            secret?: string;
+            /**
+             * Format: enum
+             * @enum {string}
+             */
+            min_severity?: "ALERT_SEVERITY_UNSPECIFIED" | "ALERT_SEVERITY_INFO" | "ALERT_SEVERITY_WARNING" | "ALERT_SEVERITY_CRITICAL";
+        };
+        CreateNotifierResponse: {
+            notifier?: components["schemas"]["Notifier"];
         };
         CreateScheduleRequest: {
             instance_id?: string;
@@ -902,7 +1188,16 @@ export interface components {
             /** @description System or internal database, which the UI de-emphasizes and backups usually skip. */
             is_system?: boolean;
         };
+        DeleteAlertRuleResponse: {
+            /**
+             * Format: int32
+             * @description How many of the rule's open alerts were resolved along with it. A deleted rule would otherwise
+             *      strand its alerts where nothing evaluates them.
+             */
+            alerts_resolved?: number;
+        };
         DeleteInstanceResponse: Record<string, never>;
+        DeleteNotifierResponse: Record<string, never>;
         DeleteScheduleResponse: Record<string, never>;
         DiscoverInstanceRequest: {
             instance_id?: string;
@@ -1126,6 +1421,12 @@ export interface components {
             /** Format: date-time */
             created_at?: string;
         };
+        ListAlertRulesResponse: {
+            rules?: components["schemas"]["AlertRule"][];
+        };
+        ListAlertsResponse: {
+            alerts?: components["schemas"]["Alert"][];
+        };
         ListAuditLogResponse: {
             entries?: components["schemas"]["AuditEntry"][];
             next_page_token?: string;
@@ -1148,6 +1449,9 @@ export interface components {
         };
         ListJobsResponse: {
             jobs?: components["schemas"]["Job"][];
+        };
+        ListNotifiersResponse: {
+            notifiers?: components["schemas"]["Notifier"][];
         };
         ListPluginsResponse: {
             plugins?: components["schemas"]["PluginInfo"][];
@@ -1232,6 +1536,41 @@ export interface components {
              */
             replication_lag_seconds?: number;
             is_self?: boolean;
+        };
+        /** @description Notifier is where alerts are sent. */
+        Notifier: {
+            id?: string;
+            name?: string;
+            /** @description "webhook" or "smtp". */
+            kind?: string;
+            /**
+             * @description Non-secret configuration only. The credential lives in the secrets provider and is never
+             *      returned by any read: creation refuses a settings object containing anything that looks like
+             *      one.
+             */
+            settings?: {
+                [key: string]: string;
+            };
+            /** @description True when a credential is stored for this notifier. The value itself is never returned. */
+            has_secret?: boolean;
+            /**
+             * Format: enum
+             * @description Alerts below this severity are not delivered here.
+             * @enum {string}
+             */
+            min_severity?: "ALERT_SEVERITY_UNSPECIFIED" | "ALERT_SEVERITY_INFO" | "ALERT_SEVERITY_WARNING" | "ALERT_SEVERITY_CRITICAL";
+            is_enabled?: boolean;
+            /**
+             * Format: date-time
+             * @description How delivery has been going. Delivery is at-most-once and best-effort (ADR-0039), so these
+             *      three are what make a notifier that has been failing all week visible rather than silent.
+             */
+            last_attempt_at?: string;
+            /** Format: date-time */
+            last_success_at?: string;
+            last_error?: string;
+            /** Format: date-time */
+            created_at?: string;
         };
         /**
          * @description ObjectRef locates an artifact in object storage. Plugins use it for identification and manifest
@@ -1609,6 +1948,13 @@ export interface components {
                 [key: string]: string;
             };
         };
+        SetAlertRuleEnabledRequest: {
+            rule_id?: string;
+            enabled?: boolean;
+        };
+        SetAlertRuleEnabledResponse: {
+            rule?: components["schemas"]["AlertRule"];
+        };
         SetScheduleEnabledRequest: {
             schedule_id?: string;
             enabled?: boolean;
@@ -1682,6 +2028,15 @@ export interface components {
             health?: components["schemas"]["HealthStatus"];
             message?: string;
         };
+        TestNotifierRequest: {
+            notifier_id?: string;
+        };
+        TestNotifierResponse: {
+            delivered?: boolean;
+            /** @description The transport's own message when delivery failed. Never a credential. */
+            error?: string;
+            duration?: string;
+        };
         TimeRange: {
             /** Format: date-time */
             start?: string;
@@ -1719,6 +2074,214 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    AlertService_ListAlertRules: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListAlertRulesResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    AlertService_CreateAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAlertRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateAlertRuleResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    AlertService_DeleteAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteAlertRuleResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    AlertService_SetAlertRuleEnabled: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAlertRuleEnabledRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetAlertRuleEnabledResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    AlertService_ListAlerts: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Restrict to one instance or one environment. Both empty asks about the estate, and the answer
+                 *      is filtered to what the caller's grants cover.
+                 */
+                instance_id?: string;
+                environment_id?: string;
+                /**
+                 * @description Include alerts that have resolved. Off by default: the question is almost always "what is
+                 *      wrong now".
+                 */
+                include_resolved?: boolean;
+                min_severity?: "ALERT_SEVERITY_UNSPECIFIED" | "ALERT_SEVERITY_INFO" | "ALERT_SEVERITY_WARNING" | "ALERT_SEVERITY_CRITICAL";
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListAlertsResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    AlertService_AcknowledgeAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alert_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcknowledgeAlertRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcknowledgeAlertResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
     IdentityService_ListAuditLog: {
         parameters: {
             query?: {
@@ -2463,6 +3026,136 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GetMeResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    AlertService_ListNotifiers: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListNotifiersResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    AlertService_CreateNotifier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateNotifierRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateNotifierResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    AlertService_DeleteNotifier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                notifier_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteNotifierResponse"];
+                };
+            };
+            /** @description Default error response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
+    AlertService_TestNotifier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                notifier_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestNotifierRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestNotifierResponse"];
                 };
             };
             /** @description Default error response */

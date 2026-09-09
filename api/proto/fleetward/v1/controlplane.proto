@@ -197,6 +197,78 @@ service IdentityService {
   }
 }
 
+// AlertService turns conditions Fleetward can already detect into rows somebody is told about.
+//
+// Nothing here detects anything new. Every evaluator reads a computation that already answers a
+// question the API answers — adherence, a verification's verdict, an instance's health, retention's
+// own backlog — so an alert and the estate view can never disagree, because they are the same
+// function (ADR-0038).
+service AlertService {
+  // ListAlerts reports open and recently resolved alerts. It filters its own rows by the caller's
+  // grants, like ListInstances, so a person granted three servers sees those three servers' alerts
+  // rather than a 403 (ADR-0035).
+  rpc ListAlerts(ListAlertsRequest) returns (ListAlertsResponse) {
+    option (google.api.http) = {get: "/api/v1/alerts"};
+  }
+  // AcknowledgeAlert silences one alert until its condition clears. The row does not become
+  // resolved: acknowledging says "I know", never "it stopped".
+  rpc AcknowledgeAlert(AcknowledgeAlertRequest) returns (AcknowledgeAlertResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/alerts/{alert_id}/acknowledge"
+      body: "*"
+    };
+  }
+  rpc ListAlertRules(ListAlertRulesRequest) returns (ListAlertRulesResponse) {
+    option (google.api.http) = {get: "/api/v1/alert-rules"};
+  }
+  // CreateAlertRule declares a condition worth being told about. A kind with no evaluator is
+  // refused rather than stored: a rule accepted and never evaluated is worse than one refused,
+  // because the operator believes they are covered.
+  rpc CreateAlertRule(CreateAlertRuleRequest) returns (CreateAlertRuleResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/alert-rules"
+      body: "*"
+    };
+  }
+  // SetAlertRuleEnabled is the whole silencing story in this version. Disabling a rule resolves its
+  // open alerts on the next pass, because "stop telling me" has to mean the row goes quiet rather
+  // than that it is frozen forever.
+  rpc SetAlertRuleEnabled(SetAlertRuleEnabledRequest) returns (SetAlertRuleEnabledResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/alert-rules/{rule_id}/enabled"
+      body: "*"
+    };
+  }
+  rpc DeleteAlertRule(DeleteAlertRuleRequest) returns (DeleteAlertRuleResponse) {
+    option (google.api.http) = {delete: "/api/v1/alert-rules/{rule_id}"};
+  }
+  // ListNotifiers reports where alerts are sent, and how that has been going lately. It is
+  // administrator-only: `settings` is operator-supplied configuration for somebody else's system,
+  // and a webhook URL that embeds its own credential lives there.
+  rpc ListNotifiers(ListNotifiersRequest) returns (ListNotifiersResponse) {
+    option (google.api.http) = {get: "/api/v1/notifiers"};
+  }
+  // CreateNotifier stores a destination. The credential goes to the secrets provider and never into
+  // `settings`, which is refused if it contains anything that looks like one.
+  rpc CreateNotifier(CreateNotifierRequest) returns (CreateNotifierResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/notifiers"
+      body: "*"
+    };
+  }
+  rpc DeleteNotifier(DeleteNotifierRequest) returns (DeleteNotifierResponse) {
+    option (google.api.http) = {delete: "/api/v1/notifiers/{notifier_id}"};
+  }
+  // TestNotifier sends a real message to a real endpoint, so that "is my webhook configured
+  // correctly" is answerable before an outage rather than during one.
+  rpc TestNotifier(TestNotifierRequest) returns (TestNotifierResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/notifiers/{notifier_id}/test"
+      body: "*"
+    };
+  }
+}
+
 // -----------------------------------------------------------------------------------------------
 // Identity
 // -----------------------------------------------------------------------------------------------
@@ -994,4 +1066,226 @@ message ListJobsRequest {
 
 message ListJobsResponse {
   repeated Job jobs = 1;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Alerts
+// -----------------------------------------------------------------------------------------------
+
+// AlertKind selects an evaluator. It is a closed set that mirrors the `alert_rules.kind` CHECK, it
+// grows only by migration, and it never contains an engine name — an evaluator that branched on an
+// instance's engine would be the violation CLAUDE.md §4.1 exists to forbid.
+enum AlertKind {
+  ALERT_KIND_UNSPECIFIED = 0;
+  // A monitored instance stopped answering its health probe.
+  ALERT_KIND_INSTANCE_DOWN = 1;
+  // A backup was restored into a sandbox and the evidence says it is not usable. Fires on a verdict
+  // of FAILED and on nothing else: an INCONCLUSIVE verdict is not evidence about the artifact, and
+  // routing both through one alert would mute the one that matters (ADR-0022, ADR-0040).
+  ALERT_KIND_VERIFICATION_FAILED = 2;
+  // The most recent backup attempt on an instance failed. Needs no declaration, which is what makes
+  // it different from BACKUP_MISSING.
+  ALERT_KIND_BACKUP_FAILED = 3;
+  // A backup was expected inside a declared window and none arrived. Reads the same adherence
+  // computation the estate view does (ADR-0028).
+  ALERT_KIND_BACKUP_MISSING = 4;
+  // Declared and not yet evaluated: both want metrics nothing collects.
+  ALERT_KIND_STORAGE_THRESHOLD = 5;
+  ALERT_KIND_REPLICATION_LAG = 6;
+  ALERT_KIND_CUSTOM_PROMQL = 7;
+  // An artifact has been past its expiry with its object still in the bucket for longer than the
+  // rule's threshold, which is what a retention sweep looks like when the object store is refusing.
+  ALERT_KIND_RETENTION_BLOCKED = 8;
+}
+
+enum AlertSeverity {
+  ALERT_SEVERITY_UNSPECIFIED = 0;
+  ALERT_SEVERITY_INFO = 1;
+  ALERT_SEVERITY_WARNING = 2;
+  ALERT_SEVERITY_CRITICAL = 3;
+}
+
+enum AlertState {
+  ALERT_STATE_UNSPECIFIED = 0;
+  // The condition is currently true and nobody has said they know.
+  ALERT_STATE_FIRING = 1;
+  // Somebody has said they know. The condition may still be true; acknowledging is not resolving.
+  ALERT_STATE_ACKNOWLEDGED = 2;
+  // The condition is no longer true. Set by evaluation, never by a person.
+  ALERT_STATE_RESOLVED = 3;
+}
+
+// AlertRule declares a condition worth being told about.
+message AlertRule {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  AlertKind kind = 4;
+  AlertSeverity severity = 5;
+  // What the evaluator compares against, where its kind uses one. `retention_blocked` reads it as
+  // an age in hours; the other evaluators ignore it.
+  double threshold = 6;
+  // Both empty means the rule covers the whole tenant, which is what the seeded rules do.
+  string environment_id = 7;
+  string instance_id = 8;
+  bool is_enabled = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+// Alert is one condition that is, or was, true.
+message Alert {
+  string id = 1;
+  // Empty when the rule that produced this alert has since been deleted.
+  string rule_id = 2;
+  string rule_name = 3;
+  AlertKind kind = 4;
+  // Empty for an estate-wide condition such as retention_blocked.
+  string instance_id = 5;
+  string instance_name = 6;
+  AlertSeverity severity = 7;
+  AlertState state = 8;
+  // One line an operator can act on, and the detail behind it.
+  string summary = 9;
+  string detail = 10;
+  // The deduplication key. It identifies the *condition*, not the rule that found it, so two
+  // overlapping rules describing one broken thing produce one alert rather than two pages at 3am.
+  string fingerprint = 11;
+  google.protobuf.Timestamp started_at = 12;
+  // Advanced by every pass on which the condition is still true. A rule that keeps firing updates
+  // this and notifies nobody.
+  google.protobuf.Timestamp last_seen_at = 13;
+  google.protobuf.Timestamp acknowledged_at = 14;
+  string acknowledged_by = 15;
+  google.protobuf.Timestamp resolved_at = 16;
+}
+
+// Notifier is where alerts are sent.
+message Notifier {
+  string id = 1;
+  string name = 2;
+  // "webhook" or "smtp".
+  string kind = 3;
+  // Non-secret configuration only. The credential lives in the secrets provider and is never
+  // returned by any read: creation refuses a settings object containing anything that looks like
+  // one.
+  map<string, string> settings = 4;
+  // True when a credential is stored for this notifier. The value itself is never returned.
+  bool has_secret = 5;
+  // Alerts below this severity are not delivered here.
+  AlertSeverity min_severity = 6;
+  bool is_enabled = 7;
+  // How delivery has been going. Delivery is at-most-once and best-effort (ADR-0039), so these
+  // three are what make a notifier that has been failing all week visible rather than silent.
+  google.protobuf.Timestamp last_attempt_at = 8;
+  google.protobuf.Timestamp last_success_at = 9;
+  string last_error = 10;
+  google.protobuf.Timestamp created_at = 11;
+}
+
+message ListAlertsRequest {
+  // Restrict to one instance or one environment. Both empty asks about the estate, and the answer
+  // is filtered to what the caller's grants cover.
+  string instance_id = 1;
+  string environment_id = 2;
+  // Include alerts that have resolved. Off by default: the question is almost always "what is
+  // wrong now".
+  bool include_resolved = 3;
+  AlertSeverity min_severity = 4;
+  int32 page_size = 5;
+}
+
+message ListAlertsResponse {
+  repeated Alert alerts = 1;
+}
+
+message AcknowledgeAlertRequest {
+  string alert_id = 1;
+  // Optional note, recorded in the audit record rather than on the alert.
+  string note = 2;
+}
+
+message AcknowledgeAlertResponse {
+  Alert alert = 1;
+}
+
+message ListAlertRulesRequest {
+  bool include_disabled = 1;
+}
+
+message ListAlertRulesResponse {
+  repeated AlertRule rules = 1;
+}
+
+message CreateAlertRuleRequest {
+  string name = 1;
+  string description = 2;
+  AlertKind kind = 3;
+  AlertSeverity severity = 4;
+  double threshold = 5;
+  string environment_id = 6;
+  string instance_id = 7;
+}
+
+message CreateAlertRuleResponse {
+  AlertRule rule = 1;
+}
+
+message SetAlertRuleEnabledRequest {
+  string rule_id = 1;
+  bool enabled = 2;
+}
+
+message SetAlertRuleEnabledResponse {
+  AlertRule rule = 1;
+}
+
+message DeleteAlertRuleRequest {
+  string rule_id = 1;
+}
+
+message DeleteAlertRuleResponse {
+  // How many of the rule's open alerts were resolved along with it. A deleted rule would otherwise
+  // strand its alerts where nothing evaluates them.
+  int32 alerts_resolved = 1;
+}
+
+message ListNotifiersRequest {
+  bool include_disabled = 1;
+}
+
+message ListNotifiersResponse {
+  repeated Notifier notifiers = 1;
+}
+
+message CreateNotifierRequest {
+  string name = 1;
+  // "webhook" or "smtp".
+  string kind = 2;
+  map<string, string> settings = 3;
+  // The one credential this notifier needs: a webhook header value, or an SMTP password. Stored
+  // through the secrets provider and never returned. Empty for a destination that needs none.
+  string secret = 4;
+  AlertSeverity min_severity = 5;
+}
+
+message CreateNotifierResponse {
+  Notifier notifier = 1;
+}
+
+message DeleteNotifierRequest {
+  string notifier_id = 1;
+}
+
+message DeleteNotifierResponse {}
+
+message TestNotifierRequest {
+  string notifier_id = 1;
+}
+
+message TestNotifierResponse {
+  bool delivered = 1;
+  // The transport's own message when delivery failed. Never a credential.
+  string error = 2;
+  google.protobuf.Duration duration = 3;
 }

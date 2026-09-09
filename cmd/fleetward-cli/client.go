@@ -463,3 +463,85 @@ func resolveToken(inline, file string) (string, error) {
 	}
 	return strings.TrimSpace(inline), nil
 }
+
+// -----------------------------------------------------------------------------------------------
+// Alerts
+// -----------------------------------------------------------------------------------------------
+
+type alertRow struct {
+	ID           string     `json:"id"`
+	RuleID       string     `json:"rule_id"`
+	RuleName     string     `json:"rule_name"`
+	Kind         string     `json:"kind"`
+	InstanceID   string     `json:"instance_id"`
+	InstanceName string     `json:"instance_name"`
+	Severity     string     `json:"severity"`
+	State        string     `json:"state"`
+	Summary      string     `json:"summary"`
+	Detail       string     `json:"detail"`
+	Fingerprint  string     `json:"fingerprint"`
+	StartedAt    *time.Time `json:"started_at"`
+	LastSeenAt   *time.Time `json:"last_seen_at"`
+	ResolvedAt   *time.Time `json:"resolved_at"`
+}
+
+type alertListResponse struct {
+	Alerts []alertRow `json:"alerts"`
+}
+
+type alertAckResponse struct {
+	Alert *alertRow `json:"alert"`
+}
+
+type alertRuleRow struct {
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Description   string  `json:"description"`
+	Kind          string  `json:"kind"`
+	Severity      string  `json:"severity"`
+	Threshold     float64 `json:"threshold"`
+	EnvironmentID string  `json:"environment_id"`
+	InstanceID    string  `json:"instance_id"`
+	IsEnabled     bool    `json:"is_enabled"`
+}
+
+type alertRuleListResponse struct {
+	Rules []alertRuleRow `json:"rules"`
+}
+
+type alertRuleResponse struct {
+	Rule *alertRuleRow `json:"rule"`
+}
+
+type alertRuleDeleteResponse struct {
+	AlertsResolved int `json:"alerts_resolved"`
+}
+
+// notifierRow deliberately has no field for a credential. There is nothing to decode: no read API
+// returns one, and `has_secret` is the whole of what a reader is told.
+type notifierRow struct {
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Kind          string            `json:"kind"`
+	Settings      map[string]string `json:"settings"`
+	HasSecret     bool              `json:"has_secret"`
+	MinSeverity   string            `json:"min_severity"`
+	IsEnabled     bool              `json:"is_enabled"`
+	LastAttemptAt *time.Time        `json:"last_attempt_at"`
+	LastSuccessAt *time.Time        `json:"last_success_at"`
+	LastError     string            `json:"last_error"`
+}
+
+type notifierListResponse struct {
+	Notifiers []notifierRow `json:"notifiers"`
+}
+
+type notifierResponse struct {
+	Notifier *notifierRow `json:"notifier"`
+}
+
+type notifierTestResponse struct {
+	Delivered bool   `json:"delivered"`
+	Error     string `json:"error"`
+	Duration  string `json:"duration"`
+}

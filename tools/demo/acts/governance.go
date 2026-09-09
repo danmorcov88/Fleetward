@@ -198,28 +198,6 @@ func actRetention(ctx context.Context, n *Narrator, c *client, db *metadb, s *se
 	return nil
 }
 
-// actAlerts is act 7, and it is a stub on purpose.
-//
-// The most dramatic beat this product will ever have is an alert firing on the failed verification
-// in act 4, and it is not built. Leaving the slot rather than staging it is the whole discipline
-// this repository runs on: a demo that shows a feature which exists only in a brief is the
-// fastest way to make every other claim in it untrustworthy.
-func actAlerts(n *Narrator) {
-	n.Act(7, "The alert — not built",
-		"This is where a notification would fire on the failed verification in act 4.")
-	n.Say("It does not, and nothing here is going to pretend otherwise.")
-	n.Say("")
-	n.Say("`alert_rules`, `alerts` and `notifiers` exist in the schema and no Go code touches them. " +
-		"A failed verification, a missed backup window, a schedule that has silently stopped " +
-		"firing and a retention sweep whose object store has been refusing all week are all " +
-		"visible today only by polling the API or reading the log. That is slice B7, and it is next.")
-	n.Say("")
-	n.Say("This is a work in progress at slice six of sixteen. Alerts, metrics and a release are " +
-		"not built, and five of the eight engines still only handshake. " +
-		"docs/dev/STATUS.md is the list, and it is kept accurate on purpose.")
-	n.Beat()
-}
-
 // demonstrateAppendOnly tries to delete an audit row and requires the database to refuse.
 //
 // Through the metadata connection rather than the API, deliberately: the API has no endpoint that

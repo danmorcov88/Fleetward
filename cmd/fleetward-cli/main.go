@@ -87,6 +87,7 @@ func newRootCommand() *cobra.Command {
 		newJobCommand(&serverURL, &timeout, &token),
 		newTokenCommand(&serverURL, &timeout, &token),
 		newAuditCommand(&serverURL, &timeout, &token),
+		newAlertCommand(&serverURL, &timeout, &token),
 	)
 
 	return root

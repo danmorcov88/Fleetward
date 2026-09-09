@@ -65,6 +65,15 @@ func (g *Guard) resolveScope(ctx context.Context, rule Rule, req proto.Message, 
 			WHERE  v.id = $1 AND v.tenant_id = $2`,
 			stringField(req, "verification_id"))
 
+	case ScopeAlert:
+		// `instance_id` is nullable on `alerts`: the estate-wide condition — retention_blocked —
+		// belongs to no server. The COALESCE turns that into the empty string, which instanceOf
+		// reads as "the whole tenant", so acknowledging it needs a tenant-wide grant. Without the
+		// COALESCE the scan would fail on a NULL and the request would 500 rather than 403.
+		return g.instanceOf(ctx, tenantID, `
+			SELECT COALESCE(instance_id::text, '') FROM alerts WHERE id = $1 AND tenant_id = $2`,
+			stringField(req, "alert_id"))
+
 	default:
 		return Scope{}, fmt.Errorf("authz: unknown scope source %d", rule.Scope)
 	}

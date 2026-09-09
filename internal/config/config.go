@@ -48,6 +48,7 @@ type Config struct {
 	Telemetry   TelemetryConfig
 	Scheduler   SchedulerConfig
 	Retention   RetentionConfig
+	Alerts      AlertsConfig
 	Sandbox     SandboxConfig
 }
 
@@ -228,6 +229,35 @@ type RetentionConfig struct {
 	MaxPerSweep int
 }
 
+// AlertsConfig tunes evaluation and delivery (ADR-0038, ADR-0039).
+//
+// The evaluation half is paced; the delivery half is bounded. Nothing here changes *what* is an
+// alert — that is `alert_rules`, which is data an operator edits rather than configuration an
+// operator restarts for.
+type AlertsConfig struct {
+	// Enabled turns evaluation on. False leaves the tables untouched, which is what every version
+	// before this one did, and is a legitimate configuration for somebody who wants the API and the
+	// CLI without a pass running on a tick.
+	Enabled bool
+	// EvalInterval paces the pass. The default is thirty seconds because that is the staleness the
+	// roadmap claims — "the answer to 'does anything need my attention right now' is never more
+	// than about thirty seconds stale" — and a number in a document that the code does not honour
+	// is worse than no number.
+	EvalInterval time.Duration
+	// DeliveryWorkers is how many notifications are in flight at once.
+	DeliveryWorkers int
+	// DeliveryQueueSize bounds what is waiting. A full queue drops rather than blocks: the producer
+	// is the evaluation pass, and a pass that waited on a slow SMTP server would stop finding the
+	// other things that are wrong.
+	DeliveryQueueSize int
+	// DeliveryTimeout bounds one attempt at one destination.
+	DeliveryTimeout time.Duration
+	// DeliveryAttempts is how many times one notification is tried before it is given up on.
+	// Bounded and small on purpose: this is a retry, not an outbox, and the alert row is the record
+	// either way (ADR-0039).
+	DeliveryAttempts int
+}
+
 // SandboxConfig configures the ephemeral containers used for backup verification.
 type SandboxConfig struct {
 	// Provider is "docker" in the MVP; "kubernetes" is the planned second implementation.
@@ -359,6 +389,14 @@ func Load() (*Config, error) {
 			MinKeep:     envInt("RETENTION_MIN_KEEP", 1),
 			MaxPerSweep: envInt("RETENTION_MAX_PER_SWEEP", 500),
 		},
+		Alerts: AlertsConfig{
+			Enabled:           envBool("ALERTS_ENABLED", true),
+			EvalInterval:      envDuration("ALERTS_EVAL_INTERVAL", 30*time.Second),
+			DeliveryWorkers:   envInt("ALERTS_DELIVERY_WORKERS", 2),
+			DeliveryQueueSize: envInt("ALERTS_DELIVERY_QUEUE_SIZE", 256),
+			DeliveryTimeout:   envDuration("ALERTS_DELIVERY_TIMEOUT", 15*time.Second),
+			DeliveryAttempts:  envInt("ALERTS_DELIVERY_ATTEMPTS", 3),
+		},
 		Sandbox: SandboxConfig{
 			Provider:       env("SANDBOX_PROVIDER", "docker"),
 			DockerHost:     env("SANDBOX_DOCKER_HOST", ""),
@@ -449,6 +487,33 @@ func (c *Config) Validate() error {
 			envPrefix, c.Retention.Interval))
 	}
 
+	// Checked even when alerting is disabled, for the same reason retention's limits are: a value
+	// that would be wrong when somebody turns it on should be refused when they write it.
+	if c.Alerts.EvalInterval <= 0 {
+		errs = append(errs, fmt.Errorf(
+			"%sALERTS_EVAL_INTERVAL (%s): must be positive; zero would evaluate the whole estate on "+
+				"every scheduler tick",
+			envPrefix, c.Alerts.EvalInterval))
+	}
+	if c.Alerts.DeliveryWorkers < 1 {
+		errs = append(errs, fmt.Errorf(
+			"%sALERTS_DELIVERY_WORKERS (%d): must be at least 1; zero would queue every notification "+
+				"and deliver none, which looks exactly like an estate with nothing wrong",
+			envPrefix, c.Alerts.DeliveryWorkers))
+	}
+	if c.Alerts.DeliveryQueueSize < 1 {
+		errs = append(errs, fmt.Errorf(
+			"%sALERTS_DELIVERY_QUEUE_SIZE (%d): must be at least 1; a queue of zero drops every "+
+				"notification the instant it is produced",
+			envPrefix, c.Alerts.DeliveryQueueSize))
+	}
+	if c.Alerts.DeliveryAttempts < 1 {
+		errs = append(errs, fmt.Errorf(
+			"%sALERTS_DELIVERY_ATTEMPTS (%d): must be at least 1; delivery is at-most-once already "+
+				"and zero attempts is not delivery",
+			envPrefix, c.Alerts.DeliveryAttempts))
+	}
+
 	if (c.Sandbox.SharedDirVolume == "") != (c.Sandbox.SharedDirLocal == "") {
 		errs = append(errs, fmt.Errorf(
 			"%sSANDBOX_SHARED_DIR_VOLUME and %sSANDBOX_SHARED_DIR_LOCAL must be set together: "+
@@ -532,6 +597,7 @@ func (c *Config) LogValue() slog.Value {
 		slog.Bool("auth_bootstrap_token_set", c.Auth.BootstrapToken != "" || c.Auth.BootstrapTokenFile != ""),
 		slog.Bool("scheduler_enabled", c.Scheduler.Enabled),
 		slog.Bool("retention_enabled", c.Retention.Enabled),
+		slog.Bool("alerts_enabled", c.Alerts.Enabled),
 		slog.String("sandbox_provider", c.Sandbox.Provider),
 	)
 }

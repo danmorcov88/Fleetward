@@ -12,47 +12,66 @@ and everything with a longer lifetime lives elsewhere: rationale in the
 
 ## Current position
 
-**Slice D1 is complete. Next is B7 — alert rules and delivery.**
+**Slice B7 is complete. Next is B8 — self-observability.**
 
-Six slices had shipped and none of them had ever been shown to anybody. `make demo` now tells the
-product's story on a real stack in one command, ending with a backup that fails verification on
-purpose — and `make demo-check` runs the same program in CI on every pull request, so it cannot
-quietly stop working. `test/e2e/` had been empty since the foundation, holding a package comment
-that described this slice and no test; it holds the test now.
+`alert_rules`, `alerts` and `notifiers` had been in the schema since migration `000001` and no Go
+code had ever touched them. A failed verification was visible only to somebody who went looking,
+which is the difference between a dashboard and monitoring. Five conditions now become alert rows on
+a pass over the estate every thirty seconds, and a webhook or an SMTP destination is told about the
+ones that are new.
+
+**Nothing in this slice detects anything new.** Every evaluator reads a computation that already
+answers the same question the API answers — `GetBackupAdherence` for a missed window,
+`verifications.status` for a failed verification, `instances.health` for a silent server, and
+retention's own backlog of expired rows whose objects are still there. So an alert and the estate
+view cannot disagree, because they are the same function.
 
 | The thing | What holds it |
 |---|---|
-| a demo that quietly stops matching the product | it *is* the end-to-end test; a renamed field fails `End-to-end demo` on the pull request that renamed it |
-| a demo that shows something not built | act 7 prints that alerts do not exist and names B7 |
-| a fixture passed off as live | every seeded sentence goes through `Narrator.Seeded` and comes out marked, on screen and in `docs/demo.md` |
-| the retention sweep blanking the estate mid-demo | seeded backups carry no expiry; exactly five on one instance are stamped, deliberately, and acts 5 and 6 are built out of them |
-| the demo writing to somebody's own database | the one place it writes to a monitored instance goes through `docker compose exec`, never a published port |
-| a second run confused by the first | the seeder clears the previous demo estate before it seeds; run twice and the second is not confused |
+| a rule that keeps firing paging somebody every thirty seconds | `alerts.fingerprint` identifies the *condition*; the upsert against its partial unique index updates one row, and only the transition delivers |
+| two control planes paging everybody twice | `RETURNING (xmax = 0)` — exactly one of them learns that it inserted, and only that one delivers |
+| two overlapping rules paging twice for one broken thing | the fingerprint carries no rule id; matching rules are ranked by severity and the loudest wins ([ADR-0034](../adr/0034-grants-are-additive-and-the-highest-rank-wins.md)'s reasoning) |
+| an INCONCLUSIVE verdict muting the alert that matters | the predicate is a named constant, and three tests refuse to let it widen ([ADR-0040](../adr/0040-an-inconclusive-verification-is-not-an-alert-about-the-artifact.md)) |
+| an alert per instance on the first pass of a fresh install | `NOT_DECLARED` produces no condition; only `MISSED` does |
+| a rule kind that is stored and never fires | `storage_threshold`, `replication_lag` and `custom_promql` are refused at creation, naming what they wait on |
+| an alert left firing forever after its rule is disabled or deleted | a kind with no enabled rule is *covered* by resolution with no fingerprints; deleting a rule resolves its alerts in the same transaction |
+| a notifier credential in a column every admin reads | it goes to the secrets provider, and a `settings` key that looks like one is refused |
+| a webhook URL — which for Slack *is* the credential — in `notifiers.last_error` | the transports describe failures rather than wrapping errors that carry the URL, and a test asserts it |
+| a destination that has been failing all week being invisible | `last_attempt_at`, `last_success_at` and `last_error` on the row, and `alert notifier list` shows them |
 
-One decision was worth a record:
-[ADR-0037](../adr/0037-the-demo-and-the-end-to-end-test-are-one-program.md) — the demo and the
-end-to-end test are one program, because whichever of a split pair CI does not run is the one that
-lies.
+Three decisions were worth records:
+[ADR-0038](../adr/0038-alert-evaluation-is-a-pass-over-the-estate.md) — evaluation is a pass over the
+estate rather than a job, for [ADR-0030](../adr/0030-retention-sweeps-the-estate-and-never-deletes-a-row.md)'s
+reasons plus frequency;
+[ADR-0039](../adr/0039-the-alert-is-the-record-and-the-notification-is-best-effort.md) — the alert row
+is the record and delivery is at-most-once, with the three things that make that trade defensible
+shipped alongside it;
+[ADR-0040](../adr/0040-an-inconclusive-verification-is-not-an-alert-about-the-artifact.md) — an
+inconclusive verification is not an alert about the artifact, which is
+[ADR-0022](../adr/0022-failed-and-inconclusive-are-different-answers.md) finally doing work rather
+than waiting to.
 
-The operational surface is `make demo`, `make demo-keep` and `make demo-check`, all three of which
-are `go run ./tools/demo` or `go test -tags=e2e` underneath, so a machine without `make` loses
-nothing. The page is [`../demo.md`](../demo.md), and its first section is what is seeded rather than
-what is impressive.
+The operational surface is `fleetward-cli alert list | ack`, `alert rule …` and `alert notifier …`,
+and the page is [`../ops/alerting.md`](../ops/alerting.md) — whose second section is what alerting
+will *not* tell you.
+
+Act 7 of the demo is filled. It shows the alert that fires on the artifact act 4 corrupts, the
+webhook that arrives because of it, a second pass creating no second row, and the acknowledgement in
+the audit log.
 
 ## What comes next, and why that order
 
-**B7 — alert rules and delivery.** `alert_rules`, `alerts` and `notifiers` have existed in the schema
-since migration 000001 and no Go code touches them. Today a failed verification, a missed backup
-window, a schedule that has silently stopped firing and a retention sweep whose object store has
-been refusing all week are visible only by polling the API or reading the log — which is the
-difference between a dashboard and monitoring.
+**B8 — self-observability.** OpenTelemetry is wired in `internal/telemetry/otel.go` with zero call
+sites: no span is started, no meter is obtained, and there is no `/metrics`. An operator asked to
+install this will ask how to monitor it, and the answer cannot be that they cannot — which is
+sharper now than it was a slice ago, because B7 just made Fleetward something people are supposed to
+rely on being awake.
 
-It also fills act 7. The demo's most dramatic beat is an alert firing on the artifact act 4
-corrupts, and the act list was written so that inserting it is an addition rather than a rewrite.
+It is also the slice that answers "did the evaluation pass run last night", which B7 deliberately
+left to a log line ([ADR-0038](../adr/0038-alert-evaluation-is-a-pass-over-the-estate.md)).
 
-Session protocol: [`slices/README.md`](slices/README.md). B7's brief is not written yet; briefs are
-written when the slice starts, and D1's was the one exception — written ahead, deliberately, so a
-fresh session could start it cold.
+Session protocol: [`slices/README.md`](slices/README.md). B8's brief is not written yet; briefs are
+written when the slice starts.
 
 ## Phases
 
@@ -60,7 +79,7 @@ fresh session could start it cold.
 |---|---|
 | Foundation — contract, control plane, dev stack | ✅ [journal](journal/00-foundation.md) |
 | A — prove the loop (PostgreSQL), A1–A6 | ✅ [journal](journal/README.md) |
-| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B6 done, B7 next |
+| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B7 done, B8 next |
 | D1 — the demo, and the end-to-end test it is | ✅ [journal](journal/D1-the-demo.md) |
 | Access compliance, structural drift, query editor | deferred — see [roadmap](../roadmap.md#deferred-deliberately) |
 
@@ -154,10 +173,41 @@ Listed so that no session has to re-derive them, and so that no document has to 
   artifact** in the bucket of a stack started with `--keep`. The next run clears the estate, and the
   object goes with `docker compose down --volumes`. It is a development stack and the artifact is one
   the demo took itself.
-- **Nothing is delivered anywhere.** `alert_rules`, `alerts`, and `notifiers` exist in the schema
-  and no Go code touches them. A failed verification, a missed backup window, a schedule that has
-  silently stopped firing, and a retention sweep whose object store has been refusing all week are
-  all visible only by polling the API or reading the log. **B7.**
+- **A notification can be lost, and the absence of one is not evidence that nothing is wrong.**
+  Delivery is at-most-once: a bounded in-process queue, a small bounded retry, and then the
+  notification is logged and dropped. There is no outbox table, no backoff schedule and no
+  dead-letter queue ([ADR-0039](../adr/0039-the-alert-is-the-record-and-the-notification-is-best-effort.md)).
+  The alert row survives all of it, and three things make the trade visible rather than hidden:
+  `notifiers.last_attempt_at`, `last_success_at` and `last_error`; `alert notifier test`, which
+  sends a real message; and `docs/ops/alerting.md` saying so in its own section. A control plane
+  restarted with work in its queue loses it.
+- **An `inconclusive` verification produces no alert.** Deliberate, and the strongest form of
+  [ADR-0022](../adr/0022-failed-and-inconclusive-are-different-answers.md): a sandbox that never
+  started is not evidence that a backup is bad, and routing it through the same alert as a
+  proven-bad artifact is how the alert that matters gets muted
+  ([ADR-0040](../adr/0040-an-inconclusive-verification-is-not-an-alert-about-the-artifact.md)).
+  The cost is real: a sandbox provider broken all week means verification is not happening at all
+  and nothing pages anybody. The estate view shows the verdicts and readiness reports the provider
+  as degraded; neither is a page. The fix is a separate rule kind at a lower severity, never a
+  widened predicate, and three tests refuse the widening.
+- **Three rule kinds are declared and not evaluated.** `storage_threshold`, `replication_lag` and
+  `custom_promql` are in `alert_rules.kind`'s CHECK because they are where alerting is going, and
+  all three want database metrics that nothing collects. Creating a rule of one of them is refused
+  rather than stored: a rule accepted and never evaluated is worse than one refused.
+- **Alert evaluation leaves no job row, so `job list` cannot answer "did it run last night".** The
+  same consequence retention has and for the same reason
+  ([ADR-0038](../adr/0038-alert-evaluation-is-a-pass-over-the-estate.md)). The log line and the
+  alert rows are the account. **B8** is where a counter arrives.
+- **A webhook URL that embeds its own credential is readable by an administrator.** Slack and Teams
+  build the token into the path, and that path lives in `notifiers.settings`, which `ListNotifiers`
+  returns. The notifier's *own* secret never appears there and a credential-shaped settings key is
+  refused; the vendor URL is the case that check cannot catch. Notifier management is `admin`-only
+  partly for this reason, and `docs/ops/alerting.md` states it.
+- **Silencing is disabling a rule, and nothing else.** No maintenance windows, no per-alert snoozes,
+  no grouping, no inhibition. Disabling resolves the rule's open alerts on the next pass, which is
+  the honest version of "stop telling me".
+- **There is no alerts screen.** `web/src/components/AppShell.tsx` keeps `enabled: false` on
+  `/alerts`. The API and the CLI are the whole surface.
 - **Fleetward cannot be observed.** OpenTelemetry is wired in `internal/telemetry/otel.go` with
   zero call sites: no span is started and no meter obtained. There is no `/metrics`, and a 403 emits
   no metric either. **B8.**

@@ -172,7 +172,7 @@ func TestHealthCheckReportsAStalledLoop(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.SchedulerConfig{Enabled: true, PollInterval: 10 * time.Second}
-	s := New(nil, nil, cfg, config.RetentionConfig{}, discardLogger())
+	s := New(nil, nil, cfg, config.RetentionConfig{}, config.AlertsConfig{}, discardLogger())
 
 	s.lastTick.Store(time.Now().UnixNano())
 	if err := s.HealthCheck(testTenantCtx()); err != nil {
@@ -189,7 +189,7 @@ func TestHealthCheckReportsAStalledLoop(t *testing.T) {
 	}
 
 	// A scheduler that was deliberately switched off is not unhealthy, it is off.
-	off := New(nil, nil, config.SchedulerConfig{Enabled: false}, config.RetentionConfig{}, discardLogger())
+	off := New(nil, nil, config.SchedulerConfig{Enabled: false}, config.RetentionConfig{}, config.AlertsConfig{}, discardLogger())
 	off.lastTick.Store(time.Now().Add(-24 * time.Hour).UnixNano())
 	if err := off.HealthCheck(testTenantCtx()); err != nil {
 		t.Fatalf("a disabled scheduler must not degrade readiness; got %v", err)
@@ -201,7 +201,7 @@ func TestHealthCheckReportsAStalledLoop(t *testing.T) {
 func TestCloseIsSafeWhenDisabled(t *testing.T) {
 	t.Parallel()
 
-	s := New(nil, nil, config.SchedulerConfig{Enabled: false}, config.RetentionConfig{}, discardLogger())
+	s := New(nil, nil, config.SchedulerConfig{Enabled: false}, config.RetentionConfig{}, config.AlertsConfig{}, discardLogger())
 	s.Start(testTenantCtx())
 
 	done := make(chan error, 1)

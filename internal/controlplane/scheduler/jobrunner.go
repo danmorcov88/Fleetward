@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 
+	"github.com/danmorcov88/fleetward/internal/controlplane/alerts"
 	"github.com/danmorcov88/fleetward/internal/controlplane/backup"
 	"github.com/danmorcov88/fleetward/internal/controlplane/inventory"
 )
@@ -20,11 +21,14 @@ import (
 type JobRunner struct {
 	backups   *backup.Service
 	inventory *inventory.Service
+	// alerts may be nil, which is what a control plane started with alerting disabled has. Every
+	// other kind of work still runs.
+	alerts *alerts.Service
 }
 
 // NewJobRunner wraps the services the scheduler drives.
-func NewJobRunner(backups *backup.Service, inv *inventory.Service) *JobRunner {
-	return &JobRunner{backups: backups, inventory: inv}
+func NewJobRunner(backups *backup.Service, inv *inventory.Service, alertsSvc *alerts.Service) *JobRunner {
+	return &JobRunner{backups: backups, inventory: inv, alerts: alertsSvc}
 }
 
 var _ Runner = (*JobRunner)(nil)

@@ -555,6 +555,194 @@ func (JobState) EnumDescriptor() ([]byte, []int) {
 	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{8}
 }
 
+// AlertKind selects an evaluator. It is a closed set that mirrors the `alert_rules.kind` CHECK, it
+// grows only by migration, and it never contains an engine name — an evaluator that branched on an
+// instance's engine would be the violation CLAUDE.md §4.1 exists to forbid.
+type AlertKind int32
+
+const (
+	AlertKind_ALERT_KIND_UNSPECIFIED AlertKind = 0
+	// A monitored instance stopped answering its health probe.
+	AlertKind_ALERT_KIND_INSTANCE_DOWN AlertKind = 1
+	// A backup was restored into a sandbox and the evidence says it is not usable. Fires on a verdict
+	// of FAILED and on nothing else: an INCONCLUSIVE verdict is not evidence about the artifact, and
+	// routing both through one alert would mute the one that matters (ADR-0022, ADR-0040).
+	AlertKind_ALERT_KIND_VERIFICATION_FAILED AlertKind = 2
+	// The most recent backup attempt on an instance failed. Needs no declaration, which is what makes
+	// it different from BACKUP_MISSING.
+	AlertKind_ALERT_KIND_BACKUP_FAILED AlertKind = 3
+	// A backup was expected inside a declared window and none arrived. Reads the same adherence
+	// computation the estate view does (ADR-0028).
+	AlertKind_ALERT_KIND_BACKUP_MISSING AlertKind = 4
+	// Declared and not yet evaluated: both want metrics nothing collects.
+	AlertKind_ALERT_KIND_STORAGE_THRESHOLD AlertKind = 5
+	AlertKind_ALERT_KIND_REPLICATION_LAG   AlertKind = 6
+	AlertKind_ALERT_KIND_CUSTOM_PROMQL     AlertKind = 7
+	// An artifact has been past its expiry with its object still in the bucket for longer than the
+	// rule's threshold, which is what a retention sweep looks like when the object store is refusing.
+	AlertKind_ALERT_KIND_RETENTION_BLOCKED AlertKind = 8
+)
+
+// Enum value maps for AlertKind.
+var (
+	AlertKind_name = map[int32]string{
+		0: "ALERT_KIND_UNSPECIFIED",
+		1: "ALERT_KIND_INSTANCE_DOWN",
+		2: "ALERT_KIND_VERIFICATION_FAILED",
+		3: "ALERT_KIND_BACKUP_FAILED",
+		4: "ALERT_KIND_BACKUP_MISSING",
+		5: "ALERT_KIND_STORAGE_THRESHOLD",
+		6: "ALERT_KIND_REPLICATION_LAG",
+		7: "ALERT_KIND_CUSTOM_PROMQL",
+		8: "ALERT_KIND_RETENTION_BLOCKED",
+	}
+	AlertKind_value = map[string]int32{
+		"ALERT_KIND_UNSPECIFIED":         0,
+		"ALERT_KIND_INSTANCE_DOWN":       1,
+		"ALERT_KIND_VERIFICATION_FAILED": 2,
+		"ALERT_KIND_BACKUP_FAILED":       3,
+		"ALERT_KIND_BACKUP_MISSING":      4,
+		"ALERT_KIND_STORAGE_THRESHOLD":   5,
+		"ALERT_KIND_REPLICATION_LAG":     6,
+		"ALERT_KIND_CUSTOM_PROMQL":       7,
+		"ALERT_KIND_RETENTION_BLOCKED":   8,
+	}
+)
+
+func (x AlertKind) Enum() *AlertKind {
+	p := new(AlertKind)
+	*p = x
+	return p
+}
+
+func (x AlertKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AlertKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_fleetward_v1_controlplane_proto_enumTypes[9].Descriptor()
+}
+
+func (AlertKind) Type() protoreflect.EnumType {
+	return &file_fleetward_v1_controlplane_proto_enumTypes[9]
+}
+
+func (x AlertKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AlertKind.Descriptor instead.
+func (AlertKind) EnumDescriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{9}
+}
+
+type AlertSeverity int32
+
+const (
+	AlertSeverity_ALERT_SEVERITY_UNSPECIFIED AlertSeverity = 0
+	AlertSeverity_ALERT_SEVERITY_INFO        AlertSeverity = 1
+	AlertSeverity_ALERT_SEVERITY_WARNING     AlertSeverity = 2
+	AlertSeverity_ALERT_SEVERITY_CRITICAL    AlertSeverity = 3
+)
+
+// Enum value maps for AlertSeverity.
+var (
+	AlertSeverity_name = map[int32]string{
+		0: "ALERT_SEVERITY_UNSPECIFIED",
+		1: "ALERT_SEVERITY_INFO",
+		2: "ALERT_SEVERITY_WARNING",
+		3: "ALERT_SEVERITY_CRITICAL",
+	}
+	AlertSeverity_value = map[string]int32{
+		"ALERT_SEVERITY_UNSPECIFIED": 0,
+		"ALERT_SEVERITY_INFO":        1,
+		"ALERT_SEVERITY_WARNING":     2,
+		"ALERT_SEVERITY_CRITICAL":    3,
+	}
+)
+
+func (x AlertSeverity) Enum() *AlertSeverity {
+	p := new(AlertSeverity)
+	*p = x
+	return p
+}
+
+func (x AlertSeverity) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AlertSeverity) Descriptor() protoreflect.EnumDescriptor {
+	return file_fleetward_v1_controlplane_proto_enumTypes[10].Descriptor()
+}
+
+func (AlertSeverity) Type() protoreflect.EnumType {
+	return &file_fleetward_v1_controlplane_proto_enumTypes[10]
+}
+
+func (x AlertSeverity) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AlertSeverity.Descriptor instead.
+func (AlertSeverity) EnumDescriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{10}
+}
+
+type AlertState int32
+
+const (
+	AlertState_ALERT_STATE_UNSPECIFIED AlertState = 0
+	// The condition is currently true and nobody has said they know.
+	AlertState_ALERT_STATE_FIRING AlertState = 1
+	// Somebody has said they know. The condition may still be true; acknowledging is not resolving.
+	AlertState_ALERT_STATE_ACKNOWLEDGED AlertState = 2
+	// The condition is no longer true. Set by evaluation, never by a person.
+	AlertState_ALERT_STATE_RESOLVED AlertState = 3
+)
+
+// Enum value maps for AlertState.
+var (
+	AlertState_name = map[int32]string{
+		0: "ALERT_STATE_UNSPECIFIED",
+		1: "ALERT_STATE_FIRING",
+		2: "ALERT_STATE_ACKNOWLEDGED",
+		3: "ALERT_STATE_RESOLVED",
+	}
+	AlertState_value = map[string]int32{
+		"ALERT_STATE_UNSPECIFIED":  0,
+		"ALERT_STATE_FIRING":       1,
+		"ALERT_STATE_ACKNOWLEDGED": 2,
+		"ALERT_STATE_RESOLVED":     3,
+	}
+)
+
+func (x AlertState) Enum() *AlertState {
+	p := new(AlertState)
+	*p = x
+	return p
+}
+
+func (x AlertState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AlertState) Descriptor() protoreflect.EnumDescriptor {
+	return file_fleetward_v1_controlplane_proto_enumTypes[11].Descriptor()
+}
+
+func (AlertState) Type() protoreflect.EnumType {
+	return &file_fleetward_v1_controlplane_proto_enumTypes[11]
+}
+
+func (x AlertState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AlertState.Descriptor instead.
+func (AlertState) EnumDescriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{11}
+}
+
 // Caller is who is making this request.
 type Caller struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -6119,6 +6307,1466 @@ func (x *ListJobsResponse) GetJobs() []*Job {
 	return nil
 }
 
+// AlertRule declares a condition worth being told about.
+type AlertRule struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name        string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Kind        AlertKind              `protobuf:"varint,4,opt,name=kind,proto3,enum=fleetward.v1.AlertKind" json:"kind,omitempty"`
+	Severity    AlertSeverity          `protobuf:"varint,5,opt,name=severity,proto3,enum=fleetward.v1.AlertSeverity" json:"severity,omitempty"`
+	// What the evaluator compares against, where its kind uses one. `retention_blocked` reads it as
+	// an age in hours; the other evaluators ignore it.
+	Threshold float64 `protobuf:"fixed64,6,opt,name=threshold,proto3" json:"threshold,omitempty"`
+	// Both empty means the rule covers the whole tenant, which is what the seeded rules do.
+	EnvironmentId string                 `protobuf:"bytes,7,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
+	InstanceId    string                 `protobuf:"bytes,8,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	IsEnabled     bool                   `protobuf:"varint,9,opt,name=is_enabled,json=isEnabled,proto3" json:"is_enabled,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AlertRule) Reset() {
+	*x = AlertRule{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[82]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AlertRule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AlertRule) ProtoMessage() {}
+
+func (x *AlertRule) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[82]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AlertRule.ProtoReflect.Descriptor instead.
+func (*AlertRule) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{82}
+}
+
+func (x *AlertRule) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AlertRule) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AlertRule) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *AlertRule) GetKind() AlertKind {
+	if x != nil {
+		return x.Kind
+	}
+	return AlertKind_ALERT_KIND_UNSPECIFIED
+}
+
+func (x *AlertRule) GetSeverity() AlertSeverity {
+	if x != nil {
+		return x.Severity
+	}
+	return AlertSeverity_ALERT_SEVERITY_UNSPECIFIED
+}
+
+func (x *AlertRule) GetThreshold() float64 {
+	if x != nil {
+		return x.Threshold
+	}
+	return 0
+}
+
+func (x *AlertRule) GetEnvironmentId() string {
+	if x != nil {
+		return x.EnvironmentId
+	}
+	return ""
+}
+
+func (x *AlertRule) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *AlertRule) GetIsEnabled() bool {
+	if x != nil {
+		return x.IsEnabled
+	}
+	return false
+}
+
+func (x *AlertRule) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *AlertRule) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+// Alert is one condition that is, or was, true.
+type Alert struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Empty when the rule that produced this alert has since been deleted.
+	RuleId   string    `protobuf:"bytes,2,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
+	RuleName string    `protobuf:"bytes,3,opt,name=rule_name,json=ruleName,proto3" json:"rule_name,omitempty"`
+	Kind     AlertKind `protobuf:"varint,4,opt,name=kind,proto3,enum=fleetward.v1.AlertKind" json:"kind,omitempty"`
+	// Empty for an estate-wide condition such as retention_blocked.
+	InstanceId   string        `protobuf:"bytes,5,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	InstanceName string        `protobuf:"bytes,6,opt,name=instance_name,json=instanceName,proto3" json:"instance_name,omitempty"`
+	Severity     AlertSeverity `protobuf:"varint,7,opt,name=severity,proto3,enum=fleetward.v1.AlertSeverity" json:"severity,omitempty"`
+	State        AlertState    `protobuf:"varint,8,opt,name=state,proto3,enum=fleetward.v1.AlertState" json:"state,omitempty"`
+	// One line an operator can act on, and the detail behind it.
+	Summary string `protobuf:"bytes,9,opt,name=summary,proto3" json:"summary,omitempty"`
+	Detail  string `protobuf:"bytes,10,opt,name=detail,proto3" json:"detail,omitempty"`
+	// The deduplication key. It identifies the *condition*, not the rule that found it, so two
+	// overlapping rules describing one broken thing produce one alert rather than two pages at 3am.
+	Fingerprint string                 `protobuf:"bytes,11,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
+	StartedAt   *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	// Advanced by every pass on which the condition is still true. A rule that keeps firing updates
+	// this and notifies nobody.
+	LastSeenAt     *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
+	AcknowledgedAt *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=acknowledged_at,json=acknowledgedAt,proto3" json:"acknowledged_at,omitempty"`
+	AcknowledgedBy string                 `protobuf:"bytes,15,opt,name=acknowledged_by,json=acknowledgedBy,proto3" json:"acknowledged_by,omitempty"`
+	ResolvedAt     *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=resolved_at,json=resolvedAt,proto3" json:"resolved_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *Alert) Reset() {
+	*x = Alert{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[83]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Alert) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Alert) ProtoMessage() {}
+
+func (x *Alert) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[83]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Alert.ProtoReflect.Descriptor instead.
+func (*Alert) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{83}
+}
+
+func (x *Alert) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Alert) GetRuleId() string {
+	if x != nil {
+		return x.RuleId
+	}
+	return ""
+}
+
+func (x *Alert) GetRuleName() string {
+	if x != nil {
+		return x.RuleName
+	}
+	return ""
+}
+
+func (x *Alert) GetKind() AlertKind {
+	if x != nil {
+		return x.Kind
+	}
+	return AlertKind_ALERT_KIND_UNSPECIFIED
+}
+
+func (x *Alert) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *Alert) GetInstanceName() string {
+	if x != nil {
+		return x.InstanceName
+	}
+	return ""
+}
+
+func (x *Alert) GetSeverity() AlertSeverity {
+	if x != nil {
+		return x.Severity
+	}
+	return AlertSeverity_ALERT_SEVERITY_UNSPECIFIED
+}
+
+func (x *Alert) GetState() AlertState {
+	if x != nil {
+		return x.State
+	}
+	return AlertState_ALERT_STATE_UNSPECIFIED
+}
+
+func (x *Alert) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *Alert) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+func (x *Alert) GetFingerprint() string {
+	if x != nil {
+		return x.Fingerprint
+	}
+	return ""
+}
+
+func (x *Alert) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *Alert) GetLastSeenAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastSeenAt
+	}
+	return nil
+}
+
+func (x *Alert) GetAcknowledgedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.AcknowledgedAt
+	}
+	return nil
+}
+
+func (x *Alert) GetAcknowledgedBy() string {
+	if x != nil {
+		return x.AcknowledgedBy
+	}
+	return ""
+}
+
+func (x *Alert) GetResolvedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ResolvedAt
+	}
+	return nil
+}
+
+// Notifier is where alerts are sent.
+type Notifier struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// "webhook" or "smtp".
+	Kind string `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Non-secret configuration only. The credential lives in the secrets provider and is never
+	// returned by any read: creation refuses a settings object containing anything that looks like
+	// one.
+	Settings map[string]string `protobuf:"bytes,4,rep,name=settings,proto3" json:"settings,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// True when a credential is stored for this notifier. The value itself is never returned.
+	HasSecret bool `protobuf:"varint,5,opt,name=has_secret,json=hasSecret,proto3" json:"has_secret,omitempty"`
+	// Alerts below this severity are not delivered here.
+	MinSeverity AlertSeverity `protobuf:"varint,6,opt,name=min_severity,json=minSeverity,proto3,enum=fleetward.v1.AlertSeverity" json:"min_severity,omitempty"`
+	IsEnabled   bool          `protobuf:"varint,7,opt,name=is_enabled,json=isEnabled,proto3" json:"is_enabled,omitempty"`
+	// How delivery has been going. Delivery is at-most-once and best-effort (ADR-0039), so these
+	// three are what make a notifier that has been failing all week visible rather than silent.
+	LastAttemptAt *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=last_attempt_at,json=lastAttemptAt,proto3" json:"last_attempt_at,omitempty"`
+	LastSuccessAt *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=last_success_at,json=lastSuccessAt,proto3" json:"last_success_at,omitempty"`
+	LastError     string                 `protobuf:"bytes,10,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Notifier) Reset() {
+	*x = Notifier{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[84]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Notifier) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Notifier) ProtoMessage() {}
+
+func (x *Notifier) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[84]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Notifier.ProtoReflect.Descriptor instead.
+func (*Notifier) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{84}
+}
+
+func (x *Notifier) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Notifier) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Notifier) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *Notifier) GetSettings() map[string]string {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+func (x *Notifier) GetHasSecret() bool {
+	if x != nil {
+		return x.HasSecret
+	}
+	return false
+}
+
+func (x *Notifier) GetMinSeverity() AlertSeverity {
+	if x != nil {
+		return x.MinSeverity
+	}
+	return AlertSeverity_ALERT_SEVERITY_UNSPECIFIED
+}
+
+func (x *Notifier) GetIsEnabled() bool {
+	if x != nil {
+		return x.IsEnabled
+	}
+	return false
+}
+
+func (x *Notifier) GetLastAttemptAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastAttemptAt
+	}
+	return nil
+}
+
+func (x *Notifier) GetLastSuccessAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastSuccessAt
+	}
+	return nil
+}
+
+func (x *Notifier) GetLastError() string {
+	if x != nil {
+		return x.LastError
+	}
+	return ""
+}
+
+func (x *Notifier) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+type ListAlertsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Restrict to one instance or one environment. Both empty asks about the estate, and the answer
+	// is filtered to what the caller's grants cover.
+	InstanceId    string `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	EnvironmentId string `protobuf:"bytes,2,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
+	// Include alerts that have resolved. Off by default: the question is almost always "what is
+	// wrong now".
+	IncludeResolved bool          `protobuf:"varint,3,opt,name=include_resolved,json=includeResolved,proto3" json:"include_resolved,omitempty"`
+	MinSeverity     AlertSeverity `protobuf:"varint,4,opt,name=min_severity,json=minSeverity,proto3,enum=fleetward.v1.AlertSeverity" json:"min_severity,omitempty"`
+	PageSize        int32         `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ListAlertsRequest) Reset() {
+	*x = ListAlertsRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[85]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAlertsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAlertsRequest) ProtoMessage() {}
+
+func (x *ListAlertsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[85]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAlertsRequest.ProtoReflect.Descriptor instead.
+func (*ListAlertsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{85}
+}
+
+func (x *ListAlertsRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *ListAlertsRequest) GetEnvironmentId() string {
+	if x != nil {
+		return x.EnvironmentId
+	}
+	return ""
+}
+
+func (x *ListAlertsRequest) GetIncludeResolved() bool {
+	if x != nil {
+		return x.IncludeResolved
+	}
+	return false
+}
+
+func (x *ListAlertsRequest) GetMinSeverity() AlertSeverity {
+	if x != nil {
+		return x.MinSeverity
+	}
+	return AlertSeverity_ALERT_SEVERITY_UNSPECIFIED
+}
+
+func (x *ListAlertsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type ListAlertsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Alerts        []*Alert               `protobuf:"bytes,1,rep,name=alerts,proto3" json:"alerts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAlertsResponse) Reset() {
+	*x = ListAlertsResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[86]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAlertsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAlertsResponse) ProtoMessage() {}
+
+func (x *ListAlertsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[86]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAlertsResponse.ProtoReflect.Descriptor instead.
+func (*ListAlertsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{86}
+}
+
+func (x *ListAlertsResponse) GetAlerts() []*Alert {
+	if x != nil {
+		return x.Alerts
+	}
+	return nil
+}
+
+type AcknowledgeAlertRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	AlertId string                 `protobuf:"bytes,1,opt,name=alert_id,json=alertId,proto3" json:"alert_id,omitempty"`
+	// Optional note, recorded in the audit record rather than on the alert.
+	Note          string `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AcknowledgeAlertRequest) Reset() {
+	*x = AcknowledgeAlertRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[87]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AcknowledgeAlertRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AcknowledgeAlertRequest) ProtoMessage() {}
+
+func (x *AcknowledgeAlertRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[87]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AcknowledgeAlertRequest.ProtoReflect.Descriptor instead.
+func (*AcknowledgeAlertRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{87}
+}
+
+func (x *AcknowledgeAlertRequest) GetAlertId() string {
+	if x != nil {
+		return x.AlertId
+	}
+	return ""
+}
+
+func (x *AcknowledgeAlertRequest) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type AcknowledgeAlertResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Alert         *Alert                 `protobuf:"bytes,1,opt,name=alert,proto3" json:"alert,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AcknowledgeAlertResponse) Reset() {
+	*x = AcknowledgeAlertResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[88]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AcknowledgeAlertResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AcknowledgeAlertResponse) ProtoMessage() {}
+
+func (x *AcknowledgeAlertResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[88]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AcknowledgeAlertResponse.ProtoReflect.Descriptor instead.
+func (*AcknowledgeAlertResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{88}
+}
+
+func (x *AcknowledgeAlertResponse) GetAlert() *Alert {
+	if x != nil {
+		return x.Alert
+	}
+	return nil
+}
+
+type ListAlertRulesRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	IncludeDisabled bool                   `protobuf:"varint,1,opt,name=include_disabled,json=includeDisabled,proto3" json:"include_disabled,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ListAlertRulesRequest) Reset() {
+	*x = ListAlertRulesRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[89]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAlertRulesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAlertRulesRequest) ProtoMessage() {}
+
+func (x *ListAlertRulesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[89]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAlertRulesRequest.ProtoReflect.Descriptor instead.
+func (*ListAlertRulesRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{89}
+}
+
+func (x *ListAlertRulesRequest) GetIncludeDisabled() bool {
+	if x != nil {
+		return x.IncludeDisabled
+	}
+	return false
+}
+
+type ListAlertRulesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rules         []*AlertRule           `protobuf:"bytes,1,rep,name=rules,proto3" json:"rules,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAlertRulesResponse) Reset() {
+	*x = ListAlertRulesResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[90]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAlertRulesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAlertRulesResponse) ProtoMessage() {}
+
+func (x *ListAlertRulesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[90]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAlertRulesResponse.ProtoReflect.Descriptor instead.
+func (*ListAlertRulesResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{90}
+}
+
+func (x *ListAlertRulesResponse) GetRules() []*AlertRule {
+	if x != nil {
+		return x.Rules
+	}
+	return nil
+}
+
+type CreateAlertRuleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Kind          AlertKind              `protobuf:"varint,3,opt,name=kind,proto3,enum=fleetward.v1.AlertKind" json:"kind,omitempty"`
+	Severity      AlertSeverity          `protobuf:"varint,4,opt,name=severity,proto3,enum=fleetward.v1.AlertSeverity" json:"severity,omitempty"`
+	Threshold     float64                `protobuf:"fixed64,5,opt,name=threshold,proto3" json:"threshold,omitempty"`
+	EnvironmentId string                 `protobuf:"bytes,6,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
+	InstanceId    string                 `protobuf:"bytes,7,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateAlertRuleRequest) Reset() {
+	*x = CreateAlertRuleRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[91]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateAlertRuleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateAlertRuleRequest) ProtoMessage() {}
+
+func (x *CreateAlertRuleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[91]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateAlertRuleRequest.ProtoReflect.Descriptor instead.
+func (*CreateAlertRuleRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{91}
+}
+
+func (x *CreateAlertRuleRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateAlertRuleRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *CreateAlertRuleRequest) GetKind() AlertKind {
+	if x != nil {
+		return x.Kind
+	}
+	return AlertKind_ALERT_KIND_UNSPECIFIED
+}
+
+func (x *CreateAlertRuleRequest) GetSeverity() AlertSeverity {
+	if x != nil {
+		return x.Severity
+	}
+	return AlertSeverity_ALERT_SEVERITY_UNSPECIFIED
+}
+
+func (x *CreateAlertRuleRequest) GetThreshold() float64 {
+	if x != nil {
+		return x.Threshold
+	}
+	return 0
+}
+
+func (x *CreateAlertRuleRequest) GetEnvironmentId() string {
+	if x != nil {
+		return x.EnvironmentId
+	}
+	return ""
+}
+
+func (x *CreateAlertRuleRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+type CreateAlertRuleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rule          *AlertRule             `protobuf:"bytes,1,opt,name=rule,proto3" json:"rule,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateAlertRuleResponse) Reset() {
+	*x = CreateAlertRuleResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[92]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateAlertRuleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateAlertRuleResponse) ProtoMessage() {}
+
+func (x *CreateAlertRuleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[92]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateAlertRuleResponse.ProtoReflect.Descriptor instead.
+func (*CreateAlertRuleResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{92}
+}
+
+func (x *CreateAlertRuleResponse) GetRule() *AlertRule {
+	if x != nil {
+		return x.Rule
+	}
+	return nil
+}
+
+type SetAlertRuleEnabledRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RuleId        string                 `protobuf:"bytes,1,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
+	Enabled       bool                   `protobuf:"varint,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetAlertRuleEnabledRequest) Reset() {
+	*x = SetAlertRuleEnabledRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[93]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetAlertRuleEnabledRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetAlertRuleEnabledRequest) ProtoMessage() {}
+
+func (x *SetAlertRuleEnabledRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[93]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetAlertRuleEnabledRequest.ProtoReflect.Descriptor instead.
+func (*SetAlertRuleEnabledRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{93}
+}
+
+func (x *SetAlertRuleEnabledRequest) GetRuleId() string {
+	if x != nil {
+		return x.RuleId
+	}
+	return ""
+}
+
+func (x *SetAlertRuleEnabledRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+type SetAlertRuleEnabledResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rule          *AlertRule             `protobuf:"bytes,1,opt,name=rule,proto3" json:"rule,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetAlertRuleEnabledResponse) Reset() {
+	*x = SetAlertRuleEnabledResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[94]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetAlertRuleEnabledResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetAlertRuleEnabledResponse) ProtoMessage() {}
+
+func (x *SetAlertRuleEnabledResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[94]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetAlertRuleEnabledResponse.ProtoReflect.Descriptor instead.
+func (*SetAlertRuleEnabledResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{94}
+}
+
+func (x *SetAlertRuleEnabledResponse) GetRule() *AlertRule {
+	if x != nil {
+		return x.Rule
+	}
+	return nil
+}
+
+type DeleteAlertRuleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RuleId        string                 `protobuf:"bytes,1,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteAlertRuleRequest) Reset() {
+	*x = DeleteAlertRuleRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[95]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAlertRuleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAlertRuleRequest) ProtoMessage() {}
+
+func (x *DeleteAlertRuleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[95]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAlertRuleRequest.ProtoReflect.Descriptor instead.
+func (*DeleteAlertRuleRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{95}
+}
+
+func (x *DeleteAlertRuleRequest) GetRuleId() string {
+	if x != nil {
+		return x.RuleId
+	}
+	return ""
+}
+
+type DeleteAlertRuleResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// How many of the rule's open alerts were resolved along with it. A deleted rule would otherwise
+	// strand its alerts where nothing evaluates them.
+	AlertsResolved int32 `protobuf:"varint,1,opt,name=alerts_resolved,json=alertsResolved,proto3" json:"alerts_resolved,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeleteAlertRuleResponse) Reset() {
+	*x = DeleteAlertRuleResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[96]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteAlertRuleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteAlertRuleResponse) ProtoMessage() {}
+
+func (x *DeleteAlertRuleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[96]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteAlertRuleResponse.ProtoReflect.Descriptor instead.
+func (*DeleteAlertRuleResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{96}
+}
+
+func (x *DeleteAlertRuleResponse) GetAlertsResolved() int32 {
+	if x != nil {
+		return x.AlertsResolved
+	}
+	return 0
+}
+
+type ListNotifiersRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	IncludeDisabled bool                   `protobuf:"varint,1,opt,name=include_disabled,json=includeDisabled,proto3" json:"include_disabled,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ListNotifiersRequest) Reset() {
+	*x = ListNotifiersRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[97]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNotifiersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNotifiersRequest) ProtoMessage() {}
+
+func (x *ListNotifiersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[97]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNotifiersRequest.ProtoReflect.Descriptor instead.
+func (*ListNotifiersRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{97}
+}
+
+func (x *ListNotifiersRequest) GetIncludeDisabled() bool {
+	if x != nil {
+		return x.IncludeDisabled
+	}
+	return false
+}
+
+type ListNotifiersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Notifiers     []*Notifier            `protobuf:"bytes,1,rep,name=notifiers,proto3" json:"notifiers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNotifiersResponse) Reset() {
+	*x = ListNotifiersResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[98]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNotifiersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNotifiersResponse) ProtoMessage() {}
+
+func (x *ListNotifiersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[98]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNotifiersResponse.ProtoReflect.Descriptor instead.
+func (*ListNotifiersResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{98}
+}
+
+func (x *ListNotifiersResponse) GetNotifiers() []*Notifier {
+	if x != nil {
+		return x.Notifiers
+	}
+	return nil
+}
+
+type CreateNotifierRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// "webhook" or "smtp".
+	Kind     string            `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Settings map[string]string `protobuf:"bytes,3,rep,name=settings,proto3" json:"settings,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// The one credential this notifier needs: a webhook header value, or an SMTP password. Stored
+	// through the secrets provider and never returned. Empty for a destination that needs none.
+	Secret        string        `protobuf:"bytes,4,opt,name=secret,proto3" json:"secret,omitempty"`
+	MinSeverity   AlertSeverity `protobuf:"varint,5,opt,name=min_severity,json=minSeverity,proto3,enum=fleetward.v1.AlertSeverity" json:"min_severity,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateNotifierRequest) Reset() {
+	*x = CreateNotifierRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[99]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateNotifierRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateNotifierRequest) ProtoMessage() {}
+
+func (x *CreateNotifierRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[99]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateNotifierRequest.ProtoReflect.Descriptor instead.
+func (*CreateNotifierRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{99}
+}
+
+func (x *CreateNotifierRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateNotifierRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *CreateNotifierRequest) GetSettings() map[string]string {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+func (x *CreateNotifierRequest) GetSecret() string {
+	if x != nil {
+		return x.Secret
+	}
+	return ""
+}
+
+func (x *CreateNotifierRequest) GetMinSeverity() AlertSeverity {
+	if x != nil {
+		return x.MinSeverity
+	}
+	return AlertSeverity_ALERT_SEVERITY_UNSPECIFIED
+}
+
+type CreateNotifierResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Notifier      *Notifier              `protobuf:"bytes,1,opt,name=notifier,proto3" json:"notifier,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateNotifierResponse) Reset() {
+	*x = CreateNotifierResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[100]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateNotifierResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateNotifierResponse) ProtoMessage() {}
+
+func (x *CreateNotifierResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[100]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateNotifierResponse.ProtoReflect.Descriptor instead.
+func (*CreateNotifierResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{100}
+}
+
+func (x *CreateNotifierResponse) GetNotifier() *Notifier {
+	if x != nil {
+		return x.Notifier
+	}
+	return nil
+}
+
+type DeleteNotifierRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NotifierId    string                 `protobuf:"bytes,1,opt,name=notifier_id,json=notifierId,proto3" json:"notifier_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteNotifierRequest) Reset() {
+	*x = DeleteNotifierRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[101]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteNotifierRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteNotifierRequest) ProtoMessage() {}
+
+func (x *DeleteNotifierRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[101]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteNotifierRequest.ProtoReflect.Descriptor instead.
+func (*DeleteNotifierRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{101}
+}
+
+func (x *DeleteNotifierRequest) GetNotifierId() string {
+	if x != nil {
+		return x.NotifierId
+	}
+	return ""
+}
+
+type DeleteNotifierResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteNotifierResponse) Reset() {
+	*x = DeleteNotifierResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[102]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteNotifierResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteNotifierResponse) ProtoMessage() {}
+
+func (x *DeleteNotifierResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[102]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteNotifierResponse.ProtoReflect.Descriptor instead.
+func (*DeleteNotifierResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{102}
+}
+
+type TestNotifierRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NotifierId    string                 `protobuf:"bytes,1,opt,name=notifier_id,json=notifierId,proto3" json:"notifier_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestNotifierRequest) Reset() {
+	*x = TestNotifierRequest{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[103]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestNotifierRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestNotifierRequest) ProtoMessage() {}
+
+func (x *TestNotifierRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[103]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestNotifierRequest.ProtoReflect.Descriptor instead.
+func (*TestNotifierRequest) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{103}
+}
+
+func (x *TestNotifierRequest) GetNotifierId() string {
+	if x != nil {
+		return x.NotifierId
+	}
+	return ""
+}
+
+type TestNotifierResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Delivered bool                   `protobuf:"varint,1,opt,name=delivered,proto3" json:"delivered,omitempty"`
+	// The transport's own message when delivery failed. Never a credential.
+	Error         string               `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	Duration      *durationpb.Duration `protobuf:"bytes,3,opt,name=duration,proto3" json:"duration,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestNotifierResponse) Reset() {
+	*x = TestNotifierResponse{}
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[104]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestNotifierResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestNotifierResponse) ProtoMessage() {}
+
+func (x *TestNotifierResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetward_v1_controlplane_proto_msgTypes[104]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestNotifierResponse.ProtoReflect.Descriptor instead.
+func (*TestNotifierResponse) Descriptor() ([]byte, []int) {
+	return file_fleetward_v1_controlplane_proto_rawDescGZIP(), []int{104}
+}
+
+func (x *TestNotifierResponse) GetDelivered() bool {
+	if x != nil {
+		return x.Delivered
+	}
+	return false
+}
+
+func (x *TestNotifierResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *TestNotifierResponse) GetDuration() *durationpb.Duration {
+	if x != nil {
+		return x.Duration
+	}
+	return nil
+}
+
 var File_fleetward_v1_controlplane_proto protoreflect.FileDescriptor
 
 const file_fleetward_v1_controlplane_proto_rawDesc = "" +
@@ -6623,7 +8271,130 @@ const file_fleetward_v1_controlplane_proto_rawDesc = "" +
 	"\x05state\x18\x03 \x01(\x0e2\x16.fleetward.v1.JobStateR\x05state\x12\x1b\n" +
 	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\"9\n" +
 	"\x10ListJobsResponse\x12%\n" +
-	"\x04jobs\x18\x01 \x03(\v2\x11.fleetward.v1.JobR\x04jobs*r\n" +
+	"\x04jobs\x18\x01 \x03(\v2\x11.fleetward.v1.JobR\x04jobs\"\xb2\x03\n" +
+	"\tAlertRule\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12+\n" +
+	"\x04kind\x18\x04 \x01(\x0e2\x17.fleetward.v1.AlertKindR\x04kind\x127\n" +
+	"\bseverity\x18\x05 \x01(\x0e2\x1b.fleetward.v1.AlertSeverityR\bseverity\x12\x1c\n" +
+	"\tthreshold\x18\x06 \x01(\x01R\tthreshold\x12%\n" +
+	"\x0eenvironment_id\x18\a \x01(\tR\renvironmentId\x12\x1f\n" +
+	"\vinstance_id\x18\b \x01(\tR\n" +
+	"instanceId\x12\x1d\n" +
+	"\n" +
+	"is_enabled\x18\t \x01(\bR\tisEnabled\x129\n" +
+	"\n" +
+	"created_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xa1\x05\n" +
+	"\x05Alert\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\arule_id\x18\x02 \x01(\tR\x06ruleId\x12\x1b\n" +
+	"\trule_name\x18\x03 \x01(\tR\bruleName\x12+\n" +
+	"\x04kind\x18\x04 \x01(\x0e2\x17.fleetward.v1.AlertKindR\x04kind\x12\x1f\n" +
+	"\vinstance_id\x18\x05 \x01(\tR\n" +
+	"instanceId\x12#\n" +
+	"\rinstance_name\x18\x06 \x01(\tR\finstanceName\x127\n" +
+	"\bseverity\x18\a \x01(\x0e2\x1b.fleetward.v1.AlertSeverityR\bseverity\x12.\n" +
+	"\x05state\x18\b \x01(\x0e2\x18.fleetward.v1.AlertStateR\x05state\x12\x18\n" +
+	"\asummary\x18\t \x01(\tR\asummary\x12\x16\n" +
+	"\x06detail\x18\n" +
+	" \x01(\tR\x06detail\x12 \n" +
+	"\vfingerprint\x18\v \x01(\tR\vfingerprint\x129\n" +
+	"\n" +
+	"started_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12<\n" +
+	"\flast_seen_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"lastSeenAt\x12C\n" +
+	"\x0facknowledged_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\x0eacknowledgedAt\x12'\n" +
+	"\x0facknowledged_by\x18\x0f \x01(\tR\x0eacknowledgedBy\x12;\n" +
+	"\vresolved_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"resolvedAt\"\xa1\x04\n" +
+	"\bNotifier\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12@\n" +
+	"\bsettings\x18\x04 \x03(\v2$.fleetward.v1.Notifier.SettingsEntryR\bsettings\x12\x1d\n" +
+	"\n" +
+	"has_secret\x18\x05 \x01(\bR\thasSecret\x12>\n" +
+	"\fmin_severity\x18\x06 \x01(\x0e2\x1b.fleetward.v1.AlertSeverityR\vminSeverity\x12\x1d\n" +
+	"\n" +
+	"is_enabled\x18\a \x01(\bR\tisEnabled\x12B\n" +
+	"\x0flast_attempt_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\rlastAttemptAt\x12B\n" +
+	"\x0flast_success_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\rlastSuccessAt\x12\x1d\n" +
+	"\n" +
+	"last_error\x18\n" +
+	" \x01(\tR\tlastError\x129\n" +
+	"\n" +
+	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x1a;\n" +
+	"\rSettingsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe3\x01\n" +
+	"\x11ListAlertsRequest\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12%\n" +
+	"\x0eenvironment_id\x18\x02 \x01(\tR\renvironmentId\x12)\n" +
+	"\x10include_resolved\x18\x03 \x01(\bR\x0fincludeResolved\x12>\n" +
+	"\fmin_severity\x18\x04 \x01(\x0e2\x1b.fleetward.v1.AlertSeverityR\vminSeverity\x12\x1b\n" +
+	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\"A\n" +
+	"\x12ListAlertsResponse\x12+\n" +
+	"\x06alerts\x18\x01 \x03(\v2\x13.fleetward.v1.AlertR\x06alerts\"H\n" +
+	"\x17AcknowledgeAlertRequest\x12\x19\n" +
+	"\balert_id\x18\x01 \x01(\tR\aalertId\x12\x12\n" +
+	"\x04note\x18\x02 \x01(\tR\x04note\"E\n" +
+	"\x18AcknowledgeAlertResponse\x12)\n" +
+	"\x05alert\x18\x01 \x01(\v2\x13.fleetward.v1.AlertR\x05alert\"B\n" +
+	"\x15ListAlertRulesRequest\x12)\n" +
+	"\x10include_disabled\x18\x01 \x01(\bR\x0fincludeDisabled\"G\n" +
+	"\x16ListAlertRulesResponse\x12-\n" +
+	"\x05rules\x18\x01 \x03(\v2\x17.fleetward.v1.AlertRuleR\x05rules\"\x9a\x02\n" +
+	"\x16CreateAlertRuleRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12+\n" +
+	"\x04kind\x18\x03 \x01(\x0e2\x17.fleetward.v1.AlertKindR\x04kind\x127\n" +
+	"\bseverity\x18\x04 \x01(\x0e2\x1b.fleetward.v1.AlertSeverityR\bseverity\x12\x1c\n" +
+	"\tthreshold\x18\x05 \x01(\x01R\tthreshold\x12%\n" +
+	"\x0eenvironment_id\x18\x06 \x01(\tR\renvironmentId\x12\x1f\n" +
+	"\vinstance_id\x18\a \x01(\tR\n" +
+	"instanceId\"F\n" +
+	"\x17CreateAlertRuleResponse\x12+\n" +
+	"\x04rule\x18\x01 \x01(\v2\x17.fleetward.v1.AlertRuleR\x04rule\"O\n" +
+	"\x1aSetAlertRuleEnabledRequest\x12\x17\n" +
+	"\arule_id\x18\x01 \x01(\tR\x06ruleId\x12\x18\n" +
+	"\aenabled\x18\x02 \x01(\bR\aenabled\"J\n" +
+	"\x1bSetAlertRuleEnabledResponse\x12+\n" +
+	"\x04rule\x18\x01 \x01(\v2\x17.fleetward.v1.AlertRuleR\x04rule\"1\n" +
+	"\x16DeleteAlertRuleRequest\x12\x17\n" +
+	"\arule_id\x18\x01 \x01(\tR\x06ruleId\"B\n" +
+	"\x17DeleteAlertRuleResponse\x12'\n" +
+	"\x0falerts_resolved\x18\x01 \x01(\x05R\x0ealertsResolved\"A\n" +
+	"\x14ListNotifiersRequest\x12)\n" +
+	"\x10include_disabled\x18\x01 \x01(\bR\x0fincludeDisabled\"M\n" +
+	"\x15ListNotifiersResponse\x124\n" +
+	"\tnotifiers\x18\x01 \x03(\v2\x16.fleetward.v1.NotifierR\tnotifiers\"\xa3\x02\n" +
+	"\x15CreateNotifierRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12M\n" +
+	"\bsettings\x18\x03 \x03(\v21.fleetward.v1.CreateNotifierRequest.SettingsEntryR\bsettings\x12\x16\n" +
+	"\x06secret\x18\x04 \x01(\tR\x06secret\x12>\n" +
+	"\fmin_severity\x18\x05 \x01(\x0e2\x1b.fleetward.v1.AlertSeverityR\vminSeverity\x1a;\n" +
+	"\rSettingsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"L\n" +
+	"\x16CreateNotifierResponse\x122\n" +
+	"\bnotifier\x18\x01 \x01(\v2\x16.fleetward.v1.NotifierR\bnotifier\"8\n" +
+	"\x15DeleteNotifierRequest\x12\x1f\n" +
+	"\vnotifier_id\x18\x01 \x01(\tR\n" +
+	"notifierId\"\x18\n" +
+	"\x16DeleteNotifierResponse\"6\n" +
+	"\x13TestNotifierRequest\x12\x1f\n" +
+	"\vnotifier_id\x18\x01 \x01(\tR\n" +
+	"notifierId\"\x81\x01\n" +
+	"\x14TestNotifierResponse\x12\x1c\n" +
+	"\tdelivered\x18\x01 \x01(\bR\tdelivered\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x125\n" +
+	"\bduration\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\bduration*r\n" +
 	"\n" +
 	"CallerKind\x12\x1b\n" +
 	"\x17CALLER_KIND_UNSPECIFIED\x10\x00\x12\x14\n" +
@@ -6681,7 +8452,28 @@ const file_fleetward_v1_controlplane_proto_rawDesc = "" +
 	"\x11JOB_STATE_RUNNING\x10\x02\x12\x17\n" +
 	"\x13JOB_STATE_SUCCEEDED\x10\x03\x12\x14\n" +
 	"\x10JOB_STATE_FAILED\x10\x04\x12\x16\n" +
-	"\x12JOB_STATE_CANCELED\x10\x052\xcc\x02\n" +
+	"\x12JOB_STATE_CANCELED\x10\x05*\xa8\x02\n" +
+	"\tAlertKind\x12\x1a\n" +
+	"\x16ALERT_KIND_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18ALERT_KIND_INSTANCE_DOWN\x10\x01\x12\"\n" +
+	"\x1eALERT_KIND_VERIFICATION_FAILED\x10\x02\x12\x1c\n" +
+	"\x18ALERT_KIND_BACKUP_FAILED\x10\x03\x12\x1d\n" +
+	"\x19ALERT_KIND_BACKUP_MISSING\x10\x04\x12 \n" +
+	"\x1cALERT_KIND_STORAGE_THRESHOLD\x10\x05\x12\x1e\n" +
+	"\x1aALERT_KIND_REPLICATION_LAG\x10\x06\x12\x1c\n" +
+	"\x18ALERT_KIND_CUSTOM_PROMQL\x10\a\x12 \n" +
+	"\x1cALERT_KIND_RETENTION_BLOCKED\x10\b*\x81\x01\n" +
+	"\rAlertSeverity\x12\x1e\n" +
+	"\x1aALERT_SEVERITY_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13ALERT_SEVERITY_INFO\x10\x01\x12\x1a\n" +
+	"\x16ALERT_SEVERITY_WARNING\x10\x02\x12\x1b\n" +
+	"\x17ALERT_SEVERITY_CRITICAL\x10\x03*y\n" +
+	"\n" +
+	"AlertState\x12\x1b\n" +
+	"\x17ALERT_STATE_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12ALERT_STATE_FIRING\x10\x01\x12\x1c\n" +
+	"\x18ALERT_STATE_ACKNOWLEDGED\x10\x02\x12\x18\n" +
+	"\x14ALERT_STATE_RESOLVED\x10\x032\xcc\x02\n" +
 	"\rSystemService\x12d\n" +
 	"\tGetHealth\x12\x1e.fleetward.v1.GetHealthRequest\x1a\x1f.fleetward.v1.GetHealthResponse\"\x16\x82\xd3\xe4\x93\x02\x10\x12\x0e/api/v1/health\x12h\n" +
 	"\n" +
@@ -6721,7 +8513,20 @@ const file_fleetward_v1_controlplane_proto_rawDesc = "" +
 	"\n" +
 	"ListTokens\x12\x1f.fleetward.v1.ListTokensRequest\x1a .fleetward.v1.ListTokensResponse\"\x16\x82\xd3\xe4\x93\x02\x10\x12\x0e/api/v1/tokens\x12u\n" +
 	"\vRevokeToken\x12 .fleetward.v1.RevokeTokenRequest\x1a!.fleetward.v1.RevokeTokenResponse\"!\x82\xd3\xe4\x93\x02\x1b*\x19/api/v1/tokens/{token_id}\x12l\n" +
-	"\fListAuditLog\x12!.fleetward.v1.ListAuditLogRequest\x1a\".fleetward.v1.ListAuditLogResponse\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/api/v1/auditB\xb9\x01\n" +
+	"\fListAuditLog\x12!.fleetward.v1.ListAuditLogRequest\x1a\".fleetward.v1.ListAuditLogResponse\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/api/v1/audit2\xae\n" +
+	"\n" +
+	"\fAlertService\x12g\n" +
+	"\n" +
+	"ListAlerts\x12\x1f.fleetward.v1.ListAlertsRequest\x1a .fleetward.v1.ListAlertsResponse\"\x16\x82\xd3\xe4\x93\x02\x10\x12\x0e/api/v1/alerts\x12\x93\x01\n" +
+	"\x10AcknowledgeAlert\x12%.fleetward.v1.AcknowledgeAlertRequest\x1a&.fleetward.v1.AcknowledgeAlertResponse\"0\x82\xd3\xe4\x93\x02*:\x01*\"%/api/v1/alerts/{alert_id}/acknowledge\x12x\n" +
+	"\x0eListAlertRules\x12#.fleetward.v1.ListAlertRulesRequest\x1a$.fleetward.v1.ListAlertRulesResponse\"\x1b\x82\xd3\xe4\x93\x02\x15\x12\x13/api/v1/alert-rules\x12~\n" +
+	"\x0fCreateAlertRule\x12$.fleetward.v1.CreateAlertRuleRequest\x1a%.fleetward.v1.CreateAlertRuleResponse\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/api/v1/alert-rules\x12\x9c\x01\n" +
+	"\x13SetAlertRuleEnabled\x12(.fleetward.v1.SetAlertRuleEnabledRequest\x1a).fleetward.v1.SetAlertRuleEnabledResponse\"0\x82\xd3\xe4\x93\x02*:\x01*\"%/api/v1/alert-rules/{rule_id}/enabled\x12\x85\x01\n" +
+	"\x0fDeleteAlertRule\x12$.fleetward.v1.DeleteAlertRuleRequest\x1a%.fleetward.v1.DeleteAlertRuleResponse\"%\x82\xd3\xe4\x93\x02\x1f*\x1d/api/v1/alert-rules/{rule_id}\x12s\n" +
+	"\rListNotifiers\x12\".fleetward.v1.ListNotifiersRequest\x1a#.fleetward.v1.ListNotifiersResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/api/v1/notifiers\x12y\n" +
+	"\x0eCreateNotifier\x12#.fleetward.v1.CreateNotifierRequest\x1a$.fleetward.v1.CreateNotifierResponse\"\x1c\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/api/v1/notifiers\x12\x84\x01\n" +
+	"\x0eDeleteNotifier\x12#.fleetward.v1.DeleteNotifierRequest\x1a$.fleetward.v1.DeleteNotifierResponse\"'\x82\xd3\xe4\x93\x02!*\x1f/api/v1/notifiers/{notifier_id}\x12\x86\x01\n" +
+	"\fTestNotifier\x12!.fleetward.v1.TestNotifierRequest\x1a\".fleetward.v1.TestNotifierResponse\"/\x82\xd3\xe4\x93\x02):\x01*\"$/api/v1/notifiers/{notifier_id}/testB\xb9\x01\n" +
 	"\x10com.fleetward.v1B\x11ControlplaneProtoP\x01ZAgithub.com/danmorcov88/fleetward/api/gen/fleetward/v1;fleetwardv1\xa2\x02\x03FXX\xaa\x02\fFleetward.V1\xca\x02\fFleetward\\V1\xe2\x02\x18Fleetward\\V1\\GPBMetadata\xea\x02\rFleetward::V1b\x06proto3"
 
 var (
@@ -6736,8 +8541,8 @@ func file_fleetward_v1_controlplane_proto_rawDescGZIP() []byte {
 	return file_fleetward_v1_controlplane_proto_rawDescData
 }
 
-var file_fleetward_v1_controlplane_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_fleetward_v1_controlplane_proto_msgTypes = make([]protoimpl.MessageInfo, 89)
+var file_fleetward_v1_controlplane_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
+var file_fleetward_v1_controlplane_proto_msgTypes = make([]protoimpl.MessageInfo, 114)
 var file_fleetward_v1_controlplane_proto_goTypes = []any{
 	(CallerKind)(0),                           // 0: fleetward.v1.CallerKind
 	(ServiceHealth)(0),                        // 1: fleetward.v1.ServiceHealth
@@ -6748,302 +8553,379 @@ var file_fleetward_v1_controlplane_proto_goTypes = []any{
 	(VerifyPolicy)(0),                         // 6: fleetward.v1.VerifyPolicy
 	(JobKind)(0),                              // 7: fleetward.v1.JobKind
 	(JobState)(0),                             // 8: fleetward.v1.JobState
-	(*Caller)(nil),                            // 9: fleetward.v1.Caller
-	(*RoleGrant)(nil),                         // 10: fleetward.v1.RoleGrant
-	(*GetMeRequest)(nil),                      // 11: fleetward.v1.GetMeRequest
-	(*GetMeResponse)(nil),                     // 12: fleetward.v1.GetMeResponse
-	(*ApiToken)(nil),                          // 13: fleetward.v1.ApiToken
-	(*CreateTokenRequest)(nil),                // 14: fleetward.v1.CreateTokenRequest
-	(*CreateTokenResponse)(nil),               // 15: fleetward.v1.CreateTokenResponse
-	(*ListTokensRequest)(nil),                 // 16: fleetward.v1.ListTokensRequest
-	(*ListTokensResponse)(nil),                // 17: fleetward.v1.ListTokensResponse
-	(*RevokeTokenRequest)(nil),                // 18: fleetward.v1.RevokeTokenRequest
-	(*RevokeTokenResponse)(nil),               // 19: fleetward.v1.RevokeTokenResponse
-	(*AuditEntry)(nil),                        // 20: fleetward.v1.AuditEntry
-	(*ListAuditLogRequest)(nil),               // 21: fleetward.v1.ListAuditLogRequest
-	(*ListAuditLogResponse)(nil),              // 22: fleetward.v1.ListAuditLogResponse
-	(*GetHealthRequest)(nil),                  // 23: fleetward.v1.GetHealthRequest
-	(*GetHealthResponse)(nil),                 // 24: fleetward.v1.GetHealthResponse
-	(*ComponentHealth)(nil),                   // 25: fleetward.v1.ComponentHealth
-	(*GetVersionRequest)(nil),                 // 26: fleetward.v1.GetVersionRequest
-	(*GetVersionResponse)(nil),                // 27: fleetward.v1.GetVersionResponse
-	(*ListPluginsRequest)(nil),                // 28: fleetward.v1.ListPluginsRequest
-	(*ListPluginsResponse)(nil),               // 29: fleetward.v1.ListPluginsResponse
-	(*PluginInfo)(nil),                        // 30: fleetward.v1.PluginInfo
-	(*Environment)(nil),                       // 31: fleetward.v1.Environment
-	(*Instance)(nil),                          // 32: fleetward.v1.Instance
-	(*BackupSummary)(nil),                     // 33: fleetward.v1.BackupSummary
-	(*ListEnvironmentsRequest)(nil),           // 34: fleetward.v1.ListEnvironmentsRequest
-	(*ListEnvironmentsResponse)(nil),          // 35: fleetward.v1.ListEnvironmentsResponse
-	(*CreateEnvironmentRequest)(nil),          // 36: fleetward.v1.CreateEnvironmentRequest
-	(*CreateEnvironmentResponse)(nil),         // 37: fleetward.v1.CreateEnvironmentResponse
-	(*ListInstancesRequest)(nil),              // 38: fleetward.v1.ListInstancesRequest
-	(*ListInstancesResponse)(nil),             // 39: fleetward.v1.ListInstancesResponse
-	(*GetInstanceRequest)(nil),                // 40: fleetward.v1.GetInstanceRequest
-	(*GetInstanceResponse)(nil),               // 41: fleetward.v1.GetInstanceResponse
-	(*CreateInstanceRequest)(nil),             // 42: fleetward.v1.CreateInstanceRequest
-	(*ConnectionSpec)(nil),                    // 43: fleetward.v1.ConnectionSpec
-	(*CreateInstanceResponse)(nil),            // 44: fleetward.v1.CreateInstanceResponse
-	(*DeleteInstanceRequest)(nil),             // 45: fleetward.v1.DeleteInstanceRequest
-	(*DeleteInstanceResponse)(nil),            // 46: fleetward.v1.DeleteInstanceResponse
-	(*TestConnectionRequest)(nil),             // 47: fleetward.v1.TestConnectionRequest
-	(*TestConnectionResponse)(nil),            // 48: fleetward.v1.TestConnectionResponse
-	(*DiscoverInstanceRequest)(nil),           // 49: fleetward.v1.DiscoverInstanceRequest
-	(*DiscoverInstanceResponse)(nil),          // 50: fleetward.v1.DiscoverInstanceResponse
-	(*ListPrincipalsForInstanceRequest)(nil),  // 51: fleetward.v1.ListPrincipalsForInstanceRequest
-	(*ListPrincipalsForInstanceResponse)(nil), // 52: fleetward.v1.ListPrincipalsForInstanceResponse
-	(*Backup)(nil),                            // 53: fleetward.v1.Backup
-	(*ObservedEvidence)(nil),                  // 54: fleetward.v1.ObservedEvidence
-	(*Verification)(nil),                      // 55: fleetward.v1.Verification
-	(*ListBackupsRequest)(nil),                // 56: fleetward.v1.ListBackupsRequest
-	(*ListBackupsResponse)(nil),               // 57: fleetward.v1.ListBackupsResponse
-	(*GetBackupRequest)(nil),                  // 58: fleetward.v1.GetBackupRequest
-	(*GetBackupResponse)(nil),                 // 59: fleetward.v1.GetBackupResponse
-	(*RunBackupRequest)(nil),                  // 60: fleetward.v1.RunBackupRequest
-	(*RunBackupResponse)(nil),                 // 61: fleetward.v1.RunBackupResponse
-	(*RunVerificationRequest)(nil),            // 62: fleetward.v1.RunVerificationRequest
-	(*RunVerificationResponse)(nil),           // 63: fleetward.v1.RunVerificationResponse
-	(*ObserveBackupHistoryRequest)(nil),       // 64: fleetward.v1.ObserveBackupHistoryRequest
-	(*ObserveBackupHistoryResponse)(nil),      // 65: fleetward.v1.ObserveBackupHistoryResponse
-	(*GetBackupAdherenceRequest)(nil),         // 66: fleetward.v1.GetBackupAdherenceRequest
-	(*GetBackupAdherenceResponse)(nil),        // 67: fleetward.v1.GetBackupAdherenceResponse
-	(*InstanceAdherence)(nil),                 // 68: fleetward.v1.InstanceAdherence
-	(*PreviewRetentionRequest)(nil),           // 69: fleetward.v1.PreviewRetentionRequest
-	(*PreviewRetentionResponse)(nil),          // 70: fleetward.v1.PreviewRetentionResponse
-	(*RetentionPolicy)(nil),                   // 71: fleetward.v1.RetentionPolicy
-	(*RetentionCandidate)(nil),                // 72: fleetward.v1.RetentionCandidate
-	(*GetVerificationRequest)(nil),            // 73: fleetward.v1.GetVerificationRequest
-	(*GetVerificationResponse)(nil),           // 74: fleetward.v1.GetVerificationResponse
-	(*GetPITRWindowRequest)(nil),              // 75: fleetward.v1.GetPITRWindowRequest
-	(*GetPITRWindowResponse)(nil),             // 76: fleetward.v1.GetPITRWindowResponse
-	(*Schedule)(nil),                          // 77: fleetward.v1.Schedule
-	(*Job)(nil),                               // 78: fleetward.v1.Job
-	(*ListSchedulesRequest)(nil),              // 79: fleetward.v1.ListSchedulesRequest
-	(*ListSchedulesResponse)(nil),             // 80: fleetward.v1.ListSchedulesResponse
-	(*GetScheduleRequest)(nil),                // 81: fleetward.v1.GetScheduleRequest
-	(*GetScheduleResponse)(nil),               // 82: fleetward.v1.GetScheduleResponse
-	(*CreateScheduleRequest)(nil),             // 83: fleetward.v1.CreateScheduleRequest
-	(*CreateScheduleResponse)(nil),            // 84: fleetward.v1.CreateScheduleResponse
-	(*SetScheduleEnabledRequest)(nil),         // 85: fleetward.v1.SetScheduleEnabledRequest
-	(*SetScheduleEnabledResponse)(nil),        // 86: fleetward.v1.SetScheduleEnabledResponse
-	(*DeleteScheduleRequest)(nil),             // 87: fleetward.v1.DeleteScheduleRequest
-	(*DeleteScheduleResponse)(nil),            // 88: fleetward.v1.DeleteScheduleResponse
-	(*ListJobsRequest)(nil),                   // 89: fleetward.v1.ListJobsRequest
-	(*ListJobsResponse)(nil),                  // 90: fleetward.v1.ListJobsResponse
-	nil,                                       // 91: fleetward.v1.AuditEntry.DetailsEntry
-	nil,                                       // 92: fleetward.v1.Instance.LabelsEntry
-	nil,                                       // 93: fleetward.v1.CreateInstanceRequest.LabelsEntry
-	nil,                                       // 94: fleetward.v1.ConnectionSpec.OptionsEntry
-	nil,                                       // 95: fleetward.v1.RunBackupRequest.OptionsEntry
-	nil,                                       // 96: fleetward.v1.Schedule.OptionsEntry
-	nil,                                       // 97: fleetward.v1.CreateScheduleRequest.OptionsEntry
-	(*timestamppb.Timestamp)(nil),             // 98: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),               // 99: google.protobuf.Duration
-	(*Capabilities)(nil),                      // 100: fleetward.v1.Capabilities
-	(HealthState)(0),                          // 101: fleetward.v1.HealthState
-	(VerificationStatus)(0),                   // 102: fleetward.v1.VerificationStatus
-	(*ServerInfo)(nil),                        // 103: fleetward.v1.ServerInfo
-	(*DatabaseInfo)(nil),                      // 104: fleetward.v1.DatabaseInfo
-	(*Topology)(nil),                          // 105: fleetward.v1.Topology
-	(*TLSSettings)(nil),                       // 106: fleetward.v1.TLSSettings
-	(*SharedDirectory)(nil),                   // 107: fleetward.v1.SharedDirectory
-	(*HealthStatus)(nil),                      // 108: fleetward.v1.HealthStatus
-	(*Principal)(nil),                         // 109: fleetward.v1.Principal
-	(PrincipalModel)(0),                       // 110: fleetward.v1.PrincipalModel
-	(*Checksum)(nil),                          // 111: fleetward.v1.Checksum
-	(*ObjectRef)(nil),                         // 112: fleetward.v1.ObjectRef
-	(*CheckResult)(nil),                       // 113: fleetward.v1.CheckResult
-	(*TimeRange)(nil),                         // 114: fleetward.v1.TimeRange
-	(*SourceManifest)(nil),                    // 115: fleetward.v1.SourceManifest
-	(VerificationCheck)(0),                    // 116: fleetward.v1.VerificationCheck
-	(*PITRWindow)(nil),                        // 117: fleetward.v1.PITRWindow
+	(AlertKind)(0),                            // 9: fleetward.v1.AlertKind
+	(AlertSeverity)(0),                        // 10: fleetward.v1.AlertSeverity
+	(AlertState)(0),                           // 11: fleetward.v1.AlertState
+	(*Caller)(nil),                            // 12: fleetward.v1.Caller
+	(*RoleGrant)(nil),                         // 13: fleetward.v1.RoleGrant
+	(*GetMeRequest)(nil),                      // 14: fleetward.v1.GetMeRequest
+	(*GetMeResponse)(nil),                     // 15: fleetward.v1.GetMeResponse
+	(*ApiToken)(nil),                          // 16: fleetward.v1.ApiToken
+	(*CreateTokenRequest)(nil),                // 17: fleetward.v1.CreateTokenRequest
+	(*CreateTokenResponse)(nil),               // 18: fleetward.v1.CreateTokenResponse
+	(*ListTokensRequest)(nil),                 // 19: fleetward.v1.ListTokensRequest
+	(*ListTokensResponse)(nil),                // 20: fleetward.v1.ListTokensResponse
+	(*RevokeTokenRequest)(nil),                // 21: fleetward.v1.RevokeTokenRequest
+	(*RevokeTokenResponse)(nil),               // 22: fleetward.v1.RevokeTokenResponse
+	(*AuditEntry)(nil),                        // 23: fleetward.v1.AuditEntry
+	(*ListAuditLogRequest)(nil),               // 24: fleetward.v1.ListAuditLogRequest
+	(*ListAuditLogResponse)(nil),              // 25: fleetward.v1.ListAuditLogResponse
+	(*GetHealthRequest)(nil),                  // 26: fleetward.v1.GetHealthRequest
+	(*GetHealthResponse)(nil),                 // 27: fleetward.v1.GetHealthResponse
+	(*ComponentHealth)(nil),                   // 28: fleetward.v1.ComponentHealth
+	(*GetVersionRequest)(nil),                 // 29: fleetward.v1.GetVersionRequest
+	(*GetVersionResponse)(nil),                // 30: fleetward.v1.GetVersionResponse
+	(*ListPluginsRequest)(nil),                // 31: fleetward.v1.ListPluginsRequest
+	(*ListPluginsResponse)(nil),               // 32: fleetward.v1.ListPluginsResponse
+	(*PluginInfo)(nil),                        // 33: fleetward.v1.PluginInfo
+	(*Environment)(nil),                       // 34: fleetward.v1.Environment
+	(*Instance)(nil),                          // 35: fleetward.v1.Instance
+	(*BackupSummary)(nil),                     // 36: fleetward.v1.BackupSummary
+	(*ListEnvironmentsRequest)(nil),           // 37: fleetward.v1.ListEnvironmentsRequest
+	(*ListEnvironmentsResponse)(nil),          // 38: fleetward.v1.ListEnvironmentsResponse
+	(*CreateEnvironmentRequest)(nil),          // 39: fleetward.v1.CreateEnvironmentRequest
+	(*CreateEnvironmentResponse)(nil),         // 40: fleetward.v1.CreateEnvironmentResponse
+	(*ListInstancesRequest)(nil),              // 41: fleetward.v1.ListInstancesRequest
+	(*ListInstancesResponse)(nil),             // 42: fleetward.v1.ListInstancesResponse
+	(*GetInstanceRequest)(nil),                // 43: fleetward.v1.GetInstanceRequest
+	(*GetInstanceResponse)(nil),               // 44: fleetward.v1.GetInstanceResponse
+	(*CreateInstanceRequest)(nil),             // 45: fleetward.v1.CreateInstanceRequest
+	(*ConnectionSpec)(nil),                    // 46: fleetward.v1.ConnectionSpec
+	(*CreateInstanceResponse)(nil),            // 47: fleetward.v1.CreateInstanceResponse
+	(*DeleteInstanceRequest)(nil),             // 48: fleetward.v1.DeleteInstanceRequest
+	(*DeleteInstanceResponse)(nil),            // 49: fleetward.v1.DeleteInstanceResponse
+	(*TestConnectionRequest)(nil),             // 50: fleetward.v1.TestConnectionRequest
+	(*TestConnectionResponse)(nil),            // 51: fleetward.v1.TestConnectionResponse
+	(*DiscoverInstanceRequest)(nil),           // 52: fleetward.v1.DiscoverInstanceRequest
+	(*DiscoverInstanceResponse)(nil),          // 53: fleetward.v1.DiscoverInstanceResponse
+	(*ListPrincipalsForInstanceRequest)(nil),  // 54: fleetward.v1.ListPrincipalsForInstanceRequest
+	(*ListPrincipalsForInstanceResponse)(nil), // 55: fleetward.v1.ListPrincipalsForInstanceResponse
+	(*Backup)(nil),                            // 56: fleetward.v1.Backup
+	(*ObservedEvidence)(nil),                  // 57: fleetward.v1.ObservedEvidence
+	(*Verification)(nil),                      // 58: fleetward.v1.Verification
+	(*ListBackupsRequest)(nil),                // 59: fleetward.v1.ListBackupsRequest
+	(*ListBackupsResponse)(nil),               // 60: fleetward.v1.ListBackupsResponse
+	(*GetBackupRequest)(nil),                  // 61: fleetward.v1.GetBackupRequest
+	(*GetBackupResponse)(nil),                 // 62: fleetward.v1.GetBackupResponse
+	(*RunBackupRequest)(nil),                  // 63: fleetward.v1.RunBackupRequest
+	(*RunBackupResponse)(nil),                 // 64: fleetward.v1.RunBackupResponse
+	(*RunVerificationRequest)(nil),            // 65: fleetward.v1.RunVerificationRequest
+	(*RunVerificationResponse)(nil),           // 66: fleetward.v1.RunVerificationResponse
+	(*ObserveBackupHistoryRequest)(nil),       // 67: fleetward.v1.ObserveBackupHistoryRequest
+	(*ObserveBackupHistoryResponse)(nil),      // 68: fleetward.v1.ObserveBackupHistoryResponse
+	(*GetBackupAdherenceRequest)(nil),         // 69: fleetward.v1.GetBackupAdherenceRequest
+	(*GetBackupAdherenceResponse)(nil),        // 70: fleetward.v1.GetBackupAdherenceResponse
+	(*InstanceAdherence)(nil),                 // 71: fleetward.v1.InstanceAdherence
+	(*PreviewRetentionRequest)(nil),           // 72: fleetward.v1.PreviewRetentionRequest
+	(*PreviewRetentionResponse)(nil),          // 73: fleetward.v1.PreviewRetentionResponse
+	(*RetentionPolicy)(nil),                   // 74: fleetward.v1.RetentionPolicy
+	(*RetentionCandidate)(nil),                // 75: fleetward.v1.RetentionCandidate
+	(*GetVerificationRequest)(nil),            // 76: fleetward.v1.GetVerificationRequest
+	(*GetVerificationResponse)(nil),           // 77: fleetward.v1.GetVerificationResponse
+	(*GetPITRWindowRequest)(nil),              // 78: fleetward.v1.GetPITRWindowRequest
+	(*GetPITRWindowResponse)(nil),             // 79: fleetward.v1.GetPITRWindowResponse
+	(*Schedule)(nil),                          // 80: fleetward.v1.Schedule
+	(*Job)(nil),                               // 81: fleetward.v1.Job
+	(*ListSchedulesRequest)(nil),              // 82: fleetward.v1.ListSchedulesRequest
+	(*ListSchedulesResponse)(nil),             // 83: fleetward.v1.ListSchedulesResponse
+	(*GetScheduleRequest)(nil),                // 84: fleetward.v1.GetScheduleRequest
+	(*GetScheduleResponse)(nil),               // 85: fleetward.v1.GetScheduleResponse
+	(*CreateScheduleRequest)(nil),             // 86: fleetward.v1.CreateScheduleRequest
+	(*CreateScheduleResponse)(nil),            // 87: fleetward.v1.CreateScheduleResponse
+	(*SetScheduleEnabledRequest)(nil),         // 88: fleetward.v1.SetScheduleEnabledRequest
+	(*SetScheduleEnabledResponse)(nil),        // 89: fleetward.v1.SetScheduleEnabledResponse
+	(*DeleteScheduleRequest)(nil),             // 90: fleetward.v1.DeleteScheduleRequest
+	(*DeleteScheduleResponse)(nil),            // 91: fleetward.v1.DeleteScheduleResponse
+	(*ListJobsRequest)(nil),                   // 92: fleetward.v1.ListJobsRequest
+	(*ListJobsResponse)(nil),                  // 93: fleetward.v1.ListJobsResponse
+	(*AlertRule)(nil),                         // 94: fleetward.v1.AlertRule
+	(*Alert)(nil),                             // 95: fleetward.v1.Alert
+	(*Notifier)(nil),                          // 96: fleetward.v1.Notifier
+	(*ListAlertsRequest)(nil),                 // 97: fleetward.v1.ListAlertsRequest
+	(*ListAlertsResponse)(nil),                // 98: fleetward.v1.ListAlertsResponse
+	(*AcknowledgeAlertRequest)(nil),           // 99: fleetward.v1.AcknowledgeAlertRequest
+	(*AcknowledgeAlertResponse)(nil),          // 100: fleetward.v1.AcknowledgeAlertResponse
+	(*ListAlertRulesRequest)(nil),             // 101: fleetward.v1.ListAlertRulesRequest
+	(*ListAlertRulesResponse)(nil),            // 102: fleetward.v1.ListAlertRulesResponse
+	(*CreateAlertRuleRequest)(nil),            // 103: fleetward.v1.CreateAlertRuleRequest
+	(*CreateAlertRuleResponse)(nil),           // 104: fleetward.v1.CreateAlertRuleResponse
+	(*SetAlertRuleEnabledRequest)(nil),        // 105: fleetward.v1.SetAlertRuleEnabledRequest
+	(*SetAlertRuleEnabledResponse)(nil),       // 106: fleetward.v1.SetAlertRuleEnabledResponse
+	(*DeleteAlertRuleRequest)(nil),            // 107: fleetward.v1.DeleteAlertRuleRequest
+	(*DeleteAlertRuleResponse)(nil),           // 108: fleetward.v1.DeleteAlertRuleResponse
+	(*ListNotifiersRequest)(nil),              // 109: fleetward.v1.ListNotifiersRequest
+	(*ListNotifiersResponse)(nil),             // 110: fleetward.v1.ListNotifiersResponse
+	(*CreateNotifierRequest)(nil),             // 111: fleetward.v1.CreateNotifierRequest
+	(*CreateNotifierResponse)(nil),            // 112: fleetward.v1.CreateNotifierResponse
+	(*DeleteNotifierRequest)(nil),             // 113: fleetward.v1.DeleteNotifierRequest
+	(*DeleteNotifierResponse)(nil),            // 114: fleetward.v1.DeleteNotifierResponse
+	(*TestNotifierRequest)(nil),               // 115: fleetward.v1.TestNotifierRequest
+	(*TestNotifierResponse)(nil),              // 116: fleetward.v1.TestNotifierResponse
+	nil,                                       // 117: fleetward.v1.AuditEntry.DetailsEntry
+	nil,                                       // 118: fleetward.v1.Instance.LabelsEntry
+	nil,                                       // 119: fleetward.v1.CreateInstanceRequest.LabelsEntry
+	nil,                                       // 120: fleetward.v1.ConnectionSpec.OptionsEntry
+	nil,                                       // 121: fleetward.v1.RunBackupRequest.OptionsEntry
+	nil,                                       // 122: fleetward.v1.Schedule.OptionsEntry
+	nil,                                       // 123: fleetward.v1.CreateScheduleRequest.OptionsEntry
+	nil,                                       // 124: fleetward.v1.Notifier.SettingsEntry
+	nil,                                       // 125: fleetward.v1.CreateNotifierRequest.SettingsEntry
+	(*timestamppb.Timestamp)(nil),             // 126: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),               // 127: google.protobuf.Duration
+	(*Capabilities)(nil),                      // 128: fleetward.v1.Capabilities
+	(HealthState)(0),                          // 129: fleetward.v1.HealthState
+	(VerificationStatus)(0),                   // 130: fleetward.v1.VerificationStatus
+	(*ServerInfo)(nil),                        // 131: fleetward.v1.ServerInfo
+	(*DatabaseInfo)(nil),                      // 132: fleetward.v1.DatabaseInfo
+	(*Topology)(nil),                          // 133: fleetward.v1.Topology
+	(*TLSSettings)(nil),                       // 134: fleetward.v1.TLSSettings
+	(*SharedDirectory)(nil),                   // 135: fleetward.v1.SharedDirectory
+	(*HealthStatus)(nil),                      // 136: fleetward.v1.HealthStatus
+	(*Principal)(nil),                         // 137: fleetward.v1.Principal
+	(PrincipalModel)(0),                       // 138: fleetward.v1.PrincipalModel
+	(*Checksum)(nil),                          // 139: fleetward.v1.Checksum
+	(*ObjectRef)(nil),                         // 140: fleetward.v1.ObjectRef
+	(*CheckResult)(nil),                       // 141: fleetward.v1.CheckResult
+	(*TimeRange)(nil),                         // 142: fleetward.v1.TimeRange
+	(*SourceManifest)(nil),                    // 143: fleetward.v1.SourceManifest
+	(VerificationCheck)(0),                    // 144: fleetward.v1.VerificationCheck
+	(*PITRWindow)(nil),                        // 145: fleetward.v1.PITRWindow
 }
 var file_fleetward_v1_controlplane_proto_depIdxs = []int32{
 	0,   // 0: fleetward.v1.Caller.kind:type_name -> fleetward.v1.CallerKind
-	9,   // 1: fleetward.v1.GetMeResponse.caller:type_name -> fleetward.v1.Caller
-	10,  // 2: fleetward.v1.GetMeResponse.grants:type_name -> fleetward.v1.RoleGrant
-	98,  // 3: fleetward.v1.ApiToken.created_at:type_name -> google.protobuf.Timestamp
-	98,  // 4: fleetward.v1.ApiToken.expires_at:type_name -> google.protobuf.Timestamp
-	98,  // 5: fleetward.v1.ApiToken.last_used_at:type_name -> google.protobuf.Timestamp
-	98,  // 6: fleetward.v1.ApiToken.revoked_at:type_name -> google.protobuf.Timestamp
-	10,  // 7: fleetward.v1.ApiToken.grants:type_name -> fleetward.v1.RoleGrant
-	99,  // 8: fleetward.v1.CreateTokenRequest.ttl:type_name -> google.protobuf.Duration
-	13,  // 9: fleetward.v1.CreateTokenResponse.token:type_name -> fleetward.v1.ApiToken
-	13,  // 10: fleetward.v1.ListTokensResponse.tokens:type_name -> fleetward.v1.ApiToken
-	91,  // 11: fleetward.v1.AuditEntry.details:type_name -> fleetward.v1.AuditEntry.DetailsEntry
-	98,  // 12: fleetward.v1.AuditEntry.occurred_at:type_name -> google.protobuf.Timestamp
-	20,  // 13: fleetward.v1.ListAuditLogResponse.entries:type_name -> fleetward.v1.AuditEntry
+	12,  // 1: fleetward.v1.GetMeResponse.caller:type_name -> fleetward.v1.Caller
+	13,  // 2: fleetward.v1.GetMeResponse.grants:type_name -> fleetward.v1.RoleGrant
+	126, // 3: fleetward.v1.ApiToken.created_at:type_name -> google.protobuf.Timestamp
+	126, // 4: fleetward.v1.ApiToken.expires_at:type_name -> google.protobuf.Timestamp
+	126, // 5: fleetward.v1.ApiToken.last_used_at:type_name -> google.protobuf.Timestamp
+	126, // 6: fleetward.v1.ApiToken.revoked_at:type_name -> google.protobuf.Timestamp
+	13,  // 7: fleetward.v1.ApiToken.grants:type_name -> fleetward.v1.RoleGrant
+	127, // 8: fleetward.v1.CreateTokenRequest.ttl:type_name -> google.protobuf.Duration
+	16,  // 9: fleetward.v1.CreateTokenResponse.token:type_name -> fleetward.v1.ApiToken
+	16,  // 10: fleetward.v1.ListTokensResponse.tokens:type_name -> fleetward.v1.ApiToken
+	117, // 11: fleetward.v1.AuditEntry.details:type_name -> fleetward.v1.AuditEntry.DetailsEntry
+	126, // 12: fleetward.v1.AuditEntry.occurred_at:type_name -> google.protobuf.Timestamp
+	23,  // 13: fleetward.v1.ListAuditLogResponse.entries:type_name -> fleetward.v1.AuditEntry
 	1,   // 14: fleetward.v1.GetHealthResponse.status:type_name -> fleetward.v1.ServiceHealth
-	25,  // 15: fleetward.v1.GetHealthResponse.components:type_name -> fleetward.v1.ComponentHealth
+	28,  // 15: fleetward.v1.GetHealthResponse.components:type_name -> fleetward.v1.ComponentHealth
 	1,   // 16: fleetward.v1.ComponentHealth.status:type_name -> fleetward.v1.ServiceHealth
-	99,  // 17: fleetward.v1.ComponentHealth.latency:type_name -> google.protobuf.Duration
-	30,  // 18: fleetward.v1.ListPluginsResponse.plugins:type_name -> fleetward.v1.PluginInfo
-	100, // 19: fleetward.v1.PluginInfo.capabilities:type_name -> fleetward.v1.Capabilities
+	127, // 17: fleetward.v1.ComponentHealth.latency:type_name -> google.protobuf.Duration
+	33,  // 18: fleetward.v1.ListPluginsResponse.plugins:type_name -> fleetward.v1.PluginInfo
+	128, // 19: fleetward.v1.PluginInfo.capabilities:type_name -> fleetward.v1.Capabilities
 	2,   // 20: fleetward.v1.PluginInfo.state:type_name -> fleetward.v1.PluginState
-	98,  // 21: fleetward.v1.Environment.created_at:type_name -> google.protobuf.Timestamp
-	101, // 22: fleetward.v1.Instance.health:type_name -> fleetward.v1.HealthState
-	98,  // 23: fleetward.v1.Instance.last_seen_at:type_name -> google.protobuf.Timestamp
-	92,  // 24: fleetward.v1.Instance.labels:type_name -> fleetward.v1.Instance.LabelsEntry
-	98,  // 25: fleetward.v1.Instance.created_at:type_name -> google.protobuf.Timestamp
-	33,  // 26: fleetward.v1.Instance.backup_summary:type_name -> fleetward.v1.BackupSummary
-	98,  // 27: fleetward.v1.BackupSummary.last_backup_at:type_name -> google.protobuf.Timestamp
+	126, // 21: fleetward.v1.Environment.created_at:type_name -> google.protobuf.Timestamp
+	129, // 22: fleetward.v1.Instance.health:type_name -> fleetward.v1.HealthState
+	126, // 23: fleetward.v1.Instance.last_seen_at:type_name -> google.protobuf.Timestamp
+	118, // 24: fleetward.v1.Instance.labels:type_name -> fleetward.v1.Instance.LabelsEntry
+	126, // 25: fleetward.v1.Instance.created_at:type_name -> google.protobuf.Timestamp
+	36,  // 26: fleetward.v1.Instance.backup_summary:type_name -> fleetward.v1.BackupSummary
+	126, // 27: fleetward.v1.BackupSummary.last_backup_at:type_name -> google.protobuf.Timestamp
 	3,   // 28: fleetward.v1.BackupSummary.last_backup_state:type_name -> fleetward.v1.BackupState
-	98,  // 29: fleetward.v1.BackupSummary.last_verification_at:type_name -> google.protobuf.Timestamp
-	102, // 30: fleetward.v1.BackupSummary.last_verification_status:type_name -> fleetward.v1.VerificationStatus
-	31,  // 31: fleetward.v1.ListEnvironmentsResponse.environments:type_name -> fleetward.v1.Environment
-	31,  // 32: fleetward.v1.CreateEnvironmentResponse.environment:type_name -> fleetward.v1.Environment
-	32,  // 33: fleetward.v1.ListInstancesResponse.instances:type_name -> fleetward.v1.Instance
-	32,  // 34: fleetward.v1.GetInstanceResponse.instance:type_name -> fleetward.v1.Instance
-	100, // 35: fleetward.v1.GetInstanceResponse.capabilities:type_name -> fleetward.v1.Capabilities
-	103, // 36: fleetward.v1.GetInstanceResponse.server:type_name -> fleetward.v1.ServerInfo
-	104, // 37: fleetward.v1.GetInstanceResponse.databases:type_name -> fleetward.v1.DatabaseInfo
-	105, // 38: fleetward.v1.GetInstanceResponse.topology:type_name -> fleetward.v1.Topology
-	43,  // 39: fleetward.v1.CreateInstanceRequest.connection:type_name -> fleetward.v1.ConnectionSpec
-	93,  // 40: fleetward.v1.CreateInstanceRequest.labels:type_name -> fleetward.v1.CreateInstanceRequest.LabelsEntry
-	106, // 41: fleetward.v1.ConnectionSpec.tls:type_name -> fleetward.v1.TLSSettings
-	94,  // 42: fleetward.v1.ConnectionSpec.options:type_name -> fleetward.v1.ConnectionSpec.OptionsEntry
-	107, // 43: fleetward.v1.ConnectionSpec.shared_directory:type_name -> fleetward.v1.SharedDirectory
-	32,  // 44: fleetward.v1.CreateInstanceResponse.instance:type_name -> fleetward.v1.Instance
-	43,  // 45: fleetward.v1.TestConnectionRequest.connection:type_name -> fleetward.v1.ConnectionSpec
-	108, // 46: fleetward.v1.TestConnectionResponse.health:type_name -> fleetward.v1.HealthStatus
-	103, // 47: fleetward.v1.DiscoverInstanceResponse.server:type_name -> fleetward.v1.ServerInfo
-	104, // 48: fleetward.v1.DiscoverInstanceResponse.databases:type_name -> fleetward.v1.DatabaseInfo
-	105, // 49: fleetward.v1.DiscoverInstanceResponse.topology:type_name -> fleetward.v1.Topology
-	109, // 50: fleetward.v1.ListPrincipalsForInstanceResponse.principals:type_name -> fleetward.v1.Principal
-	110, // 51: fleetward.v1.ListPrincipalsForInstanceResponse.model:type_name -> fleetward.v1.PrincipalModel
+	126, // 29: fleetward.v1.BackupSummary.last_verification_at:type_name -> google.protobuf.Timestamp
+	130, // 30: fleetward.v1.BackupSummary.last_verification_status:type_name -> fleetward.v1.VerificationStatus
+	34,  // 31: fleetward.v1.ListEnvironmentsResponse.environments:type_name -> fleetward.v1.Environment
+	34,  // 32: fleetward.v1.CreateEnvironmentResponse.environment:type_name -> fleetward.v1.Environment
+	35,  // 33: fleetward.v1.ListInstancesResponse.instances:type_name -> fleetward.v1.Instance
+	35,  // 34: fleetward.v1.GetInstanceResponse.instance:type_name -> fleetward.v1.Instance
+	128, // 35: fleetward.v1.GetInstanceResponse.capabilities:type_name -> fleetward.v1.Capabilities
+	131, // 36: fleetward.v1.GetInstanceResponse.server:type_name -> fleetward.v1.ServerInfo
+	132, // 37: fleetward.v1.GetInstanceResponse.databases:type_name -> fleetward.v1.DatabaseInfo
+	133, // 38: fleetward.v1.GetInstanceResponse.topology:type_name -> fleetward.v1.Topology
+	46,  // 39: fleetward.v1.CreateInstanceRequest.connection:type_name -> fleetward.v1.ConnectionSpec
+	119, // 40: fleetward.v1.CreateInstanceRequest.labels:type_name -> fleetward.v1.CreateInstanceRequest.LabelsEntry
+	134, // 41: fleetward.v1.ConnectionSpec.tls:type_name -> fleetward.v1.TLSSettings
+	120, // 42: fleetward.v1.ConnectionSpec.options:type_name -> fleetward.v1.ConnectionSpec.OptionsEntry
+	135, // 43: fleetward.v1.ConnectionSpec.shared_directory:type_name -> fleetward.v1.SharedDirectory
+	35,  // 44: fleetward.v1.CreateInstanceResponse.instance:type_name -> fleetward.v1.Instance
+	46,  // 45: fleetward.v1.TestConnectionRequest.connection:type_name -> fleetward.v1.ConnectionSpec
+	136, // 46: fleetward.v1.TestConnectionResponse.health:type_name -> fleetward.v1.HealthStatus
+	131, // 47: fleetward.v1.DiscoverInstanceResponse.server:type_name -> fleetward.v1.ServerInfo
+	132, // 48: fleetward.v1.DiscoverInstanceResponse.databases:type_name -> fleetward.v1.DatabaseInfo
+	133, // 49: fleetward.v1.DiscoverInstanceResponse.topology:type_name -> fleetward.v1.Topology
+	137, // 50: fleetward.v1.ListPrincipalsForInstanceResponse.principals:type_name -> fleetward.v1.Principal
+	138, // 51: fleetward.v1.ListPrincipalsForInstanceResponse.model:type_name -> fleetward.v1.PrincipalModel
 	3,   // 52: fleetward.v1.Backup.state:type_name -> fleetward.v1.BackupState
-	111, // 53: fleetward.v1.Backup.checksum:type_name -> fleetward.v1.Checksum
-	98,  // 54: fleetward.v1.Backup.started_at:type_name -> google.protobuf.Timestamp
-	98,  // 55: fleetward.v1.Backup.completed_at:type_name -> google.protobuf.Timestamp
-	99,  // 56: fleetward.v1.Backup.duration:type_name -> google.protobuf.Duration
-	98,  // 57: fleetward.v1.Backup.consistency_point:type_name -> google.protobuf.Timestamp
-	98,  // 58: fleetward.v1.Backup.expires_at:type_name -> google.protobuf.Timestamp
-	112, // 59: fleetward.v1.Backup.artifact:type_name -> fleetward.v1.ObjectRef
-	55,  // 60: fleetward.v1.Backup.verification:type_name -> fleetward.v1.Verification
+	139, // 53: fleetward.v1.Backup.checksum:type_name -> fleetward.v1.Checksum
+	126, // 54: fleetward.v1.Backup.started_at:type_name -> google.protobuf.Timestamp
+	126, // 55: fleetward.v1.Backup.completed_at:type_name -> google.protobuf.Timestamp
+	127, // 56: fleetward.v1.Backup.duration:type_name -> google.protobuf.Duration
+	126, // 57: fleetward.v1.Backup.consistency_point:type_name -> google.protobuf.Timestamp
+	126, // 58: fleetward.v1.Backup.expires_at:type_name -> google.protobuf.Timestamp
+	140, // 59: fleetward.v1.Backup.artifact:type_name -> fleetward.v1.ObjectRef
+	58,  // 60: fleetward.v1.Backup.verification:type_name -> fleetward.v1.Verification
 	4,   // 61: fleetward.v1.Backup.origin:type_name -> fleetward.v1.BackupOrigin
-	54,  // 62: fleetward.v1.Backup.evidence:type_name -> fleetward.v1.ObservedEvidence
-	98,  // 63: fleetward.v1.ObservedEvidence.observed_at:type_name -> google.protobuf.Timestamp
-	102, // 64: fleetward.v1.Verification.status:type_name -> fleetward.v1.VerificationStatus
-	113, // 65: fleetward.v1.Verification.checks:type_name -> fleetward.v1.CheckResult
-	98,  // 66: fleetward.v1.Verification.started_at:type_name -> google.protobuf.Timestamp
-	98,  // 67: fleetward.v1.Verification.completed_at:type_name -> google.protobuf.Timestamp
-	99,  // 68: fleetward.v1.Verification.duration:type_name -> google.protobuf.Duration
-	114, // 69: fleetward.v1.ListBackupsRequest.within:type_name -> fleetward.v1.TimeRange
+	57,  // 62: fleetward.v1.Backup.evidence:type_name -> fleetward.v1.ObservedEvidence
+	126, // 63: fleetward.v1.ObservedEvidence.observed_at:type_name -> google.protobuf.Timestamp
+	130, // 64: fleetward.v1.Verification.status:type_name -> fleetward.v1.VerificationStatus
+	141, // 65: fleetward.v1.Verification.checks:type_name -> fleetward.v1.CheckResult
+	126, // 66: fleetward.v1.Verification.started_at:type_name -> google.protobuf.Timestamp
+	126, // 67: fleetward.v1.Verification.completed_at:type_name -> google.protobuf.Timestamp
+	127, // 68: fleetward.v1.Verification.duration:type_name -> google.protobuf.Duration
+	142, // 69: fleetward.v1.ListBackupsRequest.within:type_name -> fleetward.v1.TimeRange
 	3,   // 70: fleetward.v1.ListBackupsRequest.state:type_name -> fleetward.v1.BackupState
 	4,   // 71: fleetward.v1.ListBackupsRequest.origin:type_name -> fleetward.v1.BackupOrigin
-	53,  // 72: fleetward.v1.ListBackupsResponse.backups:type_name -> fleetward.v1.Backup
-	53,  // 73: fleetward.v1.GetBackupResponse.backup:type_name -> fleetward.v1.Backup
-	115, // 74: fleetward.v1.GetBackupResponse.manifest:type_name -> fleetward.v1.SourceManifest
-	95,  // 75: fleetward.v1.RunBackupRequest.options:type_name -> fleetward.v1.RunBackupRequest.OptionsEntry
-	116, // 76: fleetward.v1.RunVerificationRequest.checks:type_name -> fleetward.v1.VerificationCheck
-	98,  // 77: fleetward.v1.ObserveBackupHistoryResponse.watermark:type_name -> google.protobuf.Timestamp
-	68,  // 78: fleetward.v1.GetBackupAdherenceResponse.instances:type_name -> fleetward.v1.InstanceAdherence
+	56,  // 72: fleetward.v1.ListBackupsResponse.backups:type_name -> fleetward.v1.Backup
+	56,  // 73: fleetward.v1.GetBackupResponse.backup:type_name -> fleetward.v1.Backup
+	143, // 74: fleetward.v1.GetBackupResponse.manifest:type_name -> fleetward.v1.SourceManifest
+	121, // 75: fleetward.v1.RunBackupRequest.options:type_name -> fleetward.v1.RunBackupRequest.OptionsEntry
+	144, // 76: fleetward.v1.RunVerificationRequest.checks:type_name -> fleetward.v1.VerificationCheck
+	126, // 77: fleetward.v1.ObserveBackupHistoryResponse.watermark:type_name -> google.protobuf.Timestamp
+	71,  // 78: fleetward.v1.GetBackupAdherenceResponse.instances:type_name -> fleetward.v1.InstanceAdherence
 	5,   // 79: fleetward.v1.InstanceAdherence.state:type_name -> fleetward.v1.AdherenceState
-	98,  // 80: fleetward.v1.InstanceAdherence.expected_by:type_name -> google.protobuf.Timestamp
-	98,  // 81: fleetward.v1.InstanceAdherence.deadline:type_name -> google.protobuf.Timestamp
-	53,  // 82: fleetward.v1.InstanceAdherence.satisfied_by:type_name -> fleetward.v1.Backup
-	53,  // 83: fleetward.v1.InstanceAdherence.latest_backup:type_name -> fleetward.v1.Backup
-	71,  // 84: fleetward.v1.PreviewRetentionResponse.policy:type_name -> fleetward.v1.RetentionPolicy
-	72,  // 85: fleetward.v1.PreviewRetentionResponse.expiring:type_name -> fleetward.v1.RetentionCandidate
-	72,  // 86: fleetward.v1.PreviewRetentionResponse.protected:type_name -> fleetward.v1.RetentionCandidate
-	72,  // 87: fleetward.v1.PreviewRetentionResponse.pending_deletion:type_name -> fleetward.v1.RetentionCandidate
-	99,  // 88: fleetward.v1.RetentionPolicy.interval:type_name -> google.protobuf.Duration
-	98,  // 89: fleetward.v1.RetentionCandidate.completed_at:type_name -> google.protobuf.Timestamp
-	98,  // 90: fleetward.v1.RetentionCandidate.expires_at:type_name -> google.protobuf.Timestamp
-	55,  // 91: fleetward.v1.GetVerificationResponse.verification:type_name -> fleetward.v1.Verification
-	117, // 92: fleetward.v1.GetPITRWindowResponse.window:type_name -> fleetward.v1.PITRWindow
+	126, // 80: fleetward.v1.InstanceAdherence.expected_by:type_name -> google.protobuf.Timestamp
+	126, // 81: fleetward.v1.InstanceAdherence.deadline:type_name -> google.protobuf.Timestamp
+	56,  // 82: fleetward.v1.InstanceAdherence.satisfied_by:type_name -> fleetward.v1.Backup
+	56,  // 83: fleetward.v1.InstanceAdherence.latest_backup:type_name -> fleetward.v1.Backup
+	74,  // 84: fleetward.v1.PreviewRetentionResponse.policy:type_name -> fleetward.v1.RetentionPolicy
+	75,  // 85: fleetward.v1.PreviewRetentionResponse.expiring:type_name -> fleetward.v1.RetentionCandidate
+	75,  // 86: fleetward.v1.PreviewRetentionResponse.protected:type_name -> fleetward.v1.RetentionCandidate
+	75,  // 87: fleetward.v1.PreviewRetentionResponse.pending_deletion:type_name -> fleetward.v1.RetentionCandidate
+	127, // 88: fleetward.v1.RetentionPolicy.interval:type_name -> google.protobuf.Duration
+	126, // 89: fleetward.v1.RetentionCandidate.completed_at:type_name -> google.protobuf.Timestamp
+	126, // 90: fleetward.v1.RetentionCandidate.expires_at:type_name -> google.protobuf.Timestamp
+	58,  // 91: fleetward.v1.GetVerificationResponse.verification:type_name -> fleetward.v1.Verification
+	145, // 92: fleetward.v1.GetPITRWindowResponse.window:type_name -> fleetward.v1.PITRWindow
 	7,   // 93: fleetward.v1.Schedule.kind:type_name -> fleetward.v1.JobKind
-	96,  // 94: fleetward.v1.Schedule.options:type_name -> fleetward.v1.Schedule.OptionsEntry
+	122, // 94: fleetward.v1.Schedule.options:type_name -> fleetward.v1.Schedule.OptionsEntry
 	6,   // 95: fleetward.v1.Schedule.verify_policy:type_name -> fleetward.v1.VerifyPolicy
-	98,  // 96: fleetward.v1.Schedule.next_run_at:type_name -> google.protobuf.Timestamp
-	98,  // 97: fleetward.v1.Schedule.last_run_at:type_name -> google.protobuf.Timestamp
-	98,  // 98: fleetward.v1.Schedule.created_at:type_name -> google.protobuf.Timestamp
+	126, // 96: fleetward.v1.Schedule.next_run_at:type_name -> google.protobuf.Timestamp
+	126, // 97: fleetward.v1.Schedule.last_run_at:type_name -> google.protobuf.Timestamp
+	126, // 98: fleetward.v1.Schedule.created_at:type_name -> google.protobuf.Timestamp
 	7,   // 99: fleetward.v1.Job.kind:type_name -> fleetward.v1.JobKind
 	8,   // 100: fleetward.v1.Job.state:type_name -> fleetward.v1.JobState
-	98,  // 101: fleetward.v1.Job.scheduled_for:type_name -> google.protobuf.Timestamp
-	98,  // 102: fleetward.v1.Job.lease_expires_at:type_name -> google.protobuf.Timestamp
-	98,  // 103: fleetward.v1.Job.heartbeat_at:type_name -> google.protobuf.Timestamp
-	98,  // 104: fleetward.v1.Job.started_at:type_name -> google.protobuf.Timestamp
-	98,  // 105: fleetward.v1.Job.finished_at:type_name -> google.protobuf.Timestamp
-	98,  // 106: fleetward.v1.Job.created_at:type_name -> google.protobuf.Timestamp
-	77,  // 107: fleetward.v1.ListSchedulesResponse.schedules:type_name -> fleetward.v1.Schedule
-	77,  // 108: fleetward.v1.GetScheduleResponse.schedule:type_name -> fleetward.v1.Schedule
+	126, // 101: fleetward.v1.Job.scheduled_for:type_name -> google.protobuf.Timestamp
+	126, // 102: fleetward.v1.Job.lease_expires_at:type_name -> google.protobuf.Timestamp
+	126, // 103: fleetward.v1.Job.heartbeat_at:type_name -> google.protobuf.Timestamp
+	126, // 104: fleetward.v1.Job.started_at:type_name -> google.protobuf.Timestamp
+	126, // 105: fleetward.v1.Job.finished_at:type_name -> google.protobuf.Timestamp
+	126, // 106: fleetward.v1.Job.created_at:type_name -> google.protobuf.Timestamp
+	80,  // 107: fleetward.v1.ListSchedulesResponse.schedules:type_name -> fleetward.v1.Schedule
+	80,  // 108: fleetward.v1.GetScheduleResponse.schedule:type_name -> fleetward.v1.Schedule
 	7,   // 109: fleetward.v1.CreateScheduleRequest.kind:type_name -> fleetward.v1.JobKind
-	97,  // 110: fleetward.v1.CreateScheduleRequest.options:type_name -> fleetward.v1.CreateScheduleRequest.OptionsEntry
+	123, // 110: fleetward.v1.CreateScheduleRequest.options:type_name -> fleetward.v1.CreateScheduleRequest.OptionsEntry
 	6,   // 111: fleetward.v1.CreateScheduleRequest.verify_policy:type_name -> fleetward.v1.VerifyPolicy
-	77,  // 112: fleetward.v1.CreateScheduleResponse.schedule:type_name -> fleetward.v1.Schedule
-	77,  // 113: fleetward.v1.SetScheduleEnabledResponse.schedule:type_name -> fleetward.v1.Schedule
+	80,  // 112: fleetward.v1.CreateScheduleResponse.schedule:type_name -> fleetward.v1.Schedule
+	80,  // 113: fleetward.v1.SetScheduleEnabledResponse.schedule:type_name -> fleetward.v1.Schedule
 	8,   // 114: fleetward.v1.ListJobsRequest.state:type_name -> fleetward.v1.JobState
-	78,  // 115: fleetward.v1.ListJobsResponse.jobs:type_name -> fleetward.v1.Job
-	23,  // 116: fleetward.v1.SystemService.GetHealth:input_type -> fleetward.v1.GetHealthRequest
-	26,  // 117: fleetward.v1.SystemService.GetVersion:input_type -> fleetward.v1.GetVersionRequest
-	28,  // 118: fleetward.v1.SystemService.ListPlugins:input_type -> fleetward.v1.ListPluginsRequest
-	34,  // 119: fleetward.v1.InventoryService.ListEnvironments:input_type -> fleetward.v1.ListEnvironmentsRequest
-	36,  // 120: fleetward.v1.InventoryService.CreateEnvironment:input_type -> fleetward.v1.CreateEnvironmentRequest
-	38,  // 121: fleetward.v1.InventoryService.ListInstances:input_type -> fleetward.v1.ListInstancesRequest
-	40,  // 122: fleetward.v1.InventoryService.GetInstance:input_type -> fleetward.v1.GetInstanceRequest
-	42,  // 123: fleetward.v1.InventoryService.CreateInstance:input_type -> fleetward.v1.CreateInstanceRequest
-	45,  // 124: fleetward.v1.InventoryService.DeleteInstance:input_type -> fleetward.v1.DeleteInstanceRequest
-	47,  // 125: fleetward.v1.InventoryService.TestConnection:input_type -> fleetward.v1.TestConnectionRequest
-	49,  // 126: fleetward.v1.InventoryService.DiscoverInstance:input_type -> fleetward.v1.DiscoverInstanceRequest
-	51,  // 127: fleetward.v1.InventoryService.ListPrincipalsForInstance:input_type -> fleetward.v1.ListPrincipalsForInstanceRequest
-	79,  // 128: fleetward.v1.ScheduleService.ListSchedules:input_type -> fleetward.v1.ListSchedulesRequest
-	81,  // 129: fleetward.v1.ScheduleService.GetSchedule:input_type -> fleetward.v1.GetScheduleRequest
-	83,  // 130: fleetward.v1.ScheduleService.CreateSchedule:input_type -> fleetward.v1.CreateScheduleRequest
-	85,  // 131: fleetward.v1.ScheduleService.SetScheduleEnabled:input_type -> fleetward.v1.SetScheduleEnabledRequest
-	87,  // 132: fleetward.v1.ScheduleService.DeleteSchedule:input_type -> fleetward.v1.DeleteScheduleRequest
-	89,  // 133: fleetward.v1.ScheduleService.ListJobs:input_type -> fleetward.v1.ListJobsRequest
-	56,  // 134: fleetward.v1.BackupService.ListBackups:input_type -> fleetward.v1.ListBackupsRequest
-	58,  // 135: fleetward.v1.BackupService.GetBackup:input_type -> fleetward.v1.GetBackupRequest
-	60,  // 136: fleetward.v1.BackupService.RunBackup:input_type -> fleetward.v1.RunBackupRequest
-	62,  // 137: fleetward.v1.BackupService.RunVerification:input_type -> fleetward.v1.RunVerificationRequest
-	73,  // 138: fleetward.v1.BackupService.GetVerification:input_type -> fleetward.v1.GetVerificationRequest
-	75,  // 139: fleetward.v1.BackupService.GetPITRWindow:input_type -> fleetward.v1.GetPITRWindowRequest
-	64,  // 140: fleetward.v1.BackupService.ObserveBackupHistory:input_type -> fleetward.v1.ObserveBackupHistoryRequest
-	66,  // 141: fleetward.v1.BackupService.GetBackupAdherence:input_type -> fleetward.v1.GetBackupAdherenceRequest
-	69,  // 142: fleetward.v1.BackupService.PreviewRetention:input_type -> fleetward.v1.PreviewRetentionRequest
-	11,  // 143: fleetward.v1.IdentityService.GetMe:input_type -> fleetward.v1.GetMeRequest
-	14,  // 144: fleetward.v1.IdentityService.CreateToken:input_type -> fleetward.v1.CreateTokenRequest
-	16,  // 145: fleetward.v1.IdentityService.ListTokens:input_type -> fleetward.v1.ListTokensRequest
-	18,  // 146: fleetward.v1.IdentityService.RevokeToken:input_type -> fleetward.v1.RevokeTokenRequest
-	21,  // 147: fleetward.v1.IdentityService.ListAuditLog:input_type -> fleetward.v1.ListAuditLogRequest
-	24,  // 148: fleetward.v1.SystemService.GetHealth:output_type -> fleetward.v1.GetHealthResponse
-	27,  // 149: fleetward.v1.SystemService.GetVersion:output_type -> fleetward.v1.GetVersionResponse
-	29,  // 150: fleetward.v1.SystemService.ListPlugins:output_type -> fleetward.v1.ListPluginsResponse
-	35,  // 151: fleetward.v1.InventoryService.ListEnvironments:output_type -> fleetward.v1.ListEnvironmentsResponse
-	37,  // 152: fleetward.v1.InventoryService.CreateEnvironment:output_type -> fleetward.v1.CreateEnvironmentResponse
-	39,  // 153: fleetward.v1.InventoryService.ListInstances:output_type -> fleetward.v1.ListInstancesResponse
-	41,  // 154: fleetward.v1.InventoryService.GetInstance:output_type -> fleetward.v1.GetInstanceResponse
-	44,  // 155: fleetward.v1.InventoryService.CreateInstance:output_type -> fleetward.v1.CreateInstanceResponse
-	46,  // 156: fleetward.v1.InventoryService.DeleteInstance:output_type -> fleetward.v1.DeleteInstanceResponse
-	48,  // 157: fleetward.v1.InventoryService.TestConnection:output_type -> fleetward.v1.TestConnectionResponse
-	50,  // 158: fleetward.v1.InventoryService.DiscoverInstance:output_type -> fleetward.v1.DiscoverInstanceResponse
-	52,  // 159: fleetward.v1.InventoryService.ListPrincipalsForInstance:output_type -> fleetward.v1.ListPrincipalsForInstanceResponse
-	80,  // 160: fleetward.v1.ScheduleService.ListSchedules:output_type -> fleetward.v1.ListSchedulesResponse
-	82,  // 161: fleetward.v1.ScheduleService.GetSchedule:output_type -> fleetward.v1.GetScheduleResponse
-	84,  // 162: fleetward.v1.ScheduleService.CreateSchedule:output_type -> fleetward.v1.CreateScheduleResponse
-	86,  // 163: fleetward.v1.ScheduleService.SetScheduleEnabled:output_type -> fleetward.v1.SetScheduleEnabledResponse
-	88,  // 164: fleetward.v1.ScheduleService.DeleteSchedule:output_type -> fleetward.v1.DeleteScheduleResponse
-	90,  // 165: fleetward.v1.ScheduleService.ListJobs:output_type -> fleetward.v1.ListJobsResponse
-	57,  // 166: fleetward.v1.BackupService.ListBackups:output_type -> fleetward.v1.ListBackupsResponse
-	59,  // 167: fleetward.v1.BackupService.GetBackup:output_type -> fleetward.v1.GetBackupResponse
-	61,  // 168: fleetward.v1.BackupService.RunBackup:output_type -> fleetward.v1.RunBackupResponse
-	63,  // 169: fleetward.v1.BackupService.RunVerification:output_type -> fleetward.v1.RunVerificationResponse
-	74,  // 170: fleetward.v1.BackupService.GetVerification:output_type -> fleetward.v1.GetVerificationResponse
-	76,  // 171: fleetward.v1.BackupService.GetPITRWindow:output_type -> fleetward.v1.GetPITRWindowResponse
-	65,  // 172: fleetward.v1.BackupService.ObserveBackupHistory:output_type -> fleetward.v1.ObserveBackupHistoryResponse
-	67,  // 173: fleetward.v1.BackupService.GetBackupAdherence:output_type -> fleetward.v1.GetBackupAdherenceResponse
-	70,  // 174: fleetward.v1.BackupService.PreviewRetention:output_type -> fleetward.v1.PreviewRetentionResponse
-	12,  // 175: fleetward.v1.IdentityService.GetMe:output_type -> fleetward.v1.GetMeResponse
-	15,  // 176: fleetward.v1.IdentityService.CreateToken:output_type -> fleetward.v1.CreateTokenResponse
-	17,  // 177: fleetward.v1.IdentityService.ListTokens:output_type -> fleetward.v1.ListTokensResponse
-	19,  // 178: fleetward.v1.IdentityService.RevokeToken:output_type -> fleetward.v1.RevokeTokenResponse
-	22,  // 179: fleetward.v1.IdentityService.ListAuditLog:output_type -> fleetward.v1.ListAuditLogResponse
-	148, // [148:180] is the sub-list for method output_type
-	116, // [116:148] is the sub-list for method input_type
-	116, // [116:116] is the sub-list for extension type_name
-	116, // [116:116] is the sub-list for extension extendee
-	0,   // [0:116] is the sub-list for field type_name
+	81,  // 115: fleetward.v1.ListJobsResponse.jobs:type_name -> fleetward.v1.Job
+	9,   // 116: fleetward.v1.AlertRule.kind:type_name -> fleetward.v1.AlertKind
+	10,  // 117: fleetward.v1.AlertRule.severity:type_name -> fleetward.v1.AlertSeverity
+	126, // 118: fleetward.v1.AlertRule.created_at:type_name -> google.protobuf.Timestamp
+	126, // 119: fleetward.v1.AlertRule.updated_at:type_name -> google.protobuf.Timestamp
+	9,   // 120: fleetward.v1.Alert.kind:type_name -> fleetward.v1.AlertKind
+	10,  // 121: fleetward.v1.Alert.severity:type_name -> fleetward.v1.AlertSeverity
+	11,  // 122: fleetward.v1.Alert.state:type_name -> fleetward.v1.AlertState
+	126, // 123: fleetward.v1.Alert.started_at:type_name -> google.protobuf.Timestamp
+	126, // 124: fleetward.v1.Alert.last_seen_at:type_name -> google.protobuf.Timestamp
+	126, // 125: fleetward.v1.Alert.acknowledged_at:type_name -> google.protobuf.Timestamp
+	126, // 126: fleetward.v1.Alert.resolved_at:type_name -> google.protobuf.Timestamp
+	124, // 127: fleetward.v1.Notifier.settings:type_name -> fleetward.v1.Notifier.SettingsEntry
+	10,  // 128: fleetward.v1.Notifier.min_severity:type_name -> fleetward.v1.AlertSeverity
+	126, // 129: fleetward.v1.Notifier.last_attempt_at:type_name -> google.protobuf.Timestamp
+	126, // 130: fleetward.v1.Notifier.last_success_at:type_name -> google.protobuf.Timestamp
+	126, // 131: fleetward.v1.Notifier.created_at:type_name -> google.protobuf.Timestamp
+	10,  // 132: fleetward.v1.ListAlertsRequest.min_severity:type_name -> fleetward.v1.AlertSeverity
+	95,  // 133: fleetward.v1.ListAlertsResponse.alerts:type_name -> fleetward.v1.Alert
+	95,  // 134: fleetward.v1.AcknowledgeAlertResponse.alert:type_name -> fleetward.v1.Alert
+	94,  // 135: fleetward.v1.ListAlertRulesResponse.rules:type_name -> fleetward.v1.AlertRule
+	9,   // 136: fleetward.v1.CreateAlertRuleRequest.kind:type_name -> fleetward.v1.AlertKind
+	10,  // 137: fleetward.v1.CreateAlertRuleRequest.severity:type_name -> fleetward.v1.AlertSeverity
+	94,  // 138: fleetward.v1.CreateAlertRuleResponse.rule:type_name -> fleetward.v1.AlertRule
+	94,  // 139: fleetward.v1.SetAlertRuleEnabledResponse.rule:type_name -> fleetward.v1.AlertRule
+	96,  // 140: fleetward.v1.ListNotifiersResponse.notifiers:type_name -> fleetward.v1.Notifier
+	125, // 141: fleetward.v1.CreateNotifierRequest.settings:type_name -> fleetward.v1.CreateNotifierRequest.SettingsEntry
+	10,  // 142: fleetward.v1.CreateNotifierRequest.min_severity:type_name -> fleetward.v1.AlertSeverity
+	96,  // 143: fleetward.v1.CreateNotifierResponse.notifier:type_name -> fleetward.v1.Notifier
+	127, // 144: fleetward.v1.TestNotifierResponse.duration:type_name -> google.protobuf.Duration
+	26,  // 145: fleetward.v1.SystemService.GetHealth:input_type -> fleetward.v1.GetHealthRequest
+	29,  // 146: fleetward.v1.SystemService.GetVersion:input_type -> fleetward.v1.GetVersionRequest
+	31,  // 147: fleetward.v1.SystemService.ListPlugins:input_type -> fleetward.v1.ListPluginsRequest
+	37,  // 148: fleetward.v1.InventoryService.ListEnvironments:input_type -> fleetward.v1.ListEnvironmentsRequest
+	39,  // 149: fleetward.v1.InventoryService.CreateEnvironment:input_type -> fleetward.v1.CreateEnvironmentRequest
+	41,  // 150: fleetward.v1.InventoryService.ListInstances:input_type -> fleetward.v1.ListInstancesRequest
+	43,  // 151: fleetward.v1.InventoryService.GetInstance:input_type -> fleetward.v1.GetInstanceRequest
+	45,  // 152: fleetward.v1.InventoryService.CreateInstance:input_type -> fleetward.v1.CreateInstanceRequest
+	48,  // 153: fleetward.v1.InventoryService.DeleteInstance:input_type -> fleetward.v1.DeleteInstanceRequest
+	50,  // 154: fleetward.v1.InventoryService.TestConnection:input_type -> fleetward.v1.TestConnectionRequest
+	52,  // 155: fleetward.v1.InventoryService.DiscoverInstance:input_type -> fleetward.v1.DiscoverInstanceRequest
+	54,  // 156: fleetward.v1.InventoryService.ListPrincipalsForInstance:input_type -> fleetward.v1.ListPrincipalsForInstanceRequest
+	82,  // 157: fleetward.v1.ScheduleService.ListSchedules:input_type -> fleetward.v1.ListSchedulesRequest
+	84,  // 158: fleetward.v1.ScheduleService.GetSchedule:input_type -> fleetward.v1.GetScheduleRequest
+	86,  // 159: fleetward.v1.ScheduleService.CreateSchedule:input_type -> fleetward.v1.CreateScheduleRequest
+	88,  // 160: fleetward.v1.ScheduleService.SetScheduleEnabled:input_type -> fleetward.v1.SetScheduleEnabledRequest
+	90,  // 161: fleetward.v1.ScheduleService.DeleteSchedule:input_type -> fleetward.v1.DeleteScheduleRequest
+	92,  // 162: fleetward.v1.ScheduleService.ListJobs:input_type -> fleetward.v1.ListJobsRequest
+	59,  // 163: fleetward.v1.BackupService.ListBackups:input_type -> fleetward.v1.ListBackupsRequest
+	61,  // 164: fleetward.v1.BackupService.GetBackup:input_type -> fleetward.v1.GetBackupRequest
+	63,  // 165: fleetward.v1.BackupService.RunBackup:input_type -> fleetward.v1.RunBackupRequest
+	65,  // 166: fleetward.v1.BackupService.RunVerification:input_type -> fleetward.v1.RunVerificationRequest
+	76,  // 167: fleetward.v1.BackupService.GetVerification:input_type -> fleetward.v1.GetVerificationRequest
+	78,  // 168: fleetward.v1.BackupService.GetPITRWindow:input_type -> fleetward.v1.GetPITRWindowRequest
+	67,  // 169: fleetward.v1.BackupService.ObserveBackupHistory:input_type -> fleetward.v1.ObserveBackupHistoryRequest
+	69,  // 170: fleetward.v1.BackupService.GetBackupAdherence:input_type -> fleetward.v1.GetBackupAdherenceRequest
+	72,  // 171: fleetward.v1.BackupService.PreviewRetention:input_type -> fleetward.v1.PreviewRetentionRequest
+	14,  // 172: fleetward.v1.IdentityService.GetMe:input_type -> fleetward.v1.GetMeRequest
+	17,  // 173: fleetward.v1.IdentityService.CreateToken:input_type -> fleetward.v1.CreateTokenRequest
+	19,  // 174: fleetward.v1.IdentityService.ListTokens:input_type -> fleetward.v1.ListTokensRequest
+	21,  // 175: fleetward.v1.IdentityService.RevokeToken:input_type -> fleetward.v1.RevokeTokenRequest
+	24,  // 176: fleetward.v1.IdentityService.ListAuditLog:input_type -> fleetward.v1.ListAuditLogRequest
+	97,  // 177: fleetward.v1.AlertService.ListAlerts:input_type -> fleetward.v1.ListAlertsRequest
+	99,  // 178: fleetward.v1.AlertService.AcknowledgeAlert:input_type -> fleetward.v1.AcknowledgeAlertRequest
+	101, // 179: fleetward.v1.AlertService.ListAlertRules:input_type -> fleetward.v1.ListAlertRulesRequest
+	103, // 180: fleetward.v1.AlertService.CreateAlertRule:input_type -> fleetward.v1.CreateAlertRuleRequest
+	105, // 181: fleetward.v1.AlertService.SetAlertRuleEnabled:input_type -> fleetward.v1.SetAlertRuleEnabledRequest
+	107, // 182: fleetward.v1.AlertService.DeleteAlertRule:input_type -> fleetward.v1.DeleteAlertRuleRequest
+	109, // 183: fleetward.v1.AlertService.ListNotifiers:input_type -> fleetward.v1.ListNotifiersRequest
+	111, // 184: fleetward.v1.AlertService.CreateNotifier:input_type -> fleetward.v1.CreateNotifierRequest
+	113, // 185: fleetward.v1.AlertService.DeleteNotifier:input_type -> fleetward.v1.DeleteNotifierRequest
+	115, // 186: fleetward.v1.AlertService.TestNotifier:input_type -> fleetward.v1.TestNotifierRequest
+	27,  // 187: fleetward.v1.SystemService.GetHealth:output_type -> fleetward.v1.GetHealthResponse
+	30,  // 188: fleetward.v1.SystemService.GetVersion:output_type -> fleetward.v1.GetVersionResponse
+	32,  // 189: fleetward.v1.SystemService.ListPlugins:output_type -> fleetward.v1.ListPluginsResponse
+	38,  // 190: fleetward.v1.InventoryService.ListEnvironments:output_type -> fleetward.v1.ListEnvironmentsResponse
+	40,  // 191: fleetward.v1.InventoryService.CreateEnvironment:output_type -> fleetward.v1.CreateEnvironmentResponse
+	42,  // 192: fleetward.v1.InventoryService.ListInstances:output_type -> fleetward.v1.ListInstancesResponse
+	44,  // 193: fleetward.v1.InventoryService.GetInstance:output_type -> fleetward.v1.GetInstanceResponse
+	47,  // 194: fleetward.v1.InventoryService.CreateInstance:output_type -> fleetward.v1.CreateInstanceResponse
+	49,  // 195: fleetward.v1.InventoryService.DeleteInstance:output_type -> fleetward.v1.DeleteInstanceResponse
+	51,  // 196: fleetward.v1.InventoryService.TestConnection:output_type -> fleetward.v1.TestConnectionResponse
+	53,  // 197: fleetward.v1.InventoryService.DiscoverInstance:output_type -> fleetward.v1.DiscoverInstanceResponse
+	55,  // 198: fleetward.v1.InventoryService.ListPrincipalsForInstance:output_type -> fleetward.v1.ListPrincipalsForInstanceResponse
+	83,  // 199: fleetward.v1.ScheduleService.ListSchedules:output_type -> fleetward.v1.ListSchedulesResponse
+	85,  // 200: fleetward.v1.ScheduleService.GetSchedule:output_type -> fleetward.v1.GetScheduleResponse
+	87,  // 201: fleetward.v1.ScheduleService.CreateSchedule:output_type -> fleetward.v1.CreateScheduleResponse
+	89,  // 202: fleetward.v1.ScheduleService.SetScheduleEnabled:output_type -> fleetward.v1.SetScheduleEnabledResponse
+	91,  // 203: fleetward.v1.ScheduleService.DeleteSchedule:output_type -> fleetward.v1.DeleteScheduleResponse
+	93,  // 204: fleetward.v1.ScheduleService.ListJobs:output_type -> fleetward.v1.ListJobsResponse
+	60,  // 205: fleetward.v1.BackupService.ListBackups:output_type -> fleetward.v1.ListBackupsResponse
+	62,  // 206: fleetward.v1.BackupService.GetBackup:output_type -> fleetward.v1.GetBackupResponse
+	64,  // 207: fleetward.v1.BackupService.RunBackup:output_type -> fleetward.v1.RunBackupResponse
+	66,  // 208: fleetward.v1.BackupService.RunVerification:output_type -> fleetward.v1.RunVerificationResponse
+	77,  // 209: fleetward.v1.BackupService.GetVerification:output_type -> fleetward.v1.GetVerificationResponse
+	79,  // 210: fleetward.v1.BackupService.GetPITRWindow:output_type -> fleetward.v1.GetPITRWindowResponse
+	68,  // 211: fleetward.v1.BackupService.ObserveBackupHistory:output_type -> fleetward.v1.ObserveBackupHistoryResponse
+	70,  // 212: fleetward.v1.BackupService.GetBackupAdherence:output_type -> fleetward.v1.GetBackupAdherenceResponse
+	73,  // 213: fleetward.v1.BackupService.PreviewRetention:output_type -> fleetward.v1.PreviewRetentionResponse
+	15,  // 214: fleetward.v1.IdentityService.GetMe:output_type -> fleetward.v1.GetMeResponse
+	18,  // 215: fleetward.v1.IdentityService.CreateToken:output_type -> fleetward.v1.CreateTokenResponse
+	20,  // 216: fleetward.v1.IdentityService.ListTokens:output_type -> fleetward.v1.ListTokensResponse
+	22,  // 217: fleetward.v1.IdentityService.RevokeToken:output_type -> fleetward.v1.RevokeTokenResponse
+	25,  // 218: fleetward.v1.IdentityService.ListAuditLog:output_type -> fleetward.v1.ListAuditLogResponse
+	98,  // 219: fleetward.v1.AlertService.ListAlerts:output_type -> fleetward.v1.ListAlertsResponse
+	100, // 220: fleetward.v1.AlertService.AcknowledgeAlert:output_type -> fleetward.v1.AcknowledgeAlertResponse
+	102, // 221: fleetward.v1.AlertService.ListAlertRules:output_type -> fleetward.v1.ListAlertRulesResponse
+	104, // 222: fleetward.v1.AlertService.CreateAlertRule:output_type -> fleetward.v1.CreateAlertRuleResponse
+	106, // 223: fleetward.v1.AlertService.SetAlertRuleEnabled:output_type -> fleetward.v1.SetAlertRuleEnabledResponse
+	108, // 224: fleetward.v1.AlertService.DeleteAlertRule:output_type -> fleetward.v1.DeleteAlertRuleResponse
+	110, // 225: fleetward.v1.AlertService.ListNotifiers:output_type -> fleetward.v1.ListNotifiersResponse
+	112, // 226: fleetward.v1.AlertService.CreateNotifier:output_type -> fleetward.v1.CreateNotifierResponse
+	114, // 227: fleetward.v1.AlertService.DeleteNotifier:output_type -> fleetward.v1.DeleteNotifierResponse
+	116, // 228: fleetward.v1.AlertService.TestNotifier:output_type -> fleetward.v1.TestNotifierResponse
+	187, // [187:229] is the sub-list for method output_type
+	145, // [145:187] is the sub-list for method input_type
+	145, // [145:145] is the sub-list for extension type_name
+	145, // [145:145] is the sub-list for extension extendee
+	0,   // [0:145] is the sub-list for field type_name
 }
 
 func init() { file_fleetward_v1_controlplane_proto_init() }
@@ -7058,10 +8940,10 @@ func file_fleetward_v1_controlplane_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetward_v1_controlplane_proto_rawDesc), len(file_fleetward_v1_controlplane_proto_rawDesc)),
-			NumEnums:      9,
-			NumMessages:   89,
+			NumEnums:      12,
+			NumMessages:   114,
 			NumExtensions: 0,
-			NumServices:   5,
+			NumServices:   6,
 		},
 		GoTypes:           file_fleetward_v1_controlplane_proto_goTypes,
 		DependencyIndexes: file_fleetward_v1_controlplane_proto_depIdxs,

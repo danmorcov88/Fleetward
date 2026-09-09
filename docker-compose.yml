@@ -175,6 +175,14 @@ services:
       FLEETWARD_RETENTION_MIN_KEEP: "1"
       FLEETWARD_RETENTION_MAX_PER_SWEEP: "500"
 
+      # Alert evaluation is an estate-wide pass on the scheduler's tick, holding no lease
+      # (docs/ops/alerting.md). As with retention, only the interval differs from the shipped
+      # default: five seconds rather than thirty, so a condition becoming an alert is something you
+      # watch happen in a development session rather than something you wait out. It changes how
+      # often Fleetward looks, never what counts as an alert — that is `alert_rules`, which is data.
+      FLEETWARD_ALERTS_ENABLED: "true"
+      FLEETWARD_ALERTS_EVAL_INTERVAL: 5s
+
       # The control plane runs inside a container here, so a sandbox's published host port is not
       # reachable from it — 127.0.0.1 means something different on each side. Attaching sandboxes to
       # this stack's network instead lets the control plane address them by container name.
@@ -210,6 +218,13 @@ services:
       # Dex is in the stack and nothing talks to it yet: OIDC arrives in B10, behind the spine B6
       # built. These settings are what it will read.
       FLEETWARD_AUTH_SKIP_ISSUER_VERIFICATION: "true"
+    # A webhook notifier points at whatever an operator runs, and in a development session that is
+    # often something on the host — `make demo` runs its own receiver so act 7 can show a real
+    # notification arriving. The control plane is a container, so it needs a name for the host to
+    # reach it by; `host-gateway` is resolved by the daemon and works on Docker Desktop and on Linux
+    # alike. It grants no access *into* the stack, and a production deployment has no use for it.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy

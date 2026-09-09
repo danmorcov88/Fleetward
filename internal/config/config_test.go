@@ -109,5 +109,36 @@ func validConfig() *Config {
 			Enabled: true, LeaseTTL: 2 * time.Minute, LeaseHeartbeat: 30 * time.Second,
 		},
 		Retention: RetentionConfig{Enabled: true, Interval: time.Hour, MinKeep: 1, MaxPerSweep: 500},
+		Alerts: AlertsConfig{
+			Enabled: true, EvalInterval: 30 * time.Second,
+			DeliveryWorkers: 2, DeliveryQueueSize: 256,
+			DeliveryTimeout: 15 * time.Second, DeliveryAttempts: 3,
+		},
+	}
+}
+
+// TestDefaultAlertsConfigIsValid is the same guard the retention one above is: the shipped defaults
+// have to pass their own checks, or `docker compose up` refuses to start on a fresh clone.
+func TestDefaultAlertsConfigIsValid(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("the default alerting configuration does not validate: %v", err)
+	}
+}
+
+// TestAlertLimitsAreCheckedEvenWhenAlertingIsOff mirrors retention's rule, for its reason: a value
+// that would be wrong when somebody turns alerting on should be refused when they write it, not
+// months later when they flip the switch.
+func TestAlertLimitsAreCheckedEvenWhenAlertingIsOff(t *testing.T) {
+	t.Parallel()
+
+	cfg := validConfig()
+	cfg.Alerts.Enabled = false
+	cfg.Alerts.DeliveryWorkers = 0
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("a delivery worker count of zero was accepted because alerting happened to be off")
 	}
 }

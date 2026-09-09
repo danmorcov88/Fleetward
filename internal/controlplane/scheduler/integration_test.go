@@ -55,6 +55,9 @@ type stubRunner struct {
 	observed  []string
 	probed    []string
 	sweeps    int
+	// evaluations counts alert evaluation passes, the other estate-wide thing on the tick that is
+	// not a job.
+	evaluations int
 
 	// block, when non-nil, holds RunBackupJob until it is closed or the context is cancelled.
 	block chan struct{}
@@ -287,10 +290,12 @@ func (h *harness) attempts(t *testing.T, jobID string) int32 {
 }
 
 func (h *harness) scheduler(runner Runner, cfg config.SchedulerConfig) *Scheduler {
-	// Retention is off in these tests. What they exercise is claiming, heartbeating, losing a lease
-	// and reaping; a sweep firing on the first tick of every one of them would be unrelated work
-	// deleting unrelated rows. The sweep has its own tests, against a real object store.
-	return New(h.pool, runner, cfg, config.RetentionConfig{}, h.log)
+	// Retention and alert evaluation are both off in these tests, for the same reason. What they
+	// exercise is claiming, heartbeating, losing a lease and reaping; either of the two estate-wide
+	// passes firing on the first tick of every one of them would be unrelated work against unrelated
+	// rows. Both have their own tests — the sweep against a real object store, evaluation against a
+	// real database.
+	return New(h.pool, runner, cfg, config.RetentionConfig{}, config.AlertsConfig{}, h.log)
 }
 
 // TestClaimTakesAJobExactlyOnce is the central guarantee. Two runners issue the same statement
@@ -964,5 +969,92 @@ func TestSchedulerRunsAndClosesAHealthProbe(t *testing.T) {
 
 	if got := runner.probes(); len(got) == 0 || got[0] != h.instanceID {
 		t.Errorf("the runner was asked to probe %v, want [%s]", got, h.instanceID)
+	}
+}
+
+// EvaluateAlerts is the second Runner method that is not a job, and the stub does the same as the
+// first: records the call and nothing else. What an evaluation pass actually produces is the alerts
+// service's business and is tested there, against a real database.
+func (r *stubRunner) EvaluateAlerts(context.Context) (AlertOutcome, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.evaluations++
+	return AlertOutcome{}, nil
+}
+
+// evaluationCount reports how many passes the scheduler asked for.
+func (r *stubRunner) evaluationCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.evaluations
+}
+
+// TestTheTickEvaluatesAlerts asserts the second estate-wide thing on the tick that is not a job.
+//
+// It is worth its own test for the same reason the retention sweep was: nothing else would notice
+// if it stopped happening. A scheduler that claims jobs correctly and never evaluates looks exactly
+// like an estate with nothing wrong, which is the failure alerting exists to prevent.
+func TestTheTickEvaluatesAlerts(t *testing.T) {
+	ctx, cancel := context.WithTimeout(testTenantCtx(), 60*time.Second)
+	defer cancel()
+
+	h := newHarness(t)
+	runner := newStubRunner()
+
+	// Built directly rather than through h.scheduler, which switches both estate-wide passes off.
+	s := New(h.pool, runner, config.SchedulerConfig{
+		Enabled:           true,
+		LeaseTTL:          time.Minute,
+		LeaseHeartbeat:    10 * time.Second,
+		PollInterval:      100 * time.Millisecond,
+		MaxConcurrentJobs: 1,
+	}, config.RetentionConfig{}, config.AlertsConfig{
+		Enabled:      true,
+		EvalInterval: 100 * time.Millisecond,
+	}, h.log)
+
+	s.Start(ctx)
+	defer func() { _ = s.Close() }()
+
+	deadline := time.After(30 * time.Second)
+	for {
+		if runner.evaluationCount() >= 2 {
+			// Two rather than one: the first pass happens because lastEval is zero, and only a
+			// second proves the interval is being honoured rather than the pass running once at
+			// start-up and never again.
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("the scheduler ran %d alert evaluation passes in 30s, want at least 2; "+
+				"a control plane that never evaluates looks exactly like an estate with nothing wrong",
+				runner.evaluationCount())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+// TestTheTickDoesNotEvaluateWhenAlertingIsDisabled is the other half, because a switch that does
+// nothing is worse than no switch.
+func TestTheTickDoesNotEvaluateWhenAlertingIsDisabled(t *testing.T) {
+	ctx, cancel := context.WithTimeout(testTenantCtx(), 30*time.Second)
+	defer cancel()
+
+	h := newHarness(t)
+	runner := newStubRunner()
+
+	s := h.scheduler(runner, config.SchedulerConfig{
+		Enabled:           true,
+		LeaseTTL:          time.Minute,
+		LeaseHeartbeat:    10 * time.Second,
+		PollInterval:      100 * time.Millisecond,
+		MaxConcurrentJobs: 1,
+	})
+	s.Start(ctx)
+	defer func() { _ = s.Close() }()
+
+	time.Sleep(time.Second)
+	if got := runner.evaluationCount(); got != 0 {
+		t.Fatalf("alerting is disabled and the scheduler ran %d evaluation passes", got)
 	}
 }

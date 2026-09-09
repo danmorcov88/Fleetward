@@ -6,6 +6,203 @@ info:
     title: ""
     version: 0.0.1
 paths:
+    /api/v1/alert-rules:
+        get:
+            tags:
+                - AlertService
+            operationId: AlertService_ListAlertRules
+            parameters:
+                - name: include_disabled
+                  in: query
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListAlertRulesResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        post:
+            tags:
+                - AlertService
+            description: |-
+                CreateAlertRule declares a condition worth being told about. A kind with no evaluator is
+                 refused rather than stored: a rule accepted and never evaluated is worse than one refused,
+                 because the operator believes they are covered.
+            operationId: AlertService_CreateAlertRule
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateAlertRuleRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/CreateAlertRuleResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/alert-rules/{rule_id}:
+        delete:
+            tags:
+                - AlertService
+            operationId: AlertService_DeleteAlertRule
+            parameters:
+                - name: rule_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/DeleteAlertRuleResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/alert-rules/{rule_id}/enabled:
+        post:
+            tags:
+                - AlertService
+            description: |-
+                SetAlertRuleEnabled is the whole silencing story in this version. Disabling a rule resolves its
+                 open alerts on the next pass, because "stop telling me" has to mean the row goes quiet rather
+                 than that it is frozen forever.
+            operationId: AlertService_SetAlertRuleEnabled
+            parameters:
+                - name: rule_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SetAlertRuleEnabledRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SetAlertRuleEnabledResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/alerts:
+        get:
+            tags:
+                - AlertService
+            description: |-
+                ListAlerts reports open and recently resolved alerts. It filters its own rows by the caller's
+                 grants, like ListInstances, so a person granted three servers sees those three servers' alerts
+                 rather than a 403 (ADR-0035).
+            operationId: AlertService_ListAlerts
+            parameters:
+                - name: instance_id
+                  in: query
+                  description: |-
+                    Restrict to one instance or one environment. Both empty asks about the estate, and the answer
+                     is filtered to what the caller's grants cover.
+                  schema:
+                    type: string
+                - name: environment_id
+                  in: query
+                  schema:
+                    type: string
+                - name: include_resolved
+                  in: query
+                  description: |-
+                    Include alerts that have resolved. Off by default: the question is almost always "what is
+                     wrong now".
+                  schema:
+                    type: boolean
+                - name: min_severity
+                  in: query
+                  schema:
+                    enum:
+                        - ALERT_SEVERITY_UNSPECIFIED
+                        - ALERT_SEVERITY_INFO
+                        - ALERT_SEVERITY_WARNING
+                        - ALERT_SEVERITY_CRITICAL
+                    type: string
+                    format: enum
+                - name: page_size
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListAlertsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/alerts/{alert_id}/acknowledge:
+        post:
+            tags:
+                - AlertService
+            description: |-
+                AcknowledgeAlert silences one alert until its condition clears. The row does not become
+                 resolved: acknowledging says "I know", never "it stopped".
+            operationId: AlertService_AcknowledgeAlert
+            parameters:
+                - name: alert_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AcknowledgeAlertRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AcknowledgeAlertResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
     /api/v1/audit:
         get:
             tags:
@@ -733,6 +930,116 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+    /api/v1/notifiers:
+        get:
+            tags:
+                - AlertService
+            description: |-
+                ListNotifiers reports where alerts are sent, and how that has been going lately. It is
+                 administrator-only: `settings` is operator-supplied configuration for somebody else's system,
+                 and a webhook URL that embeds its own credential lives there.
+            operationId: AlertService_ListNotifiers
+            parameters:
+                - name: include_disabled
+                  in: query
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListNotifiersResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        post:
+            tags:
+                - AlertService
+            description: |-
+                CreateNotifier stores a destination. The credential goes to the secrets provider and never into
+                 `settings`, which is refused if it contains anything that looks like one.
+            operationId: AlertService_CreateNotifier
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateNotifierRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/CreateNotifierResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/notifiers/{notifier_id}:
+        delete:
+            tags:
+                - AlertService
+            operationId: AlertService_DeleteNotifier
+            parameters:
+                - name: notifier_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/DeleteNotifierResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /api/v1/notifiers/{notifier_id}/test:
+        post:
+            tags:
+                - AlertService
+            description: |-
+                TestNotifier sends a real message to a real endpoint, so that "is my webhook configured
+                 correctly" is answerable before an outage rather than during one.
+            operationId: AlertService_TestNotifier
+            parameters:
+                - name: notifier_id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/TestNotifierRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TestNotifierResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
     /api/v1/plugins:
         get:
             tags:
@@ -977,6 +1284,141 @@ paths:
                                 $ref: '#/components/schemas/Status'
 components:
     schemas:
+        AcknowledgeAlertRequest:
+            type: object
+            properties:
+                alert_id:
+                    type: string
+                note:
+                    type: string
+                    description: Optional note, recorded in the audit record rather than on the alert.
+        AcknowledgeAlertResponse:
+            type: object
+            properties:
+                alert:
+                    $ref: '#/components/schemas/Alert'
+        Alert:
+            type: object
+            properties:
+                id:
+                    type: string
+                rule_id:
+                    type: string
+                    description: Empty when the rule that produced this alert has since been deleted.
+                rule_name:
+                    type: string
+                kind:
+                    enum:
+                        - ALERT_KIND_UNSPECIFIED
+                        - ALERT_KIND_INSTANCE_DOWN
+                        - ALERT_KIND_VERIFICATION_FAILED
+                        - ALERT_KIND_BACKUP_FAILED
+                        - ALERT_KIND_BACKUP_MISSING
+                        - ALERT_KIND_STORAGE_THRESHOLD
+                        - ALERT_KIND_REPLICATION_LAG
+                        - ALERT_KIND_CUSTOM_PROMQL
+                        - ALERT_KIND_RETENTION_BLOCKED
+                    type: string
+                    format: enum
+                instance_id:
+                    type: string
+                    description: Empty for an estate-wide condition such as retention_blocked.
+                instance_name:
+                    type: string
+                severity:
+                    enum:
+                        - ALERT_SEVERITY_UNSPECIFIED
+                        - ALERT_SEVERITY_INFO
+                        - ALERT_SEVERITY_WARNING
+                        - ALERT_SEVERITY_CRITICAL
+                    type: string
+                    format: enum
+                state:
+                    enum:
+                        - ALERT_STATE_UNSPECIFIED
+                        - ALERT_STATE_FIRING
+                        - ALERT_STATE_ACKNOWLEDGED
+                        - ALERT_STATE_RESOLVED
+                    type: string
+                    format: enum
+                summary:
+                    type: string
+                    description: One line an operator can act on, and the detail behind it.
+                detail:
+                    type: string
+                fingerprint:
+                    type: string
+                    description: |-
+                        The deduplication key. It identifies the *condition*, not the rule that found it, so two
+                         overlapping rules describing one broken thing produce one alert rather than two pages at 3am.
+                started_at:
+                    type: string
+                    format: date-time
+                last_seen_at:
+                    type: string
+                    description: |-
+                        Advanced by every pass on which the condition is still true. A rule that keeps firing updates
+                         this and notifies nobody.
+                    format: date-time
+                acknowledged_at:
+                    type: string
+                    format: date-time
+                acknowledged_by:
+                    type: string
+                resolved_at:
+                    type: string
+                    format: date-time
+            description: Alert is one condition that is, or was, true.
+        AlertRule:
+            type: object
+            properties:
+                id:
+                    type: string
+                name:
+                    type: string
+                description:
+                    type: string
+                kind:
+                    enum:
+                        - ALERT_KIND_UNSPECIFIED
+                        - ALERT_KIND_INSTANCE_DOWN
+                        - ALERT_KIND_VERIFICATION_FAILED
+                        - ALERT_KIND_BACKUP_FAILED
+                        - ALERT_KIND_BACKUP_MISSING
+                        - ALERT_KIND_STORAGE_THRESHOLD
+                        - ALERT_KIND_REPLICATION_LAG
+                        - ALERT_KIND_CUSTOM_PROMQL
+                        - ALERT_KIND_RETENTION_BLOCKED
+                    type: string
+                    format: enum
+                severity:
+                    enum:
+                        - ALERT_SEVERITY_UNSPECIFIED
+                        - ALERT_SEVERITY_INFO
+                        - ALERT_SEVERITY_WARNING
+                        - ALERT_SEVERITY_CRITICAL
+                    type: string
+                    format: enum
+                threshold:
+                    type: number
+                    description: |-
+                        What the evaluator compares against, where its kind uses one. `retention_blocked` reads it as
+                         an age in hours; the other evaluators ignore it.
+                    format: double
+                environment_id:
+                    type: string
+                    description: Both empty means the rule covers the whole tenant, which is what the seeded rules do.
+                instance_id:
+                    type: string
+                is_enabled:
+                    type: boolean
+                created_at:
+                    type: string
+                    format: date-time
+                updated_at:
+                    type: string
+                    format: date-time
+            description: AlertRule declares a condition worth being told about.
         ApiToken:
             type: object
             properties:
@@ -1467,6 +1909,46 @@ components:
             description: |-
                 ConnectionSpec carries credentials inbound only. No read API ever returns them: the secret is
                  write-only from the API's perspective (ADR-0009).
+        CreateAlertRuleRequest:
+            type: object
+            properties:
+                name:
+                    type: string
+                description:
+                    type: string
+                kind:
+                    enum:
+                        - ALERT_KIND_UNSPECIFIED
+                        - ALERT_KIND_INSTANCE_DOWN
+                        - ALERT_KIND_VERIFICATION_FAILED
+                        - ALERT_KIND_BACKUP_FAILED
+                        - ALERT_KIND_BACKUP_MISSING
+                        - ALERT_KIND_STORAGE_THRESHOLD
+                        - ALERT_KIND_REPLICATION_LAG
+                        - ALERT_KIND_CUSTOM_PROMQL
+                        - ALERT_KIND_RETENTION_BLOCKED
+                    type: string
+                    format: enum
+                severity:
+                    enum:
+                        - ALERT_SEVERITY_UNSPECIFIED
+                        - ALERT_SEVERITY_INFO
+                        - ALERT_SEVERITY_WARNING
+                        - ALERT_SEVERITY_CRITICAL
+                    type: string
+                    format: enum
+                threshold:
+                    type: number
+                    format: double
+                environment_id:
+                    type: string
+                instance_id:
+                    type: string
+        CreateAlertRuleResponse:
+            type: object
+            properties:
+                rule:
+                    $ref: '#/components/schemas/AlertRule'
         CreateEnvironmentRequest:
             type: object
             properties:
@@ -1506,6 +1988,36 @@ components:
             properties:
                 instance:
                     $ref: '#/components/schemas/Instance'
+        CreateNotifierRequest:
+            type: object
+            properties:
+                name:
+                    type: string
+                kind:
+                    type: string
+                    description: '"webhook" or "smtp".'
+                settings:
+                    type: object
+                    additionalProperties:
+                        type: string
+                secret:
+                    type: string
+                    description: |-
+                        The one credential this notifier needs: a webhook header value, or an SMTP password. Stored
+                         through the secrets provider and never returned. Empty for a destination that needs none.
+                min_severity:
+                    enum:
+                        - ALERT_SEVERITY_UNSPECIFIED
+                        - ALERT_SEVERITY_INFO
+                        - ALERT_SEVERITY_WARNING
+                        - ALERT_SEVERITY_CRITICAL
+                    type: string
+                    format: enum
+        CreateNotifierResponse:
+            type: object
+            properties:
+                notifier:
+                    $ref: '#/components/schemas/Notifier'
         CreateScheduleRequest:
             type: object
             properties:
@@ -1611,7 +2123,19 @@ components:
                 is_system:
                     type: boolean
                     description: System or internal database, which the UI de-emphasizes and backups usually skip.
+        DeleteAlertRuleResponse:
+            type: object
+            properties:
+                alerts_resolved:
+                    type: integer
+                    description: |-
+                        How many of the rule's open alerts were resolved along with it. A deleted rule would otherwise
+                         strand its alerts where nothing evaluates them.
+                    format: int32
         DeleteInstanceResponse:
+            type: object
+            properties: {}
+        DeleteNotifierResponse:
             type: object
             properties: {}
         DeleteScheduleResponse:
@@ -1980,6 +2504,20 @@ components:
             description: |-
                 Job is one unit of work the scheduler leases and runs. Every field after `state` exists to answer
                  a question after the fact, which is the whole reason jobs are rows rather than goroutines.
+        ListAlertRulesResponse:
+            type: object
+            properties:
+                rules:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/AlertRule'
+        ListAlertsResponse:
+            type: object
+            properties:
+                alerts:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Alert'
         ListAuditLogResponse:
             type: object
             properties:
@@ -2029,6 +2567,13 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/Job'
+        ListNotifiersResponse:
+            type: object
+            properties:
+                notifiers:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Notifier'
         ListPluginsResponse:
             type: object
             properties:
@@ -2173,6 +2718,53 @@ components:
                     format: double
                 is_self:
                     type: boolean
+        Notifier:
+            type: object
+            properties:
+                id:
+                    type: string
+                name:
+                    type: string
+                kind:
+                    type: string
+                    description: '"webhook" or "smtp".'
+                settings:
+                    type: object
+                    additionalProperties:
+                        type: string
+                    description: |-
+                        Non-secret configuration only. The credential lives in the secrets provider and is never
+                         returned by any read: creation refuses a settings object containing anything that looks like
+                         one.
+                has_secret:
+                    type: boolean
+                    description: True when a credential is stored for this notifier. The value itself is never returned.
+                min_severity:
+                    enum:
+                        - ALERT_SEVERITY_UNSPECIFIED
+                        - ALERT_SEVERITY_INFO
+                        - ALERT_SEVERITY_WARNING
+                        - ALERT_SEVERITY_CRITICAL
+                    type: string
+                    description: Alerts below this severity are not delivered here.
+                    format: enum
+                is_enabled:
+                    type: boolean
+                last_attempt_at:
+                    type: string
+                    description: |-
+                        How delivery has been going. Delivery is at-most-once and best-effort (ADR-0039), so these
+                         three are what make a notifier that has been failing all week visible rather than silent.
+                    format: date-time
+                last_success_at:
+                    type: string
+                    format: date-time
+                last_error:
+                    type: string
+                created_at:
+                    type: string
+                    format: date-time
+            description: Notifier is where alerts are sent.
         ObjectRef:
             type: object
             properties:
@@ -2722,6 +3314,18 @@ components:
                     type: object
                     additionalProperties:
                         type: string
+        SetAlertRuleEnabledRequest:
+            type: object
+            properties:
+                rule_id:
+                    type: string
+                enabled:
+                    type: boolean
+        SetAlertRuleEnabledResponse:
+            type: object
+            properties:
+                rule:
+                    $ref: '#/components/schemas/AlertRule'
         SetScheduleEnabledRequest:
             type: object
             properties:
@@ -2831,6 +3435,22 @@ components:
                     $ref: '#/components/schemas/HealthStatus'
                 message:
                     type: string
+        TestNotifierRequest:
+            type: object
+            properties:
+                notifier_id:
+                    type: string
+        TestNotifierResponse:
+            type: object
+            properties:
+                delivered:
+                    type: boolean
+                error:
+                    type: string
+                    description: The transport's own message when delivery failed. Never a credential.
+                duration:
+                    pattern: ^-?(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,9})?s$
+                    type: string
         TimeRange:
             type: object
             properties:
@@ -2883,6 +3503,14 @@ components:
                 error_message:
                     type: string
 tags:
+    - name: AlertService
+      description: |-
+        AlertService turns conditions Fleetward can already detect into rows somebody is told about.
+
+         Nothing here detects anything new. Every evaluator reads a computation that already answers a
+         question the API answers — adherence, a verification's verdict, an instance's health, retention's
+         own backlog — so an alert and the estate view can never disagree, because they are the same
+         function (ADR-0038).
     - name: BackupService
       description: |-
         BackupService covers backups, their verifications, and recovery windows. Every mutating RPC here

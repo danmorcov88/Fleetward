@@ -57,7 +57,31 @@ type Runner interface {
 	// transition is its own guard, so two control planes sweeping at once is not a race to lose and
 	// no lease is needed (ADR-0030).
 	SweepRetention(ctx context.Context) (RetentionOutcome, error)
+	// EvaluateAlerts turns conditions the control plane can already detect into alert rows, and
+	// delivers the ones that are new.
+	//
+	// The second thing on this interface that is not a job, and for the same reasons as the first.
+	// Evaluation is estate-wide rather than per-instance, and idempotent in a way a backup is not:
+	// the partial unique index on `alerts (tenant_id, fingerprint)` is the transition's own guard,
+	// so two control planes evaluating in the same second produce one alert rather than a race to
+	// lose, and no lease is needed (ADR-0038).
+	EvaluateAlerts(ctx context.Context) (AlertOutcome, error)
 }
+
+// AlertOutcome is what one evaluation pass did. There is no job row behind a pass (ADR-0038), so
+// this is what the log line is made of, and the log line plus the rows themselves are the whole
+// account.
+type AlertOutcome struct {
+	RulesConsidered int
+	Firing          int
+	// Opened is how many alerts this pass created, and therefore how many notifications it sent.
+	// On two control planes evaluating at once, one of them sees zero — which is the point.
+	Opened   int
+	Resolved int
+}
+
+// Empty reports whether the pass did nothing, which is the ordinary case on a healthy estate.
+func (o AlertOutcome) Empty() bool { return o.Opened == 0 && o.Resolved == 0 }
 
 // RetentionOutcome is what one sweep did. There is no job row behind a sweep, so this is what the
 // log line is made of, and the log line plus the rows themselves are the whole account.
@@ -149,10 +173,21 @@ type Scheduler struct {
 	// sweeping keeps one process to one sweep at a time. Two concurrent sweeps would be correct —
 	// the design does not rely on this — but they would do the same work twice.
 	sweeping atomic.Bool
+
+	// alerts paces the second estate-wide thing on the tick that is not a job. Far more often than
+	// the sweep and still not every tick: the roadmap's claim is that the answer to "does anything
+	// need my attention right now" is never more than about thirty seconds stale, and this is the
+	// knob that has to honour it.
+	alerts config.AlertsConfig
+	// lastEval and evaluating pace it, exactly as lastSweep and sweeping pace retention. Zero means
+	// "not yet", so the first tick after a start evaluates — which is also how an operator who has
+	// just written a rule sees it take effect without waiting a full interval.
+	lastEval   atomic.Int64
+	evaluating atomic.Bool
 }
 
 // New builds a scheduler. It does not start until Start is called.
-func New(pool *pgxpool.Pool, runner Runner, cfg config.SchedulerConfig, retention config.RetentionConfig, log *slog.Logger) *Scheduler {
+func New(pool *pgxpool.Pool, runner Runner, cfg config.SchedulerConfig, retention config.RetentionConfig, alertsCfg config.AlertsConfig, log *slog.Logger) *Scheduler {
 	owner := newOwnerID()
 	slots := cfg.MaxConcurrentJobs
 	if slots <= 0 {
@@ -165,6 +200,7 @@ func New(pool *pgxpool.Pool, runner Runner, cfg config.SchedulerConfig, retentio
 		cfg:       cfg,
 		owner:     owner,
 		retention: retention,
+		alerts:    alertsCfg,
 		slots:     make(chan struct{}, slots),
 		stopped:   make(chan struct{}),
 	}
@@ -199,7 +235,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 		slog.Duration("lease_heartbeat", s.cfg.LeaseHeartbeat),
 		slog.Int("max_concurrent_jobs", cap(s.slots)),
 		slog.Bool("retention_enabled", s.retention.Enabled),
-		slog.Duration("retention_interval", s.retention.Interval))
+		slog.Duration("retention_interval", s.retention.Interval),
+		slog.Bool("alerts_enabled", s.alerts.Enabled),
+		slog.Duration("alerts_eval_interval", s.alerts.EvalInterval))
 
 	go s.loop(loopCtx)
 }
@@ -254,8 +292,68 @@ func (s *Scheduler) tick(ctx context.Context) {
 	}
 
 	s.maybeSweepRetention(ctx)
+	s.maybeEvaluateAlerts(ctx)
 
 	s.dispatch(ctx)
+}
+
+// maybeEvaluateAlerts starts an evaluation pass if one is due and none is already running here.
+//
+// The same shape as maybeSweepRetention above, deliberately: paced by its own interval, guarded so
+// one process runs one pass at a time, in a goroutine that joins s.running so Close waits for it.
+// Two control planes evaluating at once is *correct* and the design does not rely on the guard —
+// the partial unique index on `alerts (tenant_id, fingerprint)` decides which one opens the alert
+// and therefore which one delivers the notification (ADR-0038). The guard only stops this process
+// doing the same work twice.
+//
+// In the background rather than inline because a pass reaches out to webhooks and SMTP servers over
+// the network, and a tick that waited for that would stop claiming jobs meanwhile.
+func (s *Scheduler) maybeEvaluateAlerts(ctx context.Context) {
+	if !s.alerts.Enabled {
+		return
+	}
+	interval := s.alerts.EvalInterval
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	if last := s.lastEval.Load(); last != 0 && time.Since(time.Unix(0, last)) < interval {
+		return
+	}
+	if !s.evaluating.CompareAndSwap(false, true) {
+		return
+	}
+	s.lastEval.Store(time.Now().UnixNano())
+
+	// A third system actor, distinct from the scheduler and from retention. "Who acknowledged this"
+	// and "who opened it" are different facts, and an audit log that spells them the same way cannot
+	// tell them apart afterwards (ADR-0036).
+	evalCtx := authn.WithPrincipal(ctx, authn.System("alerts", authn.Tenant(ctx)))
+
+	s.running.Add(1)
+	go func() {
+		defer s.running.Done()
+		defer s.evaluating.Store(false)
+
+		started := time.Now()
+		outcome, err := s.runner.EvaluateAlerts(evalCtx)
+		if err != nil {
+			s.log.ErrorContext(ctx, "the alert evaluation pass did not finish",
+				slog.String("error", err.Error()),
+				slog.Duration("ran_for", time.Since(started)),
+				slog.String("consequence", "conditions that became true since the last pass are "+
+					"not recorded and nobody has been told about them"))
+			return
+		}
+		if outcome.Empty() {
+			return // nothing changed, and a line every thirty seconds saying so is noise
+		}
+		s.log.InfoContext(ctx, "alert evaluation finished",
+			slog.Int("rules_considered", outcome.RulesConsidered),
+			slog.Int("firing", outcome.Firing),
+			slog.Int("opened", outcome.Opened),
+			slog.Int("resolved", outcome.Resolved),
+			slog.Duration("duration", time.Since(started)))
+	}()
 }
 
 // maybeSweepRetention starts a retention sweep if one is due and none is already running here.
