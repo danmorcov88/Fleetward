@@ -173,6 +173,18 @@ Listed so that no session has to re-derive them, and so that no document has to 
   artifact** in the bucket of a stack started with `--keep`. The next run clears the estate, and the
   object goes with `docker compose down --volumes`. It is a development stack and the artifact is one
   the demo took itself.
+- **`go run ./tools/demo` does not rebuild the image; `-build` does.** Off by default locally and on
+  in CI, which is the right default for a demo run repeatedly against an unchanged tree — and the
+  wrong one immediately after changing the control plane, where it silently runs the previous binary
+  and the act that exercises the change fails for no visible reason. Worth twenty minutes to anybody
+  who forgets, so: after touching `cmd/` or `internal/`, run `go run ./tools/demo -build`.
+- **Act 7's webhook needs the control-plane container to reach a listener on the host**, through the
+  `host.docker.internal:host-gateway` entry `docker-compose.yml` gives the `fleetward` service. Where
+  a firewall or an unusual daemon refuses that route, act 7 says so and shows the rest; the delivery
+  path itself is asserted with no container networking at all in
+  `internal/controlplane/alerts/alerts_integration_test.go`. The act distinguishes the two with a
+  `TestNotifier` pre-flight before act 4, so "this machine cannot" never reads as "the product did
+  not".
 - **A notification can be lost, and the absence of one is not evidence that nothing is wrong.**
   Delivery is at-most-once: a bounded in-process queue, a small bounded retry, and then the
   notification is logged and dropped. There is no outbox table, no backoff schedule and no
@@ -283,10 +295,13 @@ Listed so that no session has to re-derive them, and so that no document has to 
   plugin that cannot write its backup file. Prefix the command with `MSYS_NO_PATHCONV=1`. It is a
   shell artefact and not a product defect, and it costs twenty minutes to diagnose from the far
   end.
-- **The `web` image occasionally fails to build here** with `failed to prepare extraction snapshot …
-  parent snapshot does not exist`. It is a Docker Desktop containerd-snapshotter fault, not a
-  Dockerfile one; `docker compose up --build <the other services>` works, and a `docker builder
-  prune` clears it. Recorded because it is easy to mistake for a broken web build.
+- **Any image occasionally fails to build here** with `failed to prepare extraction snapshot … parent
+  snapshot does not exist`, at the *export* step, after every layer has been built successfully. It
+  is a Docker Desktop containerd-snapshotter fault rather than a Dockerfile one. `docker builder
+  prune -af` clears it; on the `web` image, `docker compose up --build <the other services>` is
+  another way round. It was first seen on `web` and this entry used to name only that one — B7 hit
+  it on `fleetward` mid-demo, so it is not image-specific. Easy to mistake for a broken build of
+  whatever it lands on.
 - **The `web` container exits 133 when the Docker VM is under pressure**, with `Fatal process out of
   memory: Failed to reserve virtual memory for CodeRange` from Node. It starts normally once the VM
   has room — see the note below. The demo reports any container that did not start, by name, and

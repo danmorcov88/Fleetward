@@ -29,7 +29,7 @@ go vet -tags=integration ./...                    ok
 go vet -tags=e2e ./...                            ok
 go test ./...                                     ok, no failures
 go test -tags=integration ./internal/controlplane/alerts/...   ok, 52.6s
-go run ./tools/demo -build                        ok, 2m03s, exit 0
+go run ./tools/demo -build                        ok, exit 0 — 2m03s warm, 4m08s cold
 buf lint / buf format --diff --exit-code          clean
 buf generate + npm run generate                   committed
 go run ./tools/docscheck                          90 markdown files, no problems
@@ -48,6 +48,14 @@ method broke `stubRunner` in `scheduler/integration_test.go`, and a sixth argume
 open, in a package it did.
 
 **The demo found the one defect that mattered, and it was in the demo.** See below.
+
+Two environment notes went back into `STATUS.md` from this session. `go run ./tools/demo` does not
+rebuild the image and `-build` does — off by default locally, which is right for a demo run
+repeatedly against an unchanged tree and wrong for the twenty minutes after changing the control
+plane, where it silently runs the previous binary. And the Docker Desktop snapshotter fault that
+entry already described for the `web` image hit `fleetward` here at the export step, after every
+layer had built; `docker builder prune -af` cleared it. It is not image-specific, and the note now
+says so.
 
 ## What the fingerprint index was waiting for
 
