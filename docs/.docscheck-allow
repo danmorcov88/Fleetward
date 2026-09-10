@@ -50,3 +50,16 @@ docs/adr/0032-retention-never-deletes-the-last-good-backup.md         docs/dev/s
 docs/ops/retention.md                                                 docs/dev/slices/B5-retention-and-expiry.md  # the reference page B5 writes, named in the Files table and the scope fence
 docs/dev/journal/B5-retention-and-expiry.md                           docs/dev/slices/B5-retention-and-expiry.md  # the close-out entry B5 writes
 
+
+# Slice B8 writes these. Scoped to the brief; each becomes stale the moment the file exists, which
+# is how they get removed: docscheck reports an allowance nothing uses any more.
+internal/telemetry/metrics.go                                            docs/dev/slices/B8-self-observability.md  # the slice's Files table, listing what B8 will create
+internal/telemetry/metrics_test.go                                       docs/dev/slices/B8-self-observability.md  # the slice's Files table, listing what B8 will create
+internal/telemetry/tracing.go                                            docs/dev/slices/B8-self-observability.md  # the slice's Files table, listing what B8 will create
+internal/controlplane/api/metrics.go                                     docs/dev/slices/B8-self-observability.md  # the slice's Files table, listing what B8 will create
+internal/controlplane/api/metrics_test.go                                docs/dev/slices/B8-self-observability.md  # the slice's Files table, listing what B8 will create
+deploy/dev/victoriametrics/scrape.yml                                    docs/dev/slices/B8-self-observability.md  # the dev stack's scrape config B8 adds, named in the Files table and in decision 10
+docs/ops/observability.md                                                docs/dev/slices/B8-self-observability.md  # the reference page B8 writes, named in the Files table and the scope fence
+docs/adr/0041-what-a-fleetward-metric-is-allowed-to-carry.md             docs/dev/slices/B8-self-observability.md  # the slice's Files table; the ADR numbers are provisional until the decisions are settled
+docs/adr/0042-scraping-metrics-is-a-question-about-the-whole-estate.md   docs/dev/slices/B8-self-observability.md  # the slice's Files table; the ADR numbers are provisional until the decisions are settled
+docs/dev/journal/B8-self-observability.md                                docs/dev/slices/B8-self-observability.md  # the close-out entry B8 writes
