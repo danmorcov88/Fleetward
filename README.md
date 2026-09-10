@@ -525,6 +525,44 @@ wrong ([ADR-0039](docs/adr/0039-the-alert-is-the-record-and-the-notification-is-
 
 ---
 
+### Monitor the thing monitoring your backups
+
+The question anybody asked to install this asks next, and it got sharper the moment the section
+above made Fleetward something you are supposed to rely on being awake.
+
+```bash
+bin/fleetward-cli token create --email prometheus@example.com --role viewer > scrape-token
+curl -s -H "Authorization: Bearer $(cat scrape-token)" localhost:8080/metrics | grep alert_eval
+```
+
+```
+fleetward_alert_evaluation_duration_seconds_count{fleetward_outcome="completed"} 2841
+```
+
+**That counter is the one to alert on.** An evaluation pass writes no job row, so before this
+existed the only record that Fleetward had looked at your estate was a log line. If it stops
+advancing, nothing is being detected and no alert will fire — and the estate will look exactly as
+healthy as it did the moment evaluation stopped.
+
+Eight metrics of Fleetward's own, plus the Go runtime and process collectors: how long backups and
+verifications take and how they ended, alerts opened and resolved, notifications delivered and
+dropped, every authorization decision, and request latency by route. Names follow OpenTelemetry
+semantic conventions where one exists. Spans on four operations go to any OTLP collector.
+
+**A scrape needs a tenant-wide `viewer`.** The response carries a series per instance, which is the
+shape of your estate, and a request that names no scope is a question about the whole tenant — the
+same rule every listing follows
+([ADR-0042](docs/adr/0042-scraping-metrics-is-a-question-about-the-whole-estate.md)). You can serve
+it openly if the port is already private; it warns on every start.
+
+**No label ever carries a backup's identifier, a credential, or a connection string.** The first
+would create one time series per backup forever, and the other two would leave the process on every
+scrape ([ADR-0041](docs/adr/0041-what-a-fleetward-metric-is-allowed-to-carry.md)).
+
+**More:** [what is exposed, who may scrape it, and what it will not tell you](docs/ops/observability.md).
+
+---
+
 ## Where to go next
 
 | If you want to | Read |
@@ -537,6 +575,7 @@ wrong ([ADR-0039](docs/adr/0039-the-alert-is-the-record-and-the-notification-is-
 | Know what retention deletes, and what it refuses to | [docs/ops/retention.md](docs/ops/retention.md) |
 | Give somebody access, and read who did what | [docs/ops/authorization.md](docs/ops/authorization.md) |
 | Be told when something is wrong, and know what alerting will not tell you | [docs/ops/alerting.md](docs/ops/alerting.md) |
+| Monitor the thing that monitors your backups | [docs/ops/observability.md](docs/ops/observability.md) |
 | See the metadata schema | [docs/dev/data-model.md](docs/dev/data-model.md) |
 | Write a plugin for your own engine | [docs/dev/writing-an-engine-plugin.md](docs/dev/writing-an-engine-plugin.md) |
 | Know what is built and what is not | [docs/dev/STATUS.md](docs/dev/STATUS.md) |
@@ -638,13 +677,15 @@ that already backs itself up gets an answer on the day it is installed; all of i
 one screen, where a backup proven unrestorable is the loudest thing on the page; and artifacts that
 have outlived the retention their schedule declared are now deleted, which is the first thing this
 product does that cannot be undone; every route now requires a credential and a role, with a record
-of who did what that cannot be edited; and a failed verification now reaches a webhook or a mailbox
-without anybody going to look, which is the difference between a dashboard and monitoring.
+of who did what that cannot be edited; a failed verification now reaches a webhook or a mailbox
+without anybody going to look, which is the difference between a dashboard and monitoring; and
+Fleetward now answers the question an operator asks next — `GET /metrics` reports its own health, so
+"is the control plane awake, and did it look" is a query rather than a log line.
 
 Not yet built, stated plainly because a reference document should not imply otherwise: sign-in is an
 API token rather than your own identity provider; delivery is at-most-once, so a notification can be
-lost while the alert row survives; Fleetward emits no metrics about itself; and five of the eight
-engines are still binaries that only handshake.
+lost while the alert row survives; nothing collects performance metrics from the databases it
+watches; and five of the eight engines are still binaries that only handshake.
 
 The full list, and which slice owns each item, is in [docs/dev/STATUS.md](docs/dev/STATUS.md).
 

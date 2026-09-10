@@ -12,65 +12,60 @@ and everything with a longer lifetime lives elsewhere: rationale in the
 
 ## Current position
 
-**Slice B7 is complete. Next is B8 — self-observability.**
+**Slice B8 is complete. Next is B9 — the production deployment artifact and `v0.1.0`.**
 
-`alert_rules`, `alerts` and `notifiers` had been in the schema since migration `000001` and no Go
-code had ever touched them. A failed verification was visible only to somebody who went looking,
-which is the difference between a dashboard and monitoring. Five conditions now become alert rows on
-a pass over the estate every thirty seconds, and a webhook or an SMTP destination is told about the
-ones that are new.
+OpenTelemetry had been wired in `internal/telemetry/otel.go` since the foundation slice with zero
+call sites: no span was started, no meter obtained, and there was no `/metrics`. `GET /metrics` now
+serves Fleetward's own health in the Prometheus exposition format, four operations carry a span, and
+the development stack's VictoriaMetrics — health-checked on every start for eight slices and holding
+nothing — scrapes it with a credential.
 
-**Nothing in this slice detects anything new.** Every evaluator reads a computation that already
-answers the same question the API answers — `GetBackupAdherence` for a missed window,
-`verifications.status` for a failed verification, `instances.health` for a silent server, and
-retention's own backlog of expired rows whose objects are still there. So an alert and the estate
-view cannot disagree, because they are the same function.
+**The metric that matters is `fleetward_alert_evaluation_duration_seconds_count`.** An evaluation
+pass writes no job row ([ADR-0038](../adr/0038-alert-evaluation-is-a-pass-over-the-estate.md)), so
+until now the only record that Fleetward had looked at the estate was a log line. If that counter
+stops advancing, nothing is being detected and no alert will fire — and the estate looks exactly as
+healthy as it did the moment evaluation stopped.
 
 | The thing | What holds it |
 |---|---|
-| a rule that keeps firing paging somebody every thirty seconds | `alerts.fingerprint` identifies the *condition*; the upsert against its partial unique index updates one row, and only the transition delivers |
-| two control planes paging everybody twice | `RETURNING (xmax = 0)` — exactly one of them learns that it inserted, and only that one delivers |
-| two overlapping rules paging twice for one broken thing | the fingerprint carries no rule id; matching rules are ranked by severity and the loudest wins ([ADR-0034](../adr/0034-grants-are-additive-and-the-highest-rank-wins.md)'s reasoning) |
-| an INCONCLUSIVE verdict muting the alert that matters | the predicate is a named constant, and three tests refuse to let it widen ([ADR-0040](../adr/0040-an-inconclusive-verification-is-not-an-alert-about-the-artifact.md)) |
-| an alert per instance on the first pass of a fresh install | `NOT_DECLARED` produces no condition; only `MISSED` does |
-| a rule kind that is stored and never fires | `storage_threshold`, `replication_lag` and `custom_promql` are refused at creation, naming what they wait on |
-| an alert left firing forever after its rule is disabled or deleted | a kind with no enabled rule is *covered* by resolution with no fingerprints; deleting a rule resolves its alerts in the same transaction |
-| a notifier credential in a column every admin reads | it goes to the secrets provider, and a `settings` key that looks like one is refused |
-| a webhook URL — which for Slack *is* the credential — in `notifiers.last_error` | the transports describe failures rather than wrapping errors that carry the URL, and a test asserts it |
-| a destination that has been failing all week being invisible | `last_attempt_at`, `last_success_at` and `last_error` on the row, and `alert notifier list` shows them |
+| a label keyed on `backup_id`, which is one time series per backup forever | a rule with a test that reads what is *emitted* rather than a list of constants, so a new recorder cannot smuggle one in ([ADR-0041](../adr/0041-what-a-fleetward-metric-is-allowed-to-carry.md)) |
+| a database password in a label, on an exporter that ships elsewhere | no function in `internal/telemetry` takes a request, a connection, or an error — the audit package's rule, and `runRequest.connection` carries `Credentials` |
+| `/api/v1/backups/<uuid>/verifications` as an `http.route` value | the label is the mux *pattern*, from `mux.Handler(r)`; `r.Pattern` is empty in middleware that wraps the mux |
+| every backup landing in the `+Inf` bucket | OTel's defaults stop at 10 seconds; explicit boundaries reach four hours, and two tests refuse a regression |
+| a panic on the first backup of a production install | no instrument is ever stored `nil`; a creation failure yields a working no-op and a log line |
+| a stranger reading the shape of an estate | a scrape names no scope, so it needs a tenant-wide `viewer` — the rule [ADR-0035](../adr/0035-enforcement-is-a-policy-table-and-a-decorator.md) already had ([ADR-0042](../adr/0042-scraping-metrics-is-a-question-about-the-whole-estate.md)) |
+| the development stack quietly bypassing that rule | it presents the bootstrap token, for the reason `docker-compose.yml` already gives about authorization being on |
+| telemetry changing behaviour when it is off | the global providers are OTel's no-ops, and a test calls every recorder with no provider installed |
 
-Three decisions were worth records:
-[ADR-0038](../adr/0038-alert-evaluation-is-a-pass-over-the-estate.md) — evaluation is a pass over the
-estate rather than a job, for [ADR-0030](../adr/0030-retention-sweeps-the-estate-and-never-deletes-a-row.md)'s
-reasons plus frequency;
-[ADR-0039](../adr/0039-the-alert-is-the-record-and-the-notification-is-best-effort.md) — the alert row
-is the record and delivery is at-most-once, with the three things that make that trade defensible
-shipped alongside it;
-[ADR-0040](../adr/0040-an-inconclusive-verification-is-not-an-alert-about-the-artifact.md) — an
-inconclusive verification is not an alert about the artifact, which is
-[ADR-0022](../adr/0022-failed-and-inconclusive-are-different-answers.md) finally doing work rather
-than waiting to.
+Two ADRs: [ADR-0041](../adr/0041-what-a-fleetward-metric-is-allowed-to-carry.md) — what a Fleetward
+metric is allowed to carry, covering the namespace, the cardinality rule and the no-struct rule; and
+[ADR-0042](../adr/0042-scraping-metrics-is-a-question-about-the-whole-estate.md) — scraping is a
+question about the whole estate.
 
-The operational surface is `fleetward-cli alert list | ack`, `alert rule …` and `alert notifier …`,
-and the page is [`../ops/alerting.md`](../ops/alerting.md) — whose second section is what alerting
-will *not* tell you.
+The slice also found that the resource merge in `telemetry.Setup` had never run and was broken —
+`conflicting Schema URL` on the first start after the endpoint was turned on by default. Written in
+the foundation slice, never executed, because `Setup` returned before reaching it whenever telemetry
+was disabled. Which was always. See the [journal](journal/B8-self-observability.md).
 
-Act 7 of the demo is filled. It shows the alert that fires on the artifact act 4 corrupts, the
-webhook that arrives because of it, a second pass creating no second row, and the acknowledgement in
-the audit log.
+The operational surface is `GET /metrics` and the page is
+[`../ops/observability.md`](../ops/observability.md) — whose last section is what these metrics will
+*not* tell you, and whose first is that they answer whether Fleetward is working rather than whether
+your backups are good.
+
+There is no demo act. `/metrics` is an operator's concern rather than a beat in the story the demo
+tells a DBA.
 
 ## What comes next, and why that order
 
-**B8 — self-observability.** OpenTelemetry is wired in `internal/telemetry/otel.go` with zero call
-sites: no span is started, no meter is obtained, and there is no `/metrics`. An operator asked to
-install this will ask how to monitor it, and the answer cannot be that they cannot — which is
-sharper now than it was a slice ago, because B7 just made Fleetward something people are supposed to
-rely on being awake.
+**B9 — the production deployment artifact, a signed release, `v0.1.0`.** Nothing has been released:
+no tag, no published container image, no signed artifact — `release.yml` installs cosign and never
+invokes it, and `docker-compose.yml` is a development configuration by its own declaration.
 
-It is also the slice that answers "did the evaluation pass run last night", which B7 deliberately
-left to a log line ([ADR-0038](../adr/0038-alert-evaluation-is-a-pass-over-the-estate.md)).
+Every slice from B1 has been building something an operator could install, and none of them has
+produced anything an operator can install. B8 was the last piece of the answer to "how do I run
+this" that was missing; what is left is the artifact itself.
 
-Session protocol: [`slices/README.md`](slices/README.md). B8's brief is not written yet; briefs are
+Session protocol: [`slices/README.md`](slices/README.md). B9's brief is not written yet; briefs are
 written when the slice starts.
 
 ## Phases
@@ -79,7 +74,7 @@ written when the slice starts.
 |---|---|
 | Foundation — contract, control plane, dev stack | ✅ [journal](journal/00-foundation.md) |
 | A — prove the loop (PostgreSQL), A1–A6 | ✅ [journal](journal/README.md) |
-| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B7 done, B8 next |
+| B — from a proven loop to an installed tool, B1–B16 | ◐ B1–B8 done, B9 next |
 | D1 — the demo, and the end-to-end test it is | ✅ [journal](journal/D1-the-demo.md) |
 | Access compliance, structural drift, query editor | deferred — see [roadmap](../roadmap.md#deferred-deliberately) |
 
@@ -191,8 +186,9 @@ Listed so that no session has to re-derive them, and so that no document has to 
   dead-letter queue ([ADR-0039](../adr/0039-the-alert-is-the-record-and-the-notification-is-best-effort.md)).
   The alert row survives all of it, and three things make the trade visible rather than hidden:
   `notifiers.last_attempt_at`, `last_success_at` and `last_error`; `alert notifier test`, which
-  sends a real message; and `docs/ops/alerting.md` saying so in its own section. A control plane
-  restarted with work in its queue loses it.
+  sends a real message; and `docs/ops/alerting.md` saying so in its own section. Since B8 there is a
+  fourth: `fleetward_notifications_total{fleetward_outcome="dropped"}`. A control plane restarted
+  with work in its queue loses it.
 - **An `inconclusive` verification produces no alert.** Deliberate, and the strongest form of
   [ADR-0022](../adr/0022-failed-and-inconclusive-are-different-answers.md): a sandbox that never
   started is not evidence that a backup is bad, and routing it through the same alert as a
@@ -208,8 +204,9 @@ Listed so that no session has to re-derive them, and so that no document has to 
   rather than stored: a rule accepted and never evaluated is worse than one refused.
 - **Alert evaluation leaves no job row, so `job list` cannot answer "did it run last night".** The
   same consequence retention has and for the same reason
-  ([ADR-0038](../adr/0038-alert-evaluation-is-a-pass-over-the-estate.md)). The log line and the
-  alert rows are the account. **B8** is where a counter arrives.
+  ([ADR-0038](../adr/0038-alert-evaluation-is-a-pass-over-the-estate.md)). Since B8,
+  `fleetward_alert_evaluation_duration_seconds_count` answers it, and it is the series worth
+  alerting on. The retention sweep still has no equivalent.
 - **A webhook URL that embeds its own credential is readable by an administrator.** Slack and Teams
   build the token into the path, and that path lives in `notifiers.settings`, which `ListNotifiers`
   returns. The notifier's *own* secret never appears there and a credential-shaped settings key is
@@ -220,9 +217,33 @@ Listed so that no session has to re-derive them, and so that no document has to 
   the honest version of "stop telling me".
 - **There is no alerts screen.** `web/src/components/AppShell.tsx` keeps `enabled: false` on
   `/alerts`. The API and the CLI are the whole surface.
-- **Fleetward cannot be observed.** OpenTelemetry is wired in `internal/telemetry/otel.go` with
-  zero call sites: no span is started and no meter obtained. There is no `/metrics`, and a 403 emits
-  no metric either. **B8.**
+- **Fleetward's own metrics do not tell you whether your backups are good.** They tell you whether
+  Fleetward is working. The estate view, `backup adherence` and the alerts are the other answer, and
+  they are computed from rows rather than counters for a reason: a backup that failed at 02:00 is a
+  row that still says so at 09:00, while a counter that stopped increasing looks identical to an
+  estate with nothing to do.
+- **Nothing collects performance metrics from the databases Fleetward watches.** `CollectMetrics` is
+  in the plugin contract and nothing calls it; `db.client.*` is empty and `/metrics` never carries
+  it. Deferred deliberately rather than merely unbuilt — performance monitoring was never the pain
+  this product exists to solve — and it is what the three unevaluated alert rule kinds are waiting
+  on.
+- **Four operations carry a span, and not five.** An API request, a backup run, a verification and
+  the alert evaluation pass. Not the scheduler tick — `/readyz` degrades with a reason when the loop
+  stalls, which is the signal to alert on — and not the retention sweep, a plugin RPC, the object
+  store or the sandbox provider. There are also no sub-spans inside a backup, so "was it the dump or
+  the upload" is not answerable.
+- **`/metrics` is on the main listener and there is no shipped dashboard.** No separate admin port,
+  no Grafana dashboard, no recording rules and no alerting-rules file; the PromQL in
+  [`../ops/observability.md`](../ops/observability.md) is what there is. A scrape needs a tenant-wide
+  `viewer` ([ADR-0042](../adr/0042-scraping-metrics-is-a-question-about-the-whole-estate.md)), or
+  `FLEETWARD_TELEMETRY_PROMETHEUS_AUTH=false`, which is warned about on every start.
+- **A metric is per control plane, and the notification queue's depth is invisible.** Two replicas
+  produce two sets of series, so estate-wide queries need a `sum`; and you can see what the delivery
+  queue dropped, never how close it came to dropping.
+- **`internal/storage/tsdb` labels samples `fw_instance_id` while `/metrics` renders
+  `fleetward_instance_id`.** Nothing has ever written through the `fw_*` path, so there is no data to
+  migrate; ADR-0041 records that it adopts the longer spelling when database metric collection
+  lands, so nobody invents a third.
 - **Nothing has been released.** No tag, no published container image, no signed artifact —
   `release.yml` installs cosign and never invokes it. `docker-compose.yml` is a development
   configuration by its own declaration. **B9.**

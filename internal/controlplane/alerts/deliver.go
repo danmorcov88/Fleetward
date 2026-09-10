@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/danmorcov88/fleetward/internal/storage/secrets"
+	"github.com/danmorcov88/fleetward/internal/telemetry"
 )
 
 // The two notifier kinds, spelled as the CHECK constraint spells them.
@@ -25,6 +26,19 @@ const (
 	NotifierWebhook = "webhook"
 	NotifierSMTP    = "smtp"
 )
+
+// outcomeWord turns a send error into the closed vocabulary a metric label is allowed to carry.
+//
+// The error itself never becomes a label. A transport failure can name the destination, and a
+// webhook URL is for Slack and Teams *itself* the credential — which is why the transports in this
+// package describe failures rather than wrapping errors that carry the URL, and why a label built
+// from one would be considerably worse than the log line that rule was written for.
+func outcomeWord(err error) string {
+	if err != nil {
+		return telemetry.OutcomeFailed
+	}
+	return telemetry.OutcomeDelivered
+}
 
 // Message is what a notifier is asked to deliver.
 //
@@ -172,6 +186,10 @@ func (d *Dispatcher) Enqueue(ctx context.Context, msg Message) {
 	case d.queue <- msg:
 	default:
 		n := d.dropped.Add(1)
+		// The counter that makes ADR-0039 visible rather than merely documented. "A notification
+		// can be lost" is a sentence in STATUS.md; this is the series that says it happened, and
+		// no notifier kind is named because a message that was never dequeued never chose one.
+		telemetry.RecordNotification(ctx, "", telemetry.OutcomeDropped)
 		d.log.WarnContext(ctx, "the notification queue is full; this notification was dropped",
 			slog.String("fingerprint", msg.Fingerprint),
 			slog.String("state", msg.State),
@@ -219,6 +237,7 @@ func (d *Dispatcher) deliver(ctx context.Context, msg Message) {
 	for _, dest := range dests {
 		sendErr := d.attempt(ctx, dest, msg)
 		d.recordOutcome(ctx, dest.ID, sendErr)
+		telemetry.RecordNotification(ctx, dest.Kind, outcomeWord(sendErr))
 		if sendErr != nil {
 			// The error's own text, never the destination's configuration: a URL can embed a
 			// credential and this line is written to a log an operator may ship elsewhere.

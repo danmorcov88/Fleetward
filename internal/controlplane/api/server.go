@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/danmorcov88/fleetward/internal/config"
 	"github.com/danmorcov88/fleetward/internal/controlplane/audit"
 	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
@@ -152,8 +155,8 @@ func buildTLSConfig(cfg config.ServerConfig) (*tls.Config, error) {
 	return tlsCfg, nil
 }
 
-// middleware wraps the router with request identification, authentication, structured access
-// logging, and panic recovery.
+// middleware wraps the router with request identification, authentication, telemetry, structured
+// access logging, and panic recovery.
 //
 // Authentication happens here and refuses nothing. It resolves the caller, puts it on the context,
 // and lets the request through; the guard in internal/controlplane/authz is what answers 401 and
@@ -174,6 +177,24 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Request-Id", requestID)
 
 		ctx := telemetry.WithRequestID(r.Context(), requestID)
+
+		// The route is the mux *pattern*, never the path.
+		//
+		// http.ServeMux.Handler resolves a request to its registered pattern without serving it,
+		// which is the only way to get a bounded value here: the grpc-gateway subtree is mounted on
+		// one pattern, so `r.URL.Path` for a request to /api/v1/backups/<uuid>/verifications
+		// carries a backup's identifier — one time series per backup, forever (ADR-0041). Coarse
+		// and bounded beats precise and unbounded; the RPC's own name reaches the span from the
+		// authorization decorator, which knows it.
+		//
+		// r.Pattern is not an option: ServeMux sets it on a shallow copy it passes downward, and
+		// this handler wraps the mux from outside, so the request seen here never has one.
+		_, route := s.mux.Handler(r)
+
+		ctx, span := telemetry.StartSpan(ctx, telemetry.SpanHTTPRequest,
+			attribute.String(telemetry.AttrHTTPRequestMethod, r.Method),
+			attribute.String(telemetry.AttrHTTPRoute, route))
+		defer span.End()
 
 		principal := s.authenticate(ctx, r)
 		ctx = authn.WithPrincipal(ctx, principal)
@@ -199,9 +220,20 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 				}
 			}
 
-			// Health probes fire constantly and would drown out everything else at info level.
+			elapsed := time.Since(start)
+
+			span.SetAttributes(attribute.Int(telemetry.AttrHTTPStatusCode, recorder.status))
+			if recorder.status >= 500 {
+				span.SetStatus(codes.Error, http.StatusText(recorder.status))
+			}
+			telemetry.RecordHTTPRequest(ctx, r.Method, route, recorder.status, elapsed)
+
+			// Health probes fire constantly and would drown out everything else at info level. A
+			// metrics scrape is the same shape of traffic for the same reason — every fifteen
+			// seconds, forever — and it joins them here rather than making the development stack's
+			// log unreadable.
 			level := slog.LevelInfo
-			if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
+			if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" || r.URL.Path == "/metrics" {
 				level = slog.LevelDebug
 			}
 			if recorder.status >= 500 {
@@ -212,7 +244,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 				slog.Int("status", recorder.status),
-				slog.Duration("duration", time.Since(start)),
+				slog.Duration("duration", elapsed),
 				slog.String("remote_addr", clientIP(r)),
 				// The actor, never the credential. This is also where an unauthenticated request
 				// is recorded: a 401 writes no audit row on purpose, and this line is what replaces

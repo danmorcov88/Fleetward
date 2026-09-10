@@ -24,6 +24,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -37,6 +38,7 @@ import (
 	"github.com/danmorcov88/fleetward/internal/plugin/sdk"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
 	"github.com/danmorcov88/fleetward/internal/storage/objstore"
+	"github.com/danmorcov88/fleetward/internal/telemetry"
 )
 
 // Sentinel errors. The gRPC layer maps them to status codes and is the only thing that decides what
@@ -411,12 +413,39 @@ type runRequest struct {
 // reason. A scheduled run belongs to the runner holding its lease, and a lost lease must be able to
 // stop the work — which it can only do through the context that reaches the plugin and the native
 // tool it drives.
-func (s *Service) execute(parent context.Context, client fwv1.EnginePluginClient, req runRequest) error {
+func (s *Service) execute(parent context.Context, client fwv1.EnginePluginClient, req runRequest) (err error) {
 	ctx, cancel := context.WithTimeout(parent, runTimeout+runGrace)
 	defer cancel()
 
 	log := s.log.With(slog.String("backup_id", req.backupID), slog.String("instance_id", req.connection.InstanceID))
 	started := time.Now()
+
+	// One span and one measurement per run, recorded on every path out of this function —
+	// including the one where the artifact exists and the row describing it does not, which is the
+	// outcome worst worth seeing.
+	//
+	// The engine type is a label value and never a branch: nothing decides what to record by
+	// reading it, which is CLAUDE.md §4.1 applied to telemetry. The backup and job identifiers are
+	// span attributes and deliberately not labels — a span is one event, while a label keyed on a
+	// backup is one time series per backup, forever (ADR-0041).
+	ctx, span := telemetry.StartSpan(ctx, telemetry.SpanBackupRun,
+		attribute.String(telemetry.AttrInstanceID, req.connection.InstanceID),
+		attribute.String(telemetry.AttrEngineType, req.connection.EngineType),
+		attribute.String(telemetry.AttrBackupMethod, req.methodID),
+		attribute.String(telemetry.AttrBackupID, req.backupID),
+		attribute.String(telemetry.AttrJobID, req.jobID))
+	defer func() {
+		outcome := telemetry.OutcomeSucceeded
+		if err != nil {
+			outcome = telemetry.OutcomeFailed
+		}
+		// Detached from the run's context, like every other write on the way out: a backup
+		// cancelled by shutdown or by its timeout should still be counted as one that failed.
+		telemetry.RecordBackup(context.WithoutCancel(ctx),
+			req.connection.InstanceID, req.connection.EngineType, req.methodID, outcome,
+			time.Since(started))
+		telemetry.EndSpan(span, err)
+	}()
 
 	result, err := s.transfer(ctx, client, req, log)
 	if err != nil {
@@ -444,6 +473,8 @@ func (s *Service) execute(parent context.Context, client fwv1.EnginePluginClient
 			slog.String("error", err.Error()))
 		return err
 	}
+
+	span.SetAttributes(attribute.Int64(telemetry.AttrBackupBytes, result.GetSizeBytes()))
 
 	log.InfoContext(recordCtx, "backup succeeded",
 		slog.Int64("size_bytes", result.GetSizeBytes()),

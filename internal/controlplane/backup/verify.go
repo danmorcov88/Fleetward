@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -20,6 +21,7 @@ import (
 	"github.com/danmorcov88/fleetward/internal/controlplane/sandbox"
 	"github.com/danmorcov88/fleetward/internal/plugin/sdk"
 	"github.com/danmorcov88/fleetward/internal/storage/metadb"
+	"github.com/danmorcov88/fleetward/internal/telemetry"
 )
 
 const (
@@ -317,12 +319,35 @@ func (s *Service) verify(parent context.Context, client fwv1.EnginePluginClient,
 		slog.String("backup_id", req.target.backupID))
 	started := time.Now()
 
+	// The verdict is the label, all three of it.
+	//
+	// INCONCLUSIVE is not folded into FAILED here, for the same reason ADR-0040 refuses to fold it
+	// in alerting: a sandbox that never started is not evidence that a backup is bad, and a metric
+	// that says it is trains an operator to ignore the one series that matters. Keeping them apart
+	// is also what makes the gap visible — a provider broken all week shows as a rising
+	// inconclusive rate rather than as nothing at all, which is the cost STATUS.md records.
+	ctx, span := telemetry.StartSpan(ctx, telemetry.SpanVerification,
+		attribute.String(telemetry.AttrInstanceID, req.target.instanceID),
+		attribute.String(telemetry.AttrEngineType, req.engineType),
+		attribute.String(telemetry.AttrVerificationID, req.verificationID),
+		attribute.String(telemetry.AttrBackupID, req.target.backupID),
+		attribute.String(telemetry.AttrJobID, req.jobID))
+	defer span.End()
+
 	result := s.runVerification(ctx, client, caps, req, log)
 
 	// Detached from the run's context: a verification cancelled by shutdown or by its timeout must
 	// still be able to write down what it concluded.
 	recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer recordCancel()
+
+	// Recorded from the detached context, and before the row is written rather than after: a
+	// verification that reached a verdict and could not persist it still happened, and the metric
+	// is the only place that fact survives.
+	span.SetAttributes(
+		attribute.String(telemetry.AttrVerificationStatus, result.status.String()))
+	telemetry.RecordVerification(recordCtx, req.target.instanceID, req.engineType,
+		result.status.String(), time.Since(started))
 
 	if err := s.recordVerification(recordCtx, req, result, time.Since(started)); err != nil {
 		log.ErrorContext(recordCtx, "could not record the verification outcome",

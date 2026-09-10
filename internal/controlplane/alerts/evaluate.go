@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel/attribute"
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
 	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
+	"github.com/danmorcov88/fleetward/internal/telemetry"
 )
 
 // The rule kinds, spelled as the CHECK constraint spells them.
@@ -121,8 +123,26 @@ func (r EvaluationResult) Empty() bool {
 // The tenant comes from the principal on the context and from nowhere else. A pass carrying no
 // principal fails its first query rather than quietly reading a default tenant, which is exactly the
 // failure ADR-0036 exists to make impossible.
-func (s *Service) Evaluate(ctx context.Context) (EvaluationResult, error) {
-	var result EvaluationResult
+func (s *Service) Evaluate(ctx context.Context) (result EvaluationResult, err error) {
+	started := time.Now()
+
+	// The pass writes no job row, so `job list` cannot answer "did it run last night" (ADR-0038).
+	// This histogram's `_count` is that answer, and it is the reason this measurement is recorded on
+	// every path out including the ones that fail early — a pass that ran and could not finish is a
+	// different fact from a pass that never started, and only one of them is silence.
+	ctx, span := telemetry.StartSpan(ctx, telemetry.SpanAlertEvaluation)
+	defer func() {
+		outcome := telemetry.OutcomeCompleted
+		if err != nil {
+			outcome = telemetry.OutcomeFailed
+		}
+		span.SetAttributes(
+			attribute.Int(telemetry.AttrRulesEvaluated, result.RulesConsidered),
+			attribute.Int(telemetry.AttrAlertsOpened, result.Opened),
+			attribute.Int(telemetry.AttrAlertsResolved, result.Resolved))
+		telemetry.RecordAlertEvaluation(context.WithoutCancel(ctx), outcome, time.Since(started))
+		telemetry.EndSpan(span, err)
+	}()
 
 	tenant := authn.Tenant(ctx)
 	if tenant == "" {
@@ -198,6 +218,7 @@ func (s *Service) Evaluate(ctx context.Context) (EvaluationResult, error) {
 			continue
 		}
 		result.Opened++
+		telemetry.RecordAlertOpened(ctx, c.kind, severity)
 		s.dispatch.Enqueue(ctx, Message{
 			TenantID:     tenant,
 			AlertID:      alertID,
@@ -219,6 +240,7 @@ func (s *Service) Evaluate(ctx context.Context) (EvaluationResult, error) {
 	}
 	result.Resolved = len(resolved)
 	for _, m := range resolved {
+		telemetry.RecordAlertResolved(ctx, m.Kind)
 		s.dispatch.Enqueue(ctx, m)
 	}
 	return result, nil

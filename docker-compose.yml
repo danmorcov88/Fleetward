@@ -76,10 +76,15 @@ services:
       - "--storageDataPath=/vm-data"
       - "--retentionPeriod=30d"
       - "--httpListenAddr=:8428"
+      # Scrapes the control plane's own /metrics, with a credential, which is the first thing that
+      # has ever put a sample in this store. See the file for why it presents a token rather than
+      # the stack turning the requirement off.
+      - "--promscrape.config=/etc/victoriametrics/scrape.yml"
     ports:
       - "${FLEETWARD_VM_PORT:-8428}:8428"
     volumes:
       - vm-data:/vm-data
+      - ./deploy/dev/victoriametrics/scrape.yml:/etc/victoriametrics/scrape.yml:ro
     healthcheck:
       # 127.0.0.1, not localhost: VictoriaMetrics listens on IPv4 only, and localhost resolves to
       # ::1 first inside this image, which makes the probe fail against a perfectly healthy server.

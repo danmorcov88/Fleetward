@@ -163,13 +163,15 @@ Parsed and validated, and read by nothing. **There is no authentication yet, and
 
 ## Telemetry
 
-| Variable                  | Default          |  | Notes |
-| ------------------------- | ---------------- | --- | --- |
-| `TELEMETRY_ENABLED`       | `false`          |  |  |
-| `TELEMETRY_OTLP_ENDPOINT` | `localhost:4317` |  |  |
-| `TELEMETRY_OTLP_INSECURE` | `true`           |  |  |
-| `TELEMETRY_SAMPLE_RATIO`  | `1.0`            |  |  |
-| `TELEMETRY_SERVICE_NAME`  | `fleetward`      |  |  |
+| Variable                       | Default          |  | Notes |
+| ------------------------------ | ---------------- | --- | --- |
+| `TELEMETRY_ENABLED`            | `false`          |  | Enabled turns on **push** telemetry: spans and periodic metric export to an OTLP collector. It does not control the /metrics endpoint, which has its own setting below. |
+| `TELEMETRY_OTLP_ENDPOINT`      | `localhost:4317` |  | OTLPEndpoint receives spans and exported metrics. Read only when Enabled. |
+| `TELEMETRY_OTLP_INSECURE`      | `true`           |  |  |
+| `TELEMETRY_PROMETHEUS_AUTH`    | `true`           |  | PrometheusAuth requires a scrape to present a credential granting tenant-wide viewer. A scrape names no scope, and a request that names no scope is a question about the whole tenant (ADR-0035) — the response carries a series per instance, which is the shape of the estate. Turning this off serves /metrics to anyone who can reach the port; it is warned about on every start and it is permitted in production, because disclosing the estate's shape and granting control of it are different sizes of mistake (ADR-0042). |
+| `TELEMETRY_PROMETHEUS_ENABLED` | `true`           |  | PrometheusEnabled serves Fleetward's own metrics at GET /metrics in the Prometheus exposition format. On by default: it is how a Go service is monitored, and it needs nothing else running. |
+| `TELEMETRY_SAMPLE_RATIO`       | `1.0`            |  |  |
+| `TELEMETRY_SERVICE_NAME`       | `fleetward`      |  |  |
 
 ## Other
 

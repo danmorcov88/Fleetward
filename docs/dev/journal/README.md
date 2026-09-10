@@ -40,6 +40,7 @@ the decisions with the longest reach and links back to the entries they came fro
 | [B6](B6-authorization-spine.md) — the slice where a stranger could | 2026-09-03 | [brief](../slices/B6-authorization-spine.md) |
 | [D1](D1-the-demo.md) — the demo, which is also the end-to-end test | 2026-09-08 | [brief](../slices/D1-the-demo.md) |
 | [B7](B7-alerts-and-delivery.md) — the slice that makes it monitoring | 2026-09-09 | [brief](../slices/B7-alerts-and-delivery.md) |
+| [B8](B8-self-observability.md) — the slice that made the wiring run | 2026-09-10 | [brief](../slices/B8-self-observability.md) |
 
 ## Writing an entry
 
