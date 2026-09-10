@@ -10,7 +10,7 @@ the top of the affected record ([ADR-0001](0001-record-architecture-decisions.md
 
 Each carries Context, Decision, Consequences, and the alternatives that were rejected. `make docs-check` enforces that.
 
-<!-- adr-count -->40<!-- /adr-count --> records.
+<!-- adr-count -->42<!-- /adr-count --> records.
 
 | ADR                                                                             | Decision                                                                                                                  |                    | Date |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------ | --- |
@@ -54,6 +54,8 @@ Each carries Context, Decision, Consequences, and the alternatives that were rej
 | [0038](0038-alert-evaluation-is-a-pass-over-the-estate.md)                      | Alert evaluation is a pass over the estate, not a job                                                                     |                    | 2026-09-09 |
 | [0039](0039-the-alert-is-the-record-and-the-notification-is-best-effort.md)     | The alert row is the record, and the notification is best-effort                                                          |                    | 2026-09-09 |
 | [0040](0040-an-inconclusive-verification-is-not-an-alert-about-the-artifact.md) | An inconclusive verification is not an alert about the artifact                                                           |                    | 2026-09-09 |
+| [0041](0041-what-a-fleetward-metric-is-allowed-to-carry.md)                     | What a Fleetward metric is allowed to carry                                                                               |                    | 2026-09-10 |
+| [0042](0042-scraping-metrics-is-a-question-about-the-whole-estate.md)           | Scraping metrics is a question about the whole estate                                                                     |                    | 2026-09-10 |
 
 ## Reading the older records
 

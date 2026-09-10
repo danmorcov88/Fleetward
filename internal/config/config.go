@@ -183,12 +183,29 @@ type AuthConfig struct {
 }
 
 // TelemetryConfig configures Fleetward's own observability (ADR-0011).
+//
+// Metrics leave this process two ways and the two are configured separately, because they fail
+// differently: a push needs a collector to exist, and a pull needs somebody to be allowed to ask.
 type TelemetryConfig struct {
-	Enabled      bool
+	// Enabled turns on **push** telemetry: spans and periodic metric export to an OTLP collector.
+	// It does not control the /metrics endpoint, which has its own setting below.
+	Enabled bool
+	// OTLPEndpoint receives spans and exported metrics. Read only when Enabled.
 	OTLPEndpoint string
 	OTLPInsecure bool
 	ServiceName  string
 	SampleRatio  float64
+	// PrometheusEnabled serves Fleetward's own metrics at GET /metrics in the Prometheus exposition
+	// format. On by default: it is how a Go service is monitored, and it needs nothing else running.
+	PrometheusEnabled bool
+	// PrometheusAuth requires a scrape to present a credential granting tenant-wide viewer.
+	//
+	// A scrape names no scope, and a request that names no scope is a question about the whole
+	// tenant (ADR-0035) — the response carries a series per instance, which is the shape of the
+	// estate. Turning this off serves /metrics to anyone who can reach the port; it is warned about
+	// on every start and it is permitted in production, because disclosing the estate's shape and
+	// granting control of it are different sizes of mistake (ADR-0042).
+	PrometheusAuth bool
 }
 
 // SchedulerConfig tunes the job scheduler (ADR-0013).
@@ -375,6 +392,9 @@ func Load() (*Config, error) {
 			OTLPInsecure: envBool("TELEMETRY_OTLP_INSECURE", true),
 			ServiceName:  env("TELEMETRY_SERVICE_NAME", "fleetward"),
 			SampleRatio:  envFloat("TELEMETRY_SAMPLE_RATIO", 1.0),
+
+			PrometheusEnabled: envBool("TELEMETRY_PROMETHEUS_ENABLED", true),
+			PrometheusAuth:    envBool("TELEMETRY_PROMETHEUS_AUTH", true),
 		},
 		Scheduler: SchedulerConfig{
 			Enabled:           envBool("SCHEDULER_ENABLED", true),

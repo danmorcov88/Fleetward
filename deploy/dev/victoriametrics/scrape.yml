@@ -1,0 +1,35 @@
+# VictoriaMetrics scrape configuration for the development stack.
+#
+# This file is why the development stack's VictoriaMetrics holds anything at all. It has been in
+# `docker-compose.yml` since the foundation slice, health-checked on every start, and until B8
+# nothing had ever written a sample to it: `internal/storage/tsdb` is wired for the metrics
+# Fleetward will one day collect *about monitored databases*, and nothing collects those yet.
+# Fleetward's own metrics are a different namespace reaching the store a different way — pulled from
+# `/metrics` rather than pushed through remote-write (ADR-0041).
+#
+# **The credential below is the bootstrap token, and using one here is deliberate.**
+#
+# `/metrics` requires a tenant-wide `viewer` by default (ADR-0042), and the tempting shortcut would
+# have been to set `FLEETWARD_TELEMETRY_PROMETHEUS_AUTH=false` in the development stack so that no
+# token was needed. That is the same shortcut authorization itself used to take, and the comment
+# above `FLEETWARD_AUTH_ENABLED` in `docker-compose.yml` explains what it cost: enforcement that
+# nothing exercises is enforcement nobody notices is broken. So the development stack scrapes the
+# way a real installation does.
+#
+# A real installation issues a token with a tenant-wide `viewer` grant and points
+# `bearer_token_file` at it — see `docs/ops/observability.md`. It does not use the break-glass
+# credential, which is a known value in a file in a public repository.
+
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: fleetward
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "fleetward:8080"
+    # The development bootstrap credential, matching FLEETWARD_AUTH_BOOTSTRAP_TOKEN in
+    # docker-compose.yml. Changing one without the other stops collection silently — the control
+    # plane answers 401, VictoriaMetrics records the target as down, and nothing else looks wrong.
+    bearer_token: fwt_devbootstrap_0000000000000000

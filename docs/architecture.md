@@ -17,8 +17,9 @@ flowchart TB
         INV["Inventory"]
         SCHED["Scheduler<br/><i>cron · lease locking</i>"]
         BACKUP["Backup &amp; verification"]
-        ALERT["Alerting"]:::planned
+        ALERT["Alerting<br/><i>rules · webhook · SMTP</i>"]
         PM["Plugin manager<br/><i>launch · supervise · restart</i>"]
+        OBS["Self-observability<br/><i>/metrics · spans</i>"]
         SANDBOX["Sandbox provider<br/><i>Docker; k8s Jobs planned</i>"]
     end
 
@@ -50,9 +51,10 @@ flowchart TB
     PM -.->|"gRPC over local socket, mutual TLS"| PG & MS & MY & MG & RD & FUTURE
     PG & MS & MY & MG & RD -->|"native tooling"| DB1
     INV & SCHED & BACKUP & ALERT --> META
+    API & BACKUP & ALERT -.->|"measurements"| OBS
     BACKUP -->|"presigned URLs"| OBJ
     PG & MS & MY & MG & RD -.->|"artifacts"| OBJ
-    ALERT --> TSDB
+    OBS -->|"scraped"| TSDB
 
     classDef planned stroke-dasharray:5 4,opacity:0.65
 
@@ -62,11 +64,23 @@ flowchart TB
     style estate fill:#2a1a1a,stroke:#6a4a4a,color:#fff
 ```
 
-**Dashed boxes are planned, not built.** Today alerting does not exist, and only the PostgreSQL and
-SQL Server plugins implement anything beyond a handshake — see [`dev/STATUS.md`](dev/STATUS.md) for
-what is actually running and [`roadmap.md`](roadmap.md) for when the rest arrives. The diagram is
-drawn with them because the shape of the system is what the contract and the metadata schema were
-designed against, and a reader deserves to see the target as well as the state.
+**Dashed boxes are planned, not built.** Today only the PostgreSQL and SQL Server plugins implement
+anything beyond a handshake — see [`dev/STATUS.md`](dev/STATUS.md) for what is actually running and
+[`roadmap.md`](roadmap.md) for when the rest arrives. The diagram is drawn with them because the
+shape of the system is what the contract and the metadata schema were designed against, and a reader
+deserves to see the target as well as the state.
+
+Alerting is solid rather than dashed since B7: five conditions become alert rows on a pass over the
+estate, and a webhook or an SMTP destination is told about the ones that are new. Delivery is
+at-most-once — see [`ops/alerting.md`](ops/alerting.md), whose second section is what alerting will
+*not* tell you.
+
+Self-observability arrived with B8. `GET /metrics` serves Fleetward's own health in the Prometheus
+exposition format and requires a tenant-wide `viewer` to scrape, because the response carries a
+series per instance and that is the shape of an estate
+([ADR-0042](adr/0042-scraping-metrics-is-a-question-about-the-whole-estate.md)). The arrow into
+VictoriaMetrics is a *pull*: the estate's own `db.client.*` metrics would arrive by remote-write
+instead, and nothing collects those yet.
 
 Authorization is solid rather than dashed since B6: every request names a caller, every route
 decides on that caller's role within the scope it acts on, and every mutating action lands in an
@@ -89,7 +103,7 @@ lookup table of engines. Even the sandbox's credentials keep the rule: core gene
 username, password, and database name, and the plugin's template says where they belong by writing
 `{{ .Password }}` where its engine expects one ([ADR-0020](adr/0020-sandbox-credentials-from-template-placeholders.md)).
 
-Architecture decisions are recorded in [`docs/adr/`](adr/) — <!-- adr-count -->40<!-- /adr-count -->
+Architecture decisions are recorded in [`docs/adr/`](adr/) — <!-- adr-count -->42<!-- /adr-count -->
 of them, each with context, consequences, and the alternatives that were rejected. The metadata
 schema those decisions produced is drawn in [`dev/data-model.md`](dev/data-model.md), and every
 setting the control plane reads is listed in [`ops/configuration.md`](ops/configuration.md). Both

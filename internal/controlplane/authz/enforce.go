@@ -4,12 +4,14 @@ import (
 	"context"
 	"log/slog"
 
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/danmorcov88/fleetward/internal/controlplane/audit"
+	"github.com/danmorcov88/fleetward/internal/telemetry"
 )
 
 // Recorder is the slice of the audit writer this package needs.
@@ -60,6 +62,27 @@ func guarded[Req proto.Message, Resp proto.Message](
 	var zero Resp
 
 	decision, err := e.guard.Check(ctx, method, req)
+
+	// The decision, on the span the HTTP middleware already started and in a counter.
+	//
+	// Not a span of its own: the gateway runs in-process (ADR-0019), so this is inside the request
+	// the middleware opened, and two spans somebody has to join is a worse answer than one with the
+	// RPC's name on it. The counter is the only place a 403 becomes something a monitoring system
+	// can see — the audit log records it, and reading the audit log is not monitoring.
+	//
+	// The method and the role, never the request. `CreateInstanceRequest` carries a production
+	// database password, which is why the audit writer in this same path refuses to accept a request
+	// message at all, and a metric is more durable than an audit row rather than less.
+	outcome := telemetry.OutcomeAllowed
+	if err != nil {
+		outcome = telemetry.OutcomeRefused
+	}
+	telemetry.Annotate(ctx,
+		attribute.String(telemetry.AttrRPCMethod, method),
+		attribute.String(telemetry.AttrAuthzOutcome, outcome),
+		attribute.String(telemetry.AttrEffectiveRole, decision.EffectiveRole))
+	telemetry.RecordAuthzDecision(ctx, method, outcome, decision.EffectiveRole)
+
 	if err != nil {
 		if status.Code(err) != codes.Unauthenticated {
 			e.recordRefusal(ctx, decision)

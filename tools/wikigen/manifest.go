@@ -48,6 +48,7 @@ var explicit = []page{
 	{source: "docs/ops/scheduling.md", wiki: "Scheduling", title: "Scheduling", audience: "run"},
 	{source: "docs/ops/retention.md", wiki: "Retention", title: "Retention and expiry", audience: "run"},
 	{source: "docs/ops/alerting.md", wiki: "Alerting", title: "Alerting", audience: "run"},
+	{source: "docs/ops/observability.md", wiki: "Observability", title: "Observing Fleetward", audience: "run"},
 
 	{source: "docs/dev/writing-an-engine-plugin.md", wiki: "Writing-an-Engine-Plugin", title: "Writing an engine plugin", audience: "extend"},
 	{source: ".github/CONTRIBUTING.md", wiki: "Contributing", title: "Contributing", audience: "extend"},

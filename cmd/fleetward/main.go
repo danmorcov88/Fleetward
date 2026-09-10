@@ -78,14 +78,14 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	shutdownTelemetry, err := telemetry.Setup(ctx, cfg.Telemetry, log)
+	tel, err := telemetry.Setup(ctx, cfg.Telemetry, log)
 	if err != nil {
 		return fmt.Errorf("telemetry: %w", err)
 	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := shutdownTelemetry(shutdownCtx); err != nil {
+		if err := tel.Shutdown(shutdownCtx); err != nil {
 			log.Warn("telemetry shutdown", slog.String("error", err.Error()))
 		}
 	}()
@@ -260,6 +260,26 @@ func run() error {
 		return fmt.Errorf("http server: %w", err)
 	}
 	server.RegisterSessions(sessions, tokens)
+
+	// --- Being observable -------------------------------------------------------------------------
+	//
+	// Registered here, after the guard, because a scrape is authorized by the same thing every other
+	// request is — and because /metrics is the one authorized route in this product that is not an
+	// RPC, so it does not go through the policy table (ADR-0042). A nil handler registers nothing,
+	// which is how a disabled endpoint answers 404 rather than an empty 200.
+	var scrapeAuth api.ScrapeAuthorizer = guard
+	if !cfg.Telemetry.PrometheusAuth {
+		// Warned on every start, like disabled authentication and the bootstrap credential. The
+		// endpoint discloses the shape of the estate — how many servers, which engines, which of
+		// them fail verification — and an installation serving that to anyone who can reach the
+		// port should never be a quiet fact.
+		log.Warn("THE METRICS ENDPOINT IS UNAUTHENTICATED: anyone who can reach this port can read "+
+			"the shape of your estate",
+			slog.String("remedy", "set FLEETWARD_TELEMETRY_PROMETHEUS_AUTH=true and give the "+
+				"scraper a token with a tenant-wide viewer grant"))
+		scrapeAuth = nil
+	}
+	server.RegisterMetrics(tel.MetricsHandler, scrapeAuth)
 
 	// The REST API is served by grpc-gateway handlers mounted on the same mux as the health
 	// endpoints. `GET /api/v1/version` stays registered on its own, more specific pattern, which

@@ -49,4 +49,3 @@ docs/adr/0031-an-expiry-is-stamped-when-a-backup-is-taken.md          docs/dev/s
 docs/adr/0032-retention-never-deletes-the-last-good-backup.md         docs/dev/slices/B5-retention-and-expiry.md  # the slice's Files table; the ADR numbers are provisional until the decisions are settled
 docs/ops/retention.md                                                 docs/dev/slices/B5-retention-and-expiry.md  # the reference page B5 writes, named in the Files table and the scope fence
 docs/dev/journal/B5-retention-and-expiry.md                           docs/dev/slices/B5-retention-and-expiry.md  # the close-out entry B5 writes
-
