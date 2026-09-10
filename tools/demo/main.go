@@ -37,7 +37,8 @@ func run() int {
 	}
 	cfg.Theatre = true
 
-	var transcript string
+	var transcript, cast string
+	var idle time.Duration
 	flag.BoolVar(&cfg.Keep, "keep", false,
 		"leave the stack running afterwards, so the estate view can still be clicked around")
 	flag.BoolVar(&cfg.Compose, "compose", true,
@@ -46,9 +47,16 @@ func run() int {
 		"rebuild the control plane and web images before starting")
 	flag.DurationVar(&cfg.Pause, "pause", 2*time.Second, "how long to pause between acts")
 	flag.StringVar(&transcript, "transcript", "", "also write everything to this `file`")
+	flag.StringVar(&cast, "cast", "",
+		"also record an asciicast v2 `file`, which `agg` renders to a GIF")
+	flag.DurationVar(&idle, "cast-idle-limit", 4*time.Second,
+		"longest gap a player replays from the recording; the real timings stay in the file")
 	flag.StringVar(&cfg.ServerURL, "server", cfg.ServerURL, "control plane base URL")
 	flag.Parse()
 
+	// Both are tees rather than redirections: the demo is something a person watches, and a run
+	// that recorded itself and showed nothing would be a strange thing to sit through.
+	sinks := []io.Writer{os.Stdout}
 	if transcript != "" {
 		file, err := os.Create(transcript) //nolint:gosec // G304: operator-supplied output path
 		if err != nil {
@@ -56,8 +64,22 @@ func run() int {
 			return 2
 		}
 		defer func() { _ = file.Close() }()
-		cfg.Out = io.MultiWriter(os.Stdout, file)
+		sinks = append(sinks, file)
 	}
+	if cast != "" {
+		recorder, closeCast, err := acts.NewCastRecorder(cast, idle)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "demo: %v\n", err)
+			return 2
+		}
+		defer func() {
+			if err := closeCast(); err != nil {
+				fmt.Fprintf(os.Stderr, "demo: the recording is incomplete: %v\n", err)
+			}
+		}()
+		sinks = append(sinks, recorder)
+	}
+	cfg.Out = io.MultiWriter(sinks...)
 
 	// Ctrl-C has to reach the teardown rather than kill the process, or an interrupted demo leaves
 	// a stack and a sandbox container behind.
