@@ -48,6 +48,17 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	if err != nil {
 		return fmt.Errorf("act 3, the loop: %w", err)
 	}
+
+	// Act 7's delivery, configured here rather than in act 7, because a notification goes out on the
+	// transition into `firing` and act 4 is what causes that transition. A destination created
+	// afterwards would correctly be told nothing, and act 7 would have nothing to show — which is
+	// the product behaving properly and would read as the demo being broken.
+	//
+	// Silent, because it is setup rather than a beat. Act 7 says out loud that it happened here and
+	// why, so nothing is passed off as having arrived unprompted when it did not.
+	delivery := startAlertDelivery(ctx, c)
+	defer delivery.Close(context.WithoutCancel(ctx), c)
+
 	if err := actCorruption(ctx, cfg, n, c, backup); err != nil {
 		return fmt.Errorf("act 4, breaking it on purpose: %w", err)
 	}
@@ -57,14 +68,20 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	if err := actRetention(ctx, n, c, db, seed); err != nil {
 		return fmt.Errorf("act 6, what it refuses to delete: %w", err)
 	}
-	actAlerts(n)
+	// The backup act 4 corrupted, which is what act 7's alert is about. The two acts are far apart
+	// on the screen and one row apart in the database, which is the point: the alert names the
+	// artifact rather than restating the beat.
+	if err := actAlerts(ctx, n, c, backup, delivery); err != nil {
+		return fmt.Errorf("act 7, the alert: %w", err)
+	}
 
 	n.Act(8, "That was the product",
 		"Declare what should be true, detect what actually is, and show the gap — for backups that "+
 			"Fleetward took and for backups it merely watched.")
 	n.Say("Every number on the screen came from this stack. The six weeks of history were seeded " +
 		"so the estate had something to say; the backup, the verification, the corrupted artifact, " +
-		"the refusal, the audit rows and the retention answer were all live.")
+		"the refusal, the audit rows, the retention answer and the alert that reached a webhook " +
+		"were all live.")
 	n.Say("")
 	n.Say("docs/demo.md says exactly what is seeded. docs/dev/STATUS.md says exactly what is not " +
 		"built.")

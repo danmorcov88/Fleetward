@@ -63,6 +63,11 @@ var services = []struct {
 		iface: reflect.TypeOf((*fwv1.IdentityServiceServer)(nil)).Elem(),
 		guard: func(e *Enforcer) any { return GuardIdentity(e, panicServer{}) },
 	},
+	{
+		name:  "AlertService",
+		iface: reflect.TypeOf((*fwv1.AlertServiceServer)(nil)).Elem(),
+		guard: func(e *Enforcer) any { return GuardAlerts(e, panicServer{}) },
+	},
 }
 
 // panicServer is the service behind the guard. Every method panics, so a test that reaches one has
@@ -73,6 +78,7 @@ type panicServer struct {
 	fwv1.UnimplementedScheduleServiceServer
 	fwv1.UnimplementedBackupServiceServer
 	fwv1.UnimplementedIdentityServiceServer
+	fwv1.UnimplementedAlertServiceServer
 }
 
 func TestEveryRouteHasAPolicy(t *testing.T) {

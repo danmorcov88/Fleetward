@@ -39,6 +39,7 @@ the decisions with the longest reach and links back to the entries they came fro
 | [B5](B5-retention-and-expiry.md) — the first slice that can destroy data | 2026-09-03 | [brief](../slices/B5-retention-and-expiry.md) |
 | [B6](B6-authorization-spine.md) — the slice where a stranger could | 2026-09-03 | [brief](../slices/B6-authorization-spine.md) |
 | [D1](D1-the-demo.md) — the demo, which is also the end-to-end test | 2026-09-08 | [brief](../slices/D1-the-demo.md) |
+| [B7](B7-alerts-and-delivery.md) — the slice that makes it monitoring | 2026-09-09 | [brief](../slices/B7-alerts-and-delivery.md) |
 
 ## Writing an entry
 

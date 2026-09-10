@@ -479,6 +479,52 @@ in a later slice.
 
 ---
 
+### Be told, rather than go looking
+
+A DBA with fifty servers cannot be the polling loop. Fleetward evaluates the whole estate every
+thirty seconds and sends what it finds to a webhook or an SMTP destination.
+
+```bash
+FLEETWARD_NOTIFIER_SECRET='Bearer …' bin/fleetward-cli alert notifier create \
+  --name ops --kind webhook --setting url=https://alerts.internal.example/fleetward
+bin/fleetward-cli alert notifier test <id>
+bin/fleetward-cli alert list
+```
+
+```
+SEVERITY  STATE   SINCE    INSTANCE     SUMMARY
+critical  firing  4m ago   prod-orders  A backup of prod-orders failed verification
+warning   firing  2h ago   prod-audit   A backup window closed with nothing in it on prod-audit
+```
+
+Five conditions have evaluators — a verification that proved a backup unrestorable, a backup window
+that closed empty, a failed backup attempt, an instance that stopped answering, and expired
+artifacts the object store will not let go of. **None of them detects anything new.** Each reads the
+computation that already answers the same question on the estate screen, so an alert and the screen
+can never disagree.
+
+Three things about it are worth knowing before you rely on it, and all three are deliberate.
+
+**A condition that keeps being true is one alert.** `alerts.fingerprint` identifies the condition
+rather than the rule that found it, so ten passes over one broken backup produce one row and one
+notification — and two overlapping rules produce one page, at the higher severity. Acknowledging
+says "I know", never "it stopped"; only evaluation resolves an alert, because only evaluation knows
+whether the thing is still broken.
+
+**An inconclusive verification is not an alert about your backup.** A sandbox that never started is
+not evidence that a backup is bad, and routing it through the same alert as a proven-bad artifact is
+how the alert that matters gets muted
+([ADR-0040](docs/adr/0040-an-inconclusive-verification-is-not-an-alert-about-the-artifact.md)).
+
+**Delivery is best-effort, and the absence of a notification is not evidence that nothing is wrong.**
+The alert row is the record; a webhook is a convenience. That trade is only defensible because you
+can see it failing — `alert notifier list` reports when each destination last succeeded and what went
+wrong ([ADR-0039](docs/adr/0039-the-alert-is-the-record-and-the-notification-is-best-effort.md)).
+
+**More:** [rules, notifiers, and what alerting will not tell you](docs/ops/alerting.md).
+
+---
+
 ## Where to go next
 
 | If you want to | Read |
@@ -490,6 +536,7 @@ in a later slice.
 | Schedule backups and observation, and know what a crash or a DST change does | [docs/ops/scheduling.md](docs/ops/scheduling.md) |
 | Know what retention deletes, and what it refuses to | [docs/ops/retention.md](docs/ops/retention.md) |
 | Give somebody access, and read who did what | [docs/ops/authorization.md](docs/ops/authorization.md) |
+| Be told when something is wrong, and know what alerting will not tell you | [docs/ops/alerting.md](docs/ops/alerting.md) |
 | See the metadata schema | [docs/dev/data-model.md](docs/dev/data-model.md) |
 | Write a plugin for your own engine | [docs/dev/writing-an-engine-plugin.md](docs/dev/writing-an-engine-plugin.md) |
 | Know what is built and what is not | [docs/dev/STATUS.md](docs/dev/STATUS.md) |
@@ -513,7 +560,7 @@ fleetward/
 ├── internal/
 │   ├── config/               # env-driven configuration, shared by server and CLI
 │   ├── controlplane/         # api · authn · authz · audit · identity · inventory
-│   │                         # backup · sandbox · scheduler
+│   │                         # backup · sandbox · scheduler · alerts
 │   ├── plugin/{manager,sdk}/ # process supervision · the plugin author's harness
 │   ├── storage/              # metadb · tsdb · objstore · secrets
 │   └── telemetry/            # slog + OpenTelemetry
@@ -590,13 +637,14 @@ engine does not mean modifying core; Fleetward now reports on backups it did not
 that already backs itself up gets an answer on the day it is installed; all of it is readable on
 one screen, where a backup proven unrestorable is the loudest thing on the page; and artifacts that
 have outlived the retention their schedule declared are now deleted, which is the first thing this
-product does that cannot be undone; and every route now requires a credential and a role, with a
-record of who did what that cannot be edited.
+product does that cannot be undone; every route now requires a credential and a role, with a record
+of who did what that cannot be edited; and a failed verification now reaches a webhook or a mailbox
+without anybody going to look, which is the difference between a dashboard and monitoring.
 
 Not yet built, stated plainly because a reference document should not imply otherwise: sign-in is an
-API token rather than your own identity provider; nothing is delivered anywhere, so a failed
-verification is visible only by polling; and five of the eight engines are still binaries that only
-handshake.
+API token rather than your own identity provider; delivery is at-most-once, so a notification can be
+lost while the alert row survives; Fleetward emits no metrics about itself; and five of the eight
+engines are still binaries that only handshake.
 
 The full list, and which slice owns each item, is in [docs/dev/STATUS.md](docs/dev/STATUS.md).
 

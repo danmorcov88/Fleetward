@@ -65,6 +65,11 @@ const (
 	ScopeSchedule
 	// ScopeVerification reads `verification_id` and resolves it through its backup to an instance.
 	ScopeVerification
+	// ScopeAlert reads `alert_id` and resolves it to the instance the alert is about. An alert with
+	// no instance — retention_blocked is the estate-wide one — resolves to the tenant, so only a
+	// tenant-wide grant covers it. That is the same rule as everywhere else: a question that names
+	// no part of the estate is a question about all of it.
+	ScopeAlert
 )
 
 // Rule is what one RPC requires.
@@ -220,6 +225,63 @@ var Policies = map[string]Rule{
 	"/fleetward.v1.BackupService/PreviewRetention": {
 		MinRole: RoleDBA, Scope: ScopeRequestInstance,
 		Action: "backup.preview_retention", ResourceType: "backup",
+	},
+
+	// --- Alerts ----------------------------------------------------------------------------------
+	//
+	// Straight from what migration 000001 says each seeded role is for. `viewer` has "Read-only
+	// access to inventory, health, backups, and alerts"; `operator` "May acknowledge alerts and
+	// trigger discovery"; `admin` has "full control".
+	//
+	// Notifier management is admin rather than dba because a notifier holds a credential for a third
+	// party's system and its `settings` are returned by the listing — a webhook URL that embeds its
+	// own token lives there, which is the limitation docs/ops/alerting.md states.
+	"/fleetward.v1.AlertService/ListAlerts": {
+		MinRole: RoleViewer, Scope: ScopeRequestInstanceOrEnvironment, ScopeFiltered: true,
+		Action: "alert.list", ResourceType: "alert",
+	},
+	// Acknowledging changes a row and is therefore audited on both outcomes. It is also the one
+	// mutating thing an operator may do to an alert: only evaluation resolves one, because only
+	// evaluation knows whether the condition is still true.
+	"/fleetward.v1.AlertService/AcknowledgeAlert": {
+		MinRole: RoleOperator, Scope: ScopeAlert, Mutating: true,
+		Action: "alert.acknowledge", ResourceType: "alert",
+	},
+	"/fleetward.v1.AlertService/ListAlertRules": {
+		MinRole: RoleViewer, Scope: ScopeTenant,
+		Action: "alert_rule.list", ResourceType: "alert_rule",
+	},
+	"/fleetward.v1.AlertService/CreateAlertRule": {
+		MinRole: RoleAdmin, Scope: ScopeRequestInstanceOrEnvironment, Mutating: true,
+		Action: "alert_rule.create", ResourceType: "alert_rule",
+	},
+	// Operator, not admin: silencing a noisy rule at 3am is the job the operator role exists for,
+	// and a person who cannot silence one will mute the whole channel instead.
+	"/fleetward.v1.AlertService/SetAlertRuleEnabled": {
+		MinRole: RoleOperator, Scope: ScopeTenant, Mutating: true,
+		Action: "alert_rule.set_enabled", ResourceType: "alert_rule",
+	},
+	"/fleetward.v1.AlertService/DeleteAlertRule": {
+		MinRole: RoleAdmin, Scope: ScopeTenant, Mutating: true,
+		Action: "alert_rule.delete", ResourceType: "alert_rule",
+	},
+	"/fleetward.v1.AlertService/ListNotifiers": {
+		MinRole: RoleAdmin, Scope: ScopeTenant,
+		Action: "notifier.list", ResourceType: "notifier",
+	},
+	"/fleetward.v1.AlertService/CreateNotifier": {
+		MinRole: RoleAdmin, Scope: ScopeTenant, Mutating: true,
+		Action: "notifier.create", ResourceType: "notifier",
+	},
+	"/fleetward.v1.AlertService/DeleteNotifier": {
+		MinRole: RoleAdmin, Scope: ScopeTenant, Mutating: true,
+		Action: "notifier.delete", ResourceType: "notifier",
+	},
+	// Mutating in the audit sense: it sends a real message to a real endpoint outside this network,
+	// which is worth a record even though it changes nothing here.
+	"/fleetward.v1.AlertService/TestNotifier": {
+		MinRole: RoleAdmin, Scope: ScopeTenant, Mutating: true,
+		Action: "notifier.test", ResourceType: "notifier",
 	},
 
 	// --- Identity --------------------------------------------------------------------------------

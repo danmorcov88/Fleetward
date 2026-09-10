@@ -303,7 +303,14 @@ var resourceIDField = map[string]string{
 	"environment":  "environment_id",
 	"job":          "instance_id",
 	"audit_log":    "",
-	"caller":       "",
+	// `alert` maps to alert_id and not to instance_id, deliberately. The B6 walk found rows saying
+	// `resource_type = instance` beside a *backup's* id, and an investigator filtering on an
+	// instance would have missed every backup ever run against it while the record looked perfectly
+	// plausible. One more of those is not worth the convenience.
+	"alert":      "alert_id",
+	"alert_rule": "rule_id",
+	"notifier":   "notifier_id",
+	"caller":     "",
 }
 
 // resourceID names what an action acted on, for the audit record.

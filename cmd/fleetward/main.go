@@ -25,6 +25,7 @@ import (
 
 	fwv1 "github.com/danmorcov88/fleetward/api/gen/fleetward/v1"
 	"github.com/danmorcov88/fleetward/internal/config"
+	"github.com/danmorcov88/fleetward/internal/controlplane/alerts"
 	"github.com/danmorcov88/fleetward/internal/controlplane/api"
 	"github.com/danmorcov88/fleetward/internal/controlplane/audit"
 	"github.com/danmorcov88/fleetward/internal/controlplane/authn"
@@ -298,6 +299,37 @@ func run() error {
 		return fmt.Errorf("backup api: %w", err)
 	}
 
+	// --- Alerts ---------------------------------------------------------------------------------
+	//
+	// The dispatcher is built before the service because the service hands it work, and it is closed
+	// after the scheduler stops for the same reason the backup service is: a notification already
+	// queued when shutdown began should still go out. Deferred calls unwind in reverse, so this one,
+	// registered here, runs after the scheduler's Close below it.
+	alertDispatch := alerts.NewDispatcher(db.Pool(), secretsProvider, alerts.DispatchConfig{
+		Workers:   cfg.Alerts.DeliveryWorkers,
+		QueueSize: cfg.Alerts.DeliveryQueueSize,
+		Timeout:   cfg.Alerts.DeliveryTimeout,
+		Attempts:  cfg.Alerts.DeliveryAttempts,
+	}, log)
+	defer func() { _ = alertDispatch.Close() }()
+	alertDispatch.Start(ctx)
+
+	// The adherence source is the backup service itself, behind a one-method interface. The
+	// evaluator reads the same computation the estate view reads rather than a stored verdict, so an
+	// alert and the screen can never disagree (ADR-0038).
+	alertsSvc := alerts.New(db.Pool(), secretsProvider, backupAdherence{backupSvc}, alertDispatch, log)
+	if err := fwv1.RegisterAlertServiceHandlerServer(ctx, gateway,
+		authz.GuardAlerts(enforcer, alerts.NewGRPCServer(alertsSvc, log))); err != nil {
+		return fmt.Errorf("alerts api: %w", err)
+	}
+	if !cfg.Alerts.Enabled {
+		// Said out loud rather than left to be discovered. An installation whose evaluation pass is
+		// off looks exactly like an estate with nothing wrong.
+		log.Warn("ALERT EVALUATION IS DISABLED: no condition will become an alert and nothing will "+
+			"be delivered anywhere",
+			slog.String("remedy", "set FLEETWARD_ALERTS_ENABLED=true and restart"))
+	}
+
 	// --- Scheduler ------------------------------------------------------------------------------
 	//
 	// Constructed after the backup service, and this ordering is load-bearing rather than tidy.
@@ -312,8 +344,8 @@ func run() error {
 		return fmt.Errorf("schedule api: %w", err)
 	}
 
-	sched := scheduler.New(db.Pool(), scheduler.NewJobRunner(backupSvc, inventorySvc),
-		cfg.Scheduler, cfg.Retention, log)
+	sched := scheduler.New(db.Pool(), scheduler.NewJobRunner(backupSvc, inventorySvc, alertsSvc),
+		cfg.Scheduler, cfg.Retention, cfg.Alerts, log)
 	defer func() { _ = sched.Close() }()
 
 	// Non-critical: a stalled tick loop means nothing runs automatically, which is worth degrading
@@ -397,4 +429,16 @@ func buildSecretsProvider(cfg config.SecretsConfig, store secrets.Store) (secret
 	default:
 		return nil, fmt.Errorf("unknown secrets provider %q; supported: aesgcm", cfg.Provider)
 	}
+}
+
+// backupAdherence adapts the backup service to the one method the alert evaluator needs.
+//
+// A named type here rather than an anonymous closure so that the coupling is visible at the wiring
+// site: the `backup_missing` evaluator reads the estate view's own computation, and this is the
+// three lines that say so. `ProblemsOnly` because an instance that is adherent produces no
+// condition, and asking for the whole estate to filter it in Go would be work done twice.
+type backupAdherence struct{ svc *backup.Service }
+
+func (a backupAdherence) InstanceAdherence(ctx context.Context) ([]*fwv1.InstanceAdherence, error) {
+	return a.svc.GetBackupAdherence(ctx, backup.GetAdherenceInput{ProblemsOnly: true})
 }

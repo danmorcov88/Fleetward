@@ -1659,3 +1659,497 @@ var IdentityService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "fleetward/v1/controlplane.proto",
 }
+
+const (
+	AlertService_ListAlerts_FullMethodName          = "/fleetward.v1.AlertService/ListAlerts"
+	AlertService_AcknowledgeAlert_FullMethodName    = "/fleetward.v1.AlertService/AcknowledgeAlert"
+	AlertService_ListAlertRules_FullMethodName      = "/fleetward.v1.AlertService/ListAlertRules"
+	AlertService_CreateAlertRule_FullMethodName     = "/fleetward.v1.AlertService/CreateAlertRule"
+	AlertService_SetAlertRuleEnabled_FullMethodName = "/fleetward.v1.AlertService/SetAlertRuleEnabled"
+	AlertService_DeleteAlertRule_FullMethodName     = "/fleetward.v1.AlertService/DeleteAlertRule"
+	AlertService_ListNotifiers_FullMethodName       = "/fleetward.v1.AlertService/ListNotifiers"
+	AlertService_CreateNotifier_FullMethodName      = "/fleetward.v1.AlertService/CreateNotifier"
+	AlertService_DeleteNotifier_FullMethodName      = "/fleetward.v1.AlertService/DeleteNotifier"
+	AlertService_TestNotifier_FullMethodName        = "/fleetward.v1.AlertService/TestNotifier"
+)
+
+// AlertServiceClient is the client API for AlertService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// AlertService turns conditions Fleetward can already detect into rows somebody is told about.
+//
+// Nothing here detects anything new. Every evaluator reads a computation that already answers a
+// question the API answers — adherence, a verification's verdict, an instance's health, retention's
+// own backlog — so an alert and the estate view can never disagree, because they are the same
+// function (ADR-0038).
+type AlertServiceClient interface {
+	// ListAlerts reports open and recently resolved alerts. It filters its own rows by the caller's
+	// grants, like ListInstances, so a person granted three servers sees those three servers' alerts
+	// rather than a 403 (ADR-0035).
+	ListAlerts(ctx context.Context, in *ListAlertsRequest, opts ...grpc.CallOption) (*ListAlertsResponse, error)
+	// AcknowledgeAlert silences one alert until its condition clears. The row does not become
+	// resolved: acknowledging says "I know", never "it stopped".
+	AcknowledgeAlert(ctx context.Context, in *AcknowledgeAlertRequest, opts ...grpc.CallOption) (*AcknowledgeAlertResponse, error)
+	ListAlertRules(ctx context.Context, in *ListAlertRulesRequest, opts ...grpc.CallOption) (*ListAlertRulesResponse, error)
+	// CreateAlertRule declares a condition worth being told about. A kind with no evaluator is
+	// refused rather than stored: a rule accepted and never evaluated is worse than one refused,
+	// because the operator believes they are covered.
+	CreateAlertRule(ctx context.Context, in *CreateAlertRuleRequest, opts ...grpc.CallOption) (*CreateAlertRuleResponse, error)
+	// SetAlertRuleEnabled is the whole silencing story in this version. Disabling a rule resolves its
+	// open alerts on the next pass, because "stop telling me" has to mean the row goes quiet rather
+	// than that it is frozen forever.
+	SetAlertRuleEnabled(ctx context.Context, in *SetAlertRuleEnabledRequest, opts ...grpc.CallOption) (*SetAlertRuleEnabledResponse, error)
+	DeleteAlertRule(ctx context.Context, in *DeleteAlertRuleRequest, opts ...grpc.CallOption) (*DeleteAlertRuleResponse, error)
+	// ListNotifiers reports where alerts are sent, and how that has been going lately. It is
+	// administrator-only: `settings` is operator-supplied configuration for somebody else's system,
+	// and a webhook URL that embeds its own credential lives there.
+	ListNotifiers(ctx context.Context, in *ListNotifiersRequest, opts ...grpc.CallOption) (*ListNotifiersResponse, error)
+	// CreateNotifier stores a destination. The credential goes to the secrets provider and never into
+	// `settings`, which is refused if it contains anything that looks like one.
+	CreateNotifier(ctx context.Context, in *CreateNotifierRequest, opts ...grpc.CallOption) (*CreateNotifierResponse, error)
+	DeleteNotifier(ctx context.Context, in *DeleteNotifierRequest, opts ...grpc.CallOption) (*DeleteNotifierResponse, error)
+	// TestNotifier sends a real message to a real endpoint, so that "is my webhook configured
+	// correctly" is answerable before an outage rather than during one.
+	TestNotifier(ctx context.Context, in *TestNotifierRequest, opts ...grpc.CallOption) (*TestNotifierResponse, error)
+}
+
+type alertServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewAlertServiceClient(cc grpc.ClientConnInterface) AlertServiceClient {
+	return &alertServiceClient{cc}
+}
+
+func (c *alertServiceClient) ListAlerts(ctx context.Context, in *ListAlertsRequest, opts ...grpc.CallOption) (*ListAlertsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAlertsResponse)
+	err := c.cc.Invoke(ctx, AlertService_ListAlerts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertServiceClient) AcknowledgeAlert(ctx context.Context, in *AcknowledgeAlertRequest, opts ...grpc.CallOption) (*AcknowledgeAlertResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AcknowledgeAlertResponse)
+	err := c.cc.Invoke(ctx, AlertService_AcknowledgeAlert_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertServiceClient) ListAlertRules(ctx context.Context, in *ListAlertRulesRequest, opts ...grpc.CallOption) (*ListAlertRulesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAlertRulesResponse)
+	err := c.cc.Invoke(ctx, AlertService_ListAlertRules_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertServiceClient) CreateAlertRule(ctx context.Context, in *CreateAlertRuleRequest, opts ...grpc.CallOption) (*CreateAlertRuleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateAlertRuleResponse)
+	err := c.cc.Invoke(ctx, AlertService_CreateAlertRule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertServiceClient) SetAlertRuleEnabled(ctx context.Context, in *SetAlertRuleEnabledRequest, opts ...grpc.CallOption) (*SetAlertRuleEnabledResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetAlertRuleEnabledResponse)
+	err := c.cc.Invoke(ctx, AlertService_SetAlertRuleEnabled_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertServiceClient) DeleteAlertRule(ctx context.Context, in *DeleteAlertRuleRequest, opts ...grpc.CallOption) (*DeleteAlertRuleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteAlertRuleResponse)
+	err := c.cc.Invoke(ctx, AlertService_DeleteAlertRule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertServiceClient) ListNotifiers(ctx context.Context, in *ListNotifiersRequest, opts ...grpc.CallOption) (*ListNotifiersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListNotifiersResponse)
+	err := c.cc.Invoke(ctx, AlertService_ListNotifiers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertServiceClient) CreateNotifier(ctx context.Context, in *CreateNotifierRequest, opts ...grpc.CallOption) (*CreateNotifierResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateNotifierResponse)
+	err := c.cc.Invoke(ctx, AlertService_CreateNotifier_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertServiceClient) DeleteNotifier(ctx context.Context, in *DeleteNotifierRequest, opts ...grpc.CallOption) (*DeleteNotifierResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteNotifierResponse)
+	err := c.cc.Invoke(ctx, AlertService_DeleteNotifier_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertServiceClient) TestNotifier(ctx context.Context, in *TestNotifierRequest, opts ...grpc.CallOption) (*TestNotifierResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TestNotifierResponse)
+	err := c.cc.Invoke(ctx, AlertService_TestNotifier_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AlertServiceServer is the server API for AlertService service.
+// All implementations must embed UnimplementedAlertServiceServer
+// for forward compatibility.
+//
+// AlertService turns conditions Fleetward can already detect into rows somebody is told about.
+//
+// Nothing here detects anything new. Every evaluator reads a computation that already answers a
+// question the API answers — adherence, a verification's verdict, an instance's health, retention's
+// own backlog — so an alert and the estate view can never disagree, because they are the same
+// function (ADR-0038).
+type AlertServiceServer interface {
+	// ListAlerts reports open and recently resolved alerts. It filters its own rows by the caller's
+	// grants, like ListInstances, so a person granted three servers sees those three servers' alerts
+	// rather than a 403 (ADR-0035).
+	ListAlerts(context.Context, *ListAlertsRequest) (*ListAlertsResponse, error)
+	// AcknowledgeAlert silences one alert until its condition clears. The row does not become
+	// resolved: acknowledging says "I know", never "it stopped".
+	AcknowledgeAlert(context.Context, *AcknowledgeAlertRequest) (*AcknowledgeAlertResponse, error)
+	ListAlertRules(context.Context, *ListAlertRulesRequest) (*ListAlertRulesResponse, error)
+	// CreateAlertRule declares a condition worth being told about. A kind with no evaluator is
+	// refused rather than stored: a rule accepted and never evaluated is worse than one refused,
+	// because the operator believes they are covered.
+	CreateAlertRule(context.Context, *CreateAlertRuleRequest) (*CreateAlertRuleResponse, error)
+	// SetAlertRuleEnabled is the whole silencing story in this version. Disabling a rule resolves its
+	// open alerts on the next pass, because "stop telling me" has to mean the row goes quiet rather
+	// than that it is frozen forever.
+	SetAlertRuleEnabled(context.Context, *SetAlertRuleEnabledRequest) (*SetAlertRuleEnabledResponse, error)
+	DeleteAlertRule(context.Context, *DeleteAlertRuleRequest) (*DeleteAlertRuleResponse, error)
+	// ListNotifiers reports where alerts are sent, and how that has been going lately. It is
+	// administrator-only: `settings` is operator-supplied configuration for somebody else's system,
+	// and a webhook URL that embeds its own credential lives there.
+	ListNotifiers(context.Context, *ListNotifiersRequest) (*ListNotifiersResponse, error)
+	// CreateNotifier stores a destination. The credential goes to the secrets provider and never into
+	// `settings`, which is refused if it contains anything that looks like one.
+	CreateNotifier(context.Context, *CreateNotifierRequest) (*CreateNotifierResponse, error)
+	DeleteNotifier(context.Context, *DeleteNotifierRequest) (*DeleteNotifierResponse, error)
+	// TestNotifier sends a real message to a real endpoint, so that "is my webhook configured
+	// correctly" is answerable before an outage rather than during one.
+	TestNotifier(context.Context, *TestNotifierRequest) (*TestNotifierResponse, error)
+	mustEmbedUnimplementedAlertServiceServer()
+}
+
+// UnimplementedAlertServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedAlertServiceServer struct{}
+
+func (UnimplementedAlertServiceServer) ListAlerts(context.Context, *ListAlertsRequest) (*ListAlertsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListAlerts not implemented")
+}
+func (UnimplementedAlertServiceServer) AcknowledgeAlert(context.Context, *AcknowledgeAlertRequest) (*AcknowledgeAlertResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AcknowledgeAlert not implemented")
+}
+func (UnimplementedAlertServiceServer) ListAlertRules(context.Context, *ListAlertRulesRequest) (*ListAlertRulesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListAlertRules not implemented")
+}
+func (UnimplementedAlertServiceServer) CreateAlertRule(context.Context, *CreateAlertRuleRequest) (*CreateAlertRuleResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateAlertRule not implemented")
+}
+func (UnimplementedAlertServiceServer) SetAlertRuleEnabled(context.Context, *SetAlertRuleEnabledRequest) (*SetAlertRuleEnabledResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetAlertRuleEnabled not implemented")
+}
+func (UnimplementedAlertServiceServer) DeleteAlertRule(context.Context, *DeleteAlertRuleRequest) (*DeleteAlertRuleResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteAlertRule not implemented")
+}
+func (UnimplementedAlertServiceServer) ListNotifiers(context.Context, *ListNotifiersRequest) (*ListNotifiersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListNotifiers not implemented")
+}
+func (UnimplementedAlertServiceServer) CreateNotifier(context.Context, *CreateNotifierRequest) (*CreateNotifierResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateNotifier not implemented")
+}
+func (UnimplementedAlertServiceServer) DeleteNotifier(context.Context, *DeleteNotifierRequest) (*DeleteNotifierResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteNotifier not implemented")
+}
+func (UnimplementedAlertServiceServer) TestNotifier(context.Context, *TestNotifierRequest) (*TestNotifierResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TestNotifier not implemented")
+}
+func (UnimplementedAlertServiceServer) mustEmbedUnimplementedAlertServiceServer() {}
+func (UnimplementedAlertServiceServer) testEmbeddedByValue()                      {}
+
+// UnsafeAlertServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to AlertServiceServer will
+// result in compilation errors.
+type UnsafeAlertServiceServer interface {
+	mustEmbedUnimplementedAlertServiceServer()
+}
+
+func RegisterAlertServiceServer(s grpc.ServiceRegistrar, srv AlertServiceServer) {
+	// If the following call pancis, it indicates UnimplementedAlertServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&AlertService_ServiceDesc, srv)
+}
+
+func _AlertService_ListAlerts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAlertsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertServiceServer).ListAlerts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertService_ListAlerts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertServiceServer).ListAlerts(ctx, req.(*ListAlertsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertService_AcknowledgeAlert_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AcknowledgeAlertRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertServiceServer).AcknowledgeAlert(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertService_AcknowledgeAlert_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertServiceServer).AcknowledgeAlert(ctx, req.(*AcknowledgeAlertRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertService_ListAlertRules_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAlertRulesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertServiceServer).ListAlertRules(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertService_ListAlertRules_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertServiceServer).ListAlertRules(ctx, req.(*ListAlertRulesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertService_CreateAlertRule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateAlertRuleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertServiceServer).CreateAlertRule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertService_CreateAlertRule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertServiceServer).CreateAlertRule(ctx, req.(*CreateAlertRuleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertService_SetAlertRuleEnabled_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetAlertRuleEnabledRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertServiceServer).SetAlertRuleEnabled(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertService_SetAlertRuleEnabled_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertServiceServer).SetAlertRuleEnabled(ctx, req.(*SetAlertRuleEnabledRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertService_DeleteAlertRule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteAlertRuleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertServiceServer).DeleteAlertRule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertService_DeleteAlertRule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertServiceServer).DeleteAlertRule(ctx, req.(*DeleteAlertRuleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertService_ListNotifiers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListNotifiersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertServiceServer).ListNotifiers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertService_ListNotifiers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertServiceServer).ListNotifiers(ctx, req.(*ListNotifiersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertService_CreateNotifier_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateNotifierRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertServiceServer).CreateNotifier(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertService_CreateNotifier_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertServiceServer).CreateNotifier(ctx, req.(*CreateNotifierRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertService_DeleteNotifier_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteNotifierRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertServiceServer).DeleteNotifier(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertService_DeleteNotifier_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertServiceServer).DeleteNotifier(ctx, req.(*DeleteNotifierRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertService_TestNotifier_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TestNotifierRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertServiceServer).TestNotifier(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertService_TestNotifier_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertServiceServer).TestNotifier(ctx, req.(*TestNotifierRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// AlertService_ServiceDesc is the grpc.ServiceDesc for AlertService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var AlertService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetward.v1.AlertService",
+	HandlerType: (*AlertServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListAlerts",
+			Handler:    _AlertService_ListAlerts_Handler,
+		},
+		{
+			MethodName: "AcknowledgeAlert",
+			Handler:    _AlertService_AcknowledgeAlert_Handler,
+		},
+		{
+			MethodName: "ListAlertRules",
+			Handler:    _AlertService_ListAlertRules_Handler,
+		},
+		{
+			MethodName: "CreateAlertRule",
+			Handler:    _AlertService_CreateAlertRule_Handler,
+		},
+		{
+			MethodName: "SetAlertRuleEnabled",
+			Handler:    _AlertService_SetAlertRuleEnabled_Handler,
+		},
+		{
+			MethodName: "DeleteAlertRule",
+			Handler:    _AlertService_DeleteAlertRule_Handler,
+		},
+		{
+			MethodName: "ListNotifiers",
+			Handler:    _AlertService_ListNotifiers_Handler,
+		},
+		{
+			MethodName: "CreateNotifier",
+			Handler:    _AlertService_CreateNotifier_Handler,
+		},
+		{
+			MethodName: "DeleteNotifier",
+			Handler:    _AlertService_DeleteNotifier_Handler,
+		},
+		{
+			MethodName: "TestNotifier",
+			Handler:    _AlertService_TestNotifier_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "fleetward/v1/controlplane.proto",
+}

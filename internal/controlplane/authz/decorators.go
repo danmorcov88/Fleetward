@@ -229,3 +229,63 @@ func (g *identityGuard) RevokeToken(ctx context.Context, req *fwv1.RevokeTokenRe
 func (g *identityGuard) ListAuditLog(ctx context.Context, req *fwv1.ListAuditLogRequest) (*fwv1.ListAuditLogResponse, error) {
 	return guarded(g.e, ctx, "/fleetward.v1.IdentityService/ListAuditLog", req, g.inner.ListAuditLog)
 }
+
+// -----------------------------------------------------------------------------------------------
+// Alerts
+// -----------------------------------------------------------------------------------------------
+
+type alertGuard struct {
+	// Required by the generated interface, and load-bearing: it is what answers a method this
+	// decorator forgot to override, with Unimplemented rather than with the real service.
+	fwv1.UnimplementedAlertServiceServer
+
+	e     *Enforcer
+	inner fwv1.AlertServiceServer
+}
+
+// GuardAlerts wraps the alerts service.
+func GuardAlerts(e *Enforcer, inner fwv1.AlertServiceServer) fwv1.AlertServiceServer {
+	return &alertGuard{e: e, inner: inner}
+}
+
+var _ fwv1.AlertServiceServer = (*alertGuard)(nil)
+
+func (g *alertGuard) ListAlerts(ctx context.Context, req *fwv1.ListAlertsRequest) (*fwv1.ListAlertsResponse, error) {
+	return guarded(g.e, ctx, "/fleetward.v1.AlertService/ListAlerts", req, g.inner.ListAlerts)
+}
+
+func (g *alertGuard) AcknowledgeAlert(ctx context.Context, req *fwv1.AcknowledgeAlertRequest) (*fwv1.AcknowledgeAlertResponse, error) {
+	return guarded(g.e, ctx, "/fleetward.v1.AlertService/AcknowledgeAlert", req, g.inner.AcknowledgeAlert)
+}
+
+func (g *alertGuard) ListAlertRules(ctx context.Context, req *fwv1.ListAlertRulesRequest) (*fwv1.ListAlertRulesResponse, error) {
+	return guarded(g.e, ctx, "/fleetward.v1.AlertService/ListAlertRules", req, g.inner.ListAlertRules)
+}
+
+func (g *alertGuard) CreateAlertRule(ctx context.Context, req *fwv1.CreateAlertRuleRequest) (*fwv1.CreateAlertRuleResponse, error) {
+	return guarded(g.e, ctx, "/fleetward.v1.AlertService/CreateAlertRule", req, g.inner.CreateAlertRule)
+}
+
+func (g *alertGuard) SetAlertRuleEnabled(ctx context.Context, req *fwv1.SetAlertRuleEnabledRequest) (*fwv1.SetAlertRuleEnabledResponse, error) {
+	return guarded(g.e, ctx, "/fleetward.v1.AlertService/SetAlertRuleEnabled", req, g.inner.SetAlertRuleEnabled)
+}
+
+func (g *alertGuard) DeleteAlertRule(ctx context.Context, req *fwv1.DeleteAlertRuleRequest) (*fwv1.DeleteAlertRuleResponse, error) {
+	return guarded(g.e, ctx, "/fleetward.v1.AlertService/DeleteAlertRule", req, g.inner.DeleteAlertRule)
+}
+
+func (g *alertGuard) ListNotifiers(ctx context.Context, req *fwv1.ListNotifiersRequest) (*fwv1.ListNotifiersResponse, error) {
+	return guarded(g.e, ctx, "/fleetward.v1.AlertService/ListNotifiers", req, g.inner.ListNotifiers)
+}
+
+func (g *alertGuard) CreateNotifier(ctx context.Context, req *fwv1.CreateNotifierRequest) (*fwv1.CreateNotifierResponse, error) {
+	return guarded(g.e, ctx, "/fleetward.v1.AlertService/CreateNotifier", req, g.inner.CreateNotifier)
+}
+
+func (g *alertGuard) DeleteNotifier(ctx context.Context, req *fwv1.DeleteNotifierRequest) (*fwv1.DeleteNotifierResponse, error) {
+	return guarded(g.e, ctx, "/fleetward.v1.AlertService/DeleteNotifier", req, g.inner.DeleteNotifier)
+}
+
+func (g *alertGuard) TestNotifier(ctx context.Context, req *fwv1.TestNotifierRequest) (*fwv1.TestNotifierResponse, error) {
+	return guarded(g.e, ctx, "/fleetward.v1.AlertService/TestNotifier", req, g.inner.TestNotifier)
+}

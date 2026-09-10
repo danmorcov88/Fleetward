@@ -60,6 +60,9 @@ this repository produces and the honest version has to arrive before the persuas
 - The verification in act 4, and the `FAILED` it returns.
 - The 403 in act 5, decided by the server, and every audit row shown.
 - The retention answer in act 6, read through the same query the sweep runs.
+- The alert in act 7: opened by an evaluation pass nobody asked for, and delivered to an HTTP
+  listener the demo really runs on the host. The listener is the demo's; the POST that reaches it is
+  the control plane's.
 
 The line the demo says on screen, and the line to use in anything published from it:
 
@@ -125,8 +128,24 @@ expect.
 it is the last backup of that instance anybody has proven restorable
 ([ADR-0032](adr/0032-retention-never-deletes-the-last-good-backup.md)).
 
-**Act 7 — reserved.** An alert firing on the failed verification in act 4 is the most dramatic beat
-this product will ever have, and it is not built. The act list leaves the slot and says so.
+**Act 7 — the alert.** The three rules a fresh installation is seeded with, then the `critical` alert
+that fires on act 4's corrupted artifact, then the webhook that arrives on the host because of it —
+with the notifier's credential in a header and nowhere in the body, and `GET /api/v1/notifiers`
+returning the destination without it. A second evaluation pass finds the same condition and creates
+no second row, which is what `alerts.fingerprint` has existed for since the first migration. The
+alert is acknowledged, and the `alert.acknowledge` row appears in the audit log.
+
+Two things about that act are worth knowing before it is published from.
+
+**The notifier is created before act 4 runs, and the act says so on screen.** That is the product's
+semantics rather than the demo's convenience: a notification goes out on the transition into
+`firing`, so a destination configured *after* an alert has already opened is correctly told nothing
+about it ([ADR-0039](adr/0039-the-alert-is-the-record-and-the-notification-is-best-effort.md)).
+
+**Nothing fires for an `INCONCLUSIVE` verdict, and the act says that too** — as a property, without
+staging one. A sandbox that would not start is not evidence that a backup is bad, and routing it
+through the same alert as a proven-bad artifact is how the alert that matters gets muted
+([ADR-0040](adr/0040-an-inconclusive-verification-is-not-an-alert-about-the-artifact.md)).
 
 ---
 
@@ -186,8 +205,8 @@ to use:
 
 And the sentence that has to be in anything published from it:
 
-> This is a work in progress at slice six of sixteen — alerts, metrics and a release are not built,
-> and five of the eight engines still only handshake.
+> This is a work in progress at slice seven of sixteen — Fleetward emits no metrics about itself,
+> nothing has been released, and five of the eight engines still only handshake.
 
 [`docs/dev/STATUS.md`](dev/STATUS.md) is that list, and it is kept accurate on purpose.
 

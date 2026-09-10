@@ -219,3 +219,39 @@ func trimEnum(prefix, value string) string {
 	}
 	return strings.TrimPrefix(value, prefix)
 }
+
+// -----------------------------------------------------------------------------------------------
+// Alerts
+// -----------------------------------------------------------------------------------------------
+
+type alertRow struct {
+	ID           string     `json:"id"`
+	RuleName     string     `json:"rule_name"`
+	Kind         string     `json:"kind"`
+	InstanceID   string     `json:"instance_id"`
+	InstanceName string     `json:"instance_name"`
+	Severity     string     `json:"severity"`
+	State        string     `json:"state"`
+	Summary      string     `json:"summary"`
+	Detail       string     `json:"detail"`
+	Fingerprint  string     `json:"fingerprint"`
+	StartedAt    *time.Time `json:"started_at"`
+	LastSeenAt   *time.Time `json:"last_seen_at"`
+}
+
+type alertRuleRow struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	Severity string `json:"severity"`
+}
+
+// notifierRow has no field for a credential, and that is the point rather than an omission: no read
+// API returns one, so there is nothing to decode.
+type notifierRow struct {
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Kind      string            `json:"kind"`
+	Settings  map[string]string `json:"settings"`
+	HasSecret bool              `json:"has_secret"`
+}

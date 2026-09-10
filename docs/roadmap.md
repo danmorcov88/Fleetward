@@ -60,13 +60,21 @@ that sentence; anything that is not has been moved behind it.
 
 **D1 is outside the B-sequence on purpose.** It ships no product capability — it ships evidence,
 and an end-to-end guard every later slice inherits. It is numbered separately so the B-numbers,
-which journals and decision records refer to, stay where they are. Its cost is that the demo cannot
-show an alert firing, which is the most dramatic beat this product will ever have; the act list
-leaves the slot for B7 to fill.
+which journals and decision records refer to, stay where they are. Its cost was that the demo could
+not show an alert firing, which is the most dramatic beat this product will ever have; the act list
+left the slot, and B7 filled it.
 
 It is done. [`docs/demo.md`](demo.md) is the page, `make demo` is the command, and the demo and the
 end-to-end test are one program so that neither can drift from the other
 ([ADR-0037](adr/0037-the-demo-and-the-end-to-end-test-are-one-program.md)).
+
+**B7 is done too**, and the third component of the sentence below now exists.
+[`docs/ops/alerting.md`](ops/alerting.md) is the page. Evaluation is a pass over the estate rather
+than a job ([ADR-0038](adr/0038-alert-evaluation-is-a-pass-over-the-estate.md)), the alert row is the
+record and delivery is best-effort
+([ADR-0039](adr/0039-the-alert-is-the-record-and-the-notification-is-best-effort.md)), and an
+inconclusive verification is not an alert about the artifact
+([ADR-0040](adr/0040-an-inconclusive-verification-is-not-an-alert-about-the-artifact.md)).
 
 **Exit: a pilot installation.** After B9 the remaining work is engines and the identity provider.
 
