@@ -1,19 +1,19 @@
 module github.com/danmorcov88/fleetward
 
-go 1.25.0
+go 1.25.11
 
 require (
 	github.com/containerd/errdefs v1.0.0
-	github.com/golang-migrate/migrate/v4 v4.19.1
+	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-plugin v1.8.0
-	github.com/jackc/pgx/v5 v5.10.0
-	github.com/klauspost/compress v1.19.2
+	github.com/jackc/pgx/v5 v5.11.0
+	github.com/klauspost/compress v1.20.0
 	github.com/microsoft/go-mssqldb v1.11.0
 	github.com/minio/minio-go/v7 v7.3.0
-	github.com/moby/moby/api v1.55.0
-	github.com/moby/moby/client v0.5.1
+	github.com/moby/moby/api v1.56.0
+	github.com/moby/moby/client v0.6.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
@@ -29,7 +29,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0
 	go.yaml.in/yaml/v3 v3.0.5
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688
-	google.golang.org/grpc v1.83.2
+	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
 )
 
